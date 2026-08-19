@@ -82,7 +82,7 @@ export default function BranchManagementPage() {
           <div className="mb-6">
             <Button
               className="h-8 inline-flex items-center bg-army hover:bg-army/85 gap-2"
-              onClick={() => router.push(`/users/${params.u}/company/${params.companySlug}/branches/new`)}
+              onClick={() => router.push(`/users/${params.u}/company/${params.companyId}/branches/new`)}
             >
               <Plus size={14} />
               <span className="text-[10px]">Create New Branch</span>

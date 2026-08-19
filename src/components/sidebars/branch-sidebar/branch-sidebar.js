@@ -41,15 +41,15 @@ export const CollapsibleButton = ({title,icon,items,sidebarCollapse,sidebarOpen,
             <CollapsibleTrigger asChild>
         <SidebarMenuButton  tooltip={title} className={`text-black cursor-pointer font-Poppins ${itemClass || ''}`}>
                   {item.icon && <item.icon className='font-bold' />}
-                  <span className="font-medium text-xs ml-1">{title}</span>
+                  <span className="font-medium text-sm ml-1">{title}</span>
                   <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
               </SidebarMenuButton>
             </CollapsibleTrigger>
             <CollapsibleContent>
             <SidebarMenuSub>
                 {items?.map((subItem) => {
-                const subBtnClass = subItem.className || 'text-black text-xs'
-                const titleClass = subItem.titleClass || 'font-medium data-[caps=capitalize]:capitalize data-[caps=lowercase]:lowercase data-[caps=uppercase]:uppercase font-Poppins text-xs ml-1'
+                const subBtnClass = subItem.className || 'text-black text-sm'
+                const titleClass = subItem.titleClass || 'font-medium data-[caps=capitalize]:capitalize data-[caps=lowercase]:lowercase data-[caps=uppercase]:uppercase font-Poppins text-sm ml-1'
                 return (
                 <SidebarMenuSubItem key={subItem.title}>
                   <SidebarMenuSubButton className={subBtnClass} style={subItem.style} asChild>
@@ -65,6 +65,7 @@ export const CollapsibleButton = ({title,icon,items,sidebarCollapse,sidebarOpen,
     </Collapsible>
   )
 }
+
 
 export const NoCollapsibleButton = ({
   name,
@@ -88,14 +89,14 @@ export const NoCollapsibleButton = ({
         <Link href={url} className="relative flex items-center w-full">
           {item.icon && <item.icon className="font-bold" />}
 
-          <span className="font-medium font-Poppins text-xs ml-1">
+          <span className="font-medium font-Poppins text-sm ml-1">
             {name}
           </span>
 
           {/* 🔴 BADGE */}
           {open&&badge && (
             <span className="absolute bottom-0.5 right-0.5 min-w-max h-4
-              px-1.5 rounded-full bg-army font-thin text-white text-[10px]
+              px-1.5 rounded-full bg-core font-thin text-white text-[10px]
               flex items-center justify-center leading-none">
               <span className="relative">
                 {badge}

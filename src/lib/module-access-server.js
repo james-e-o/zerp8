@@ -1,54 +1,29 @@
 import { createSupabaseServerClient } from "@/config/supabaseServer";
 
-
-export async function isModuleEnabledServer(companyId, moduleName) {
-  if (!companyId || !moduleName) return false;
+/**
+ * Server-side check via RPC: does this company have access to the module?
+ * @param {string} companyId
+ * @param {string} moduleKey  - modules.key (e.g. "products")
+ */
+export async function isModuleEnabledServer(companyId, moduleKey) {
+  if (!companyId || !moduleKey) return false;
 
   try {
     const supabase = await createSupabaseServerClient();
 
+    const { data, error } = await supabase.rpc("has_module_access", {
+      p_company_id: companyId,
+      p_module_key: moduleKey,
+    });
 
-    // Step 1: Get active subscription
-    const { data: subscription, error: subError } = await supabase
-      .from('company_subscriptions')
-      .select('plan_key')
-      .eq('company', companyId)
-      .in('status', ['active', 'trialing'])
-      .maybeSingle();
-
-    // Normalize module names to match plan_module_enabled.module values
-    const normalizedModuleName = moduleName
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replace(/_enabled$/, '');
-
-    // Step 2: Check specific module access for this plan
-    const { data: enabledEntry, error: enabledError } = await supabase
-      .from('plan_module_enabled')
-      .select('enabled')
-      .eq('plan', subscription.plan_key)
-      .eq('module', normalizedModuleName)
-      .maybeSingle();
-
-    // console.log('🔎 [SERVER] Plan module enabled lookup:', {
-    //   plan: subscription.plan_key,
-    //   module: normalizedModuleName,
-    //   enabledEntry,
-    //   enabledError,
-    // });
-
-    if (enabledError) {
-      console.error(`[SERVER] Module enabled lookup error:`, enabledError);
+    if (error) {
+      console.error("[isModuleEnabledServer] RPC error:", error);
       return false;
     }
 
-    const result = enabledEntry?.enabled === true;
-    // console.log('✅ [SERVER] Result:', result);
-    return result;
-
+    return data === true;
   } catch (err) {
-    console.error(`[SERVER] Error checking module access:`, err);
+    console.error("[isModuleEnabledServer] unexpected error:", err);
     return false;
   }
 }

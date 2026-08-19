@@ -7,11 +7,8 @@ import { Settings, Users, LayoutDashboard, CreditCard } from "lucide-react";
 import { NoCollapsibleButton } from "./company-sidebar";
 
 
-export default function CompanySidebarFooter({ params, profile }) {
+export default function CompanySidebarFooter({ params, profile, company }) {
   const { u, companyId } = params;
-
-
-
 
   return (
     <SidebarFooter className={'bg-armylight  pb-8 flex-col flex gap-6'} >
@@ -26,7 +23,7 @@ export default function CompanySidebarFooter({ params, profile }) {
            <NoCollapsibleButton className={``} url={`/users/${u}/company/${companyId}/settings`} title={'Settings'} icon={Settings} active={false} name={'Settings'} badge={'company'}/>
       
       </div>
-      <CompanySidebarFooterUser user={profile} u={u} />
+      <CompanySidebarFooterUser user={profile} u={u} company={company} />
     </SidebarFooter>
   )
 }

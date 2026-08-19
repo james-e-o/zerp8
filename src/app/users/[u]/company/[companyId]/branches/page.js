@@ -108,7 +108,7 @@ export default function BranchesPage() {
                 <div className="flex items-center justify-between py-3 relative top-1  pl-3 pr-7">
                   <div>
                     <div className="flex items-center gap-2">
-                      <Link href={`/users/${params.u}/company/${companyParam}/branches/${b.slug}`}>
+                      <Link href={`/users/${params.u}/company/${companyParam}/branches/${b.id}`}>
                         <Button variant={'link'} className="text-xs h-7 font-medium hover:underline" >{b.name}
                       {b.isheadoffice && <span className="text-[10px] text-zinc-500">(Head Office)</span>}</Button>
                       </Link>

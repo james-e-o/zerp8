@@ -12,18 +12,19 @@ export default function CompanySidebarContent({modules, branches, company, acces
    const params = useParams()   
 
     return (
-    <SidebarContent className={'bg-armylight  text-zinc-100'} >
+    <SidebarContent className={'bg-armylight text-sm text-zinc-100'} >
         <SidebarGroup>
             <SidebarMenu>
-                <NoCollapsibleButton className={`capitalize`} url={`/users/${params.u}/company/${params.companyId}`} title={'Dashboard'} icon={Building2} active={false} name={`${company?.name || params.companyId.toUpperCase()} Dashboard`}/>
+                <NoCollapsibleButton className={`capitalize`} url={`/users/${params.u}/company/${params.companyId}`} title={'Dashboard'} icon={Building2} active={false} name={`${company?.name?.toUpperCase() || params.companyId.toUpperCase()} Dashboard`}/>
 
                 <CollapsibleButton caps={'uppercase'} defaultOpen={true} sidebarOpen={true} className={``} title={'Branches'} icon={SquareStack} 
                     items={[
                         
                         
                         //  ...branches.filter(branch => branch.company === company?.company_id).map((branch) => ({ title: branch.name, url: `/users/${params.u}/company/${params.companyId}/branches/${branch.branch_id}`}))
-                        ...branches.map((branch) => ({ title: branch.name, url: `/users/${params.u}/company/${params.companyId}/branches/${branch.id}`})),
-                        // { title: 'All Branches', url: `/users/${params.u}/company/${params.companyId}/branches`},
+                        ...branches.map((branch) => (
+                            { title: branch.name, url: `/users/${params.u}/company/${params.companyId}/branches/${branch.id}`})),
+                            { title: 'view all branches',titleClass:'text-xs text-core lowercase', className:'bg-alt w-fit', url: `/users/${params.u}/company/${params.companyId}/branches`},
                     ]}
                     sidebarCollapse={false}
                     />

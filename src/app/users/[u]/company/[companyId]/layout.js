@@ -94,13 +94,12 @@ export default async function CompanyLayout({ children, params }) {
     .from("branches")
     .select("*")
     .eq("company", company.id)
+    console.log("branchesData", branchesData)
 
-  let allowedBranches = []
-  if (accessLevelScope === "company") {
-    allowedBranches = branchesData || []
-  } else if (accessLevelScope === "branch" && branchId) {
-    allowedBranches = branchesData?.filter((b) => b.id === branchId) || []
-  }
+  // Show all company branches in the sidebar for now.
+  // Access restrictions for branch-specific behavior should be enforced
+  // deeper in the branch pages, not here.
+  const allowedBranches = branchesData || []
 
   // Step 8: Modules
   const { data: modulesData } = await supabase

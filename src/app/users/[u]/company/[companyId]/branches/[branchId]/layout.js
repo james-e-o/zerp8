@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useContext, createContext } from "react"
+import { useEffect, useState, useContext } from "react"
 import { useRouter, useParams } from "next/navigation"
 import supabase from "@/config/supabaseClient"
 import { toast } from "sonner"
@@ -14,28 +14,19 @@ import { CompanyInfoContext } from "../../companyInfoProvider"
 import { RefreshContext } from "@/app/users/[u]/pageLayoutProvider"
 import { BranchContext } from "./branchContext"
 
-
 export default function BranchLayout({ children }) {
   const router = useRouter()
   const params = useParams()
   const { refreshKey } = useContext(RefreshContext)
-  const parentContext = useContext(CompanyInfoContext) // Get parent context
+  const parentContext = useContext(CompanyInfoContext)
 
-  const [currentBranch, setCurrentBranch] = useState()  // ← ADD CURRENT BRANCH STATE
-  const [branchModules, setBranchModules] = useState([])  // ← ADD BRANCH MODULES STATE
+  const [currentBranch, setCurrentBranch] = useState()
+  const [branchModules, setBranchModules] = useState([])
   const [isLoading, setIsLoading] = useState(true)
 
   const { u, companyId, branchId } = params
 
-  function capitalizeFirstLetter(string) {
-    if (typeof string !== 'string' || string.length === 0) {
-      return string; // Handle non-string or empty input
-    }
-    return string.charAt(0).toUpperCase() + string.slice(1);
-  }
-
   useEffect(() => {
-    // Safety timeout: prevent infinite spinner on back navigation
     const timeout = setTimeout(() => {
       console.warn("Branch layout loading timeout - forcing state reset")
       setIsLoading(false)
@@ -52,35 +43,50 @@ export default function BranchLayout({ children }) {
           return
         }
 
-        // Step 2: Fetch the specific branch
+        // Step 2: Fetch the branch, embedding its sensitive info row —
+        // new schema: `branches` (basic) + `branch_info` (sensitive),
+        // not the retired `branches_lite` table.
         const { data: branchData, error: branchError } = await supabase
-          .from("branches_lite")
-          .select("*")
+          .from("branches")
+          .select("*, branch_info(*)")
           .eq("id", branchId)
           .single()
 
         if (branchError || !branchData) {
           toast("Branch not found.")
-          router.push(`/users/${params.u}/company/${params.companyId}/branches`)
+          router.push(`/users/${u}/company/${companyId}/branches`)
           return
         }
 
-        // Step 3: Verify branch belongs to user's company
+        // Step 3: Verify branch belongs to this company
         if (branchData.company !== parentContext?.info?.id) {
           toast("Access denied. Branch does not belong to this company.")
-          router.push(`/users/${params.u}/company/${params.companyId}/branches`)
+          router.push(`/users/${u}/company/${companyId}/branches`)
           return
         }
 
-        // Step 4: Store all modules for sidebar display
+        // Step 4: Verify branch-scoped staff can only view their assigned
+        // branch — company-scope roles and the owner (hasAllBranchAccess)
+        // can view any branch. This check was previously missing entirely.
+        if (!parentContext?.hasAllBranchAccess && parentContext?.branchId !== branchId) {
+          toast("You don't have access to this branch.")
+          router.push(`/users/${u}/company/${companyId}`)
+          return
+        }
+
+        // Step 5: Flatten branch_info onto the branch object for convenience.
+        // PostgREST returns a single object (not an array) here because
+        // branch_info's PK IS branches.id — a strict one-to-one relationship.
+        const infoRow = Array.isArray(branchData.branch_info)
+          ? branchData.branch_info[0]
+          : branchData.branch_info
+
+        setCurrentBranch({ ...branchData, ...infoRow, branch_info: undefined })
         setBranchModules(parentContext.modules || [])
-
-        setCurrentBranch(branchData)
-
       } catch (e) {
         console.error("Branch access error:", e)
         toast("Unexpected error occurred.")
-        router.push(`/users/${params.u}/company/${params.companyId}/branches`)
+        router.push(`/users/${u}/company/${companyId}/branches`)
       } finally {
         setIsLoading(false)
         clearTimeout(timeout)
@@ -90,19 +96,17 @@ export default function BranchLayout({ children }) {
     if (parentContext?.info?.id && branchId) {
       fetchCurrentBranch()
     } else {
-      // If parent context not ready, stop loading to prevent infinite spinner
       clearTimeout(timeout)
       setIsLoading(false)
     }
 
-    // Cleanup: clear timeout on unmount or when dependencies change
     return () => clearTimeout(timeout)
-  }, [branchId, parentContext?.info?.id])
+  }, [branchId, parentContext?.info?.id, parentContext?.branchId, parentContext?.hasAllBranchAccess])
 
   if (isLoading) {
     return (
-      <div className='overflow-hidden flex text-core justify-center items-center h-full'>
-        <Spinner className='size-8 text-army' spinning={true} />
+      <div className="overflow-hidden flex text-core justify-center items-center h-full">
+        <Spinner className="size-8 text-army" spinning={true} />
       </div>
     )
   }
@@ -113,41 +117,28 @@ export default function BranchLayout({ children }) {
     <BranchContext.Provider value={{ currentBranch, modules: branchModules }}>
       <CompanyInfoContext.Provider value={parentContext}>
         <SidebarProvider className="relative">
-        <BranchSidebar company={parentContext.info} modules={branchModules} /> 
+          <BranchSidebar company={parentContext.info} modules={branchModules} />
 
-        <SidebarInset className="h-svh overflow-hidden static">
-          <div className="flex flex-col h-full">
+          <SidebarInset className="h-svh overflow-hidden static">
+            <div className="flex flex-col h-full">
+              <div className="h-12 border-b border-border">
+                <BranchHeader>
+                  <div className="flex">
+                    <Button variant="ghost" size="icon" className="relative ml-3">
+                      <Bell className="h-5 w-5" />
+                      <span className="absolute -top-0.5 -right-0.5 text-[9px] bg-rose-600 translate-x-[-48.8%] translate-y-[48.9%] text-white font-semibold flex items-center justify-center size-3.5 rounded-full">
+                        3
+                      </span>
+                    </Button>
+                  </div>
+                </BranchHeader>
+              </div>
 
-            <div className="h-12 border-b">
-              <BranchHeader>
-                <div className="flex">
-                  <Button variant='ghost' size='icon' className='relative ml-3'>
-                    <Bell className='h-5 w-5' />
-                    <span className='absolute -top-0.5 -right-0.5 text-[9px] bg-red-600 translate-x-[-48.8%] translate-y-[48.9%] text-white font-semibold flex items-center justify-center size-3.5 rounded-full'>3</span>
-                  </Button>
-                </div>
-              </BranchHeader>
+              <div className="grow overflow-y-auto p-2 bg-background">{children}</div>
             </div>
-
-            <div className="grow overflow-y-auto p-2 ">
-              {children}
-            </div>
-
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </CompanyInfoContext.Provider>
+          </SidebarInset>
+        </SidebarProvider>
+      </CompanyInfoContext.Provider>
     </BranchContext.Provider>
   )
 }
-
-
-
-// export const ReusableBranchSidebar = ({children}) => {
-//   const { info, modules } = useContext(CompanyInfoContext)
-//   return (
-     
-//   )
-// }
-
-

@@ -87,7 +87,7 @@ export default function NewBranchPage() {
       }
 
       toast.success('✨ Branch created successfully!');
-      router.push(`/users/${params.u}/company/${params.companySlug}/branches`);
+      router.push(`/users/${params.u}/company/${params.companyId}/branches`);
     } catch (err) {
       toast.error('An error occurred while creating the branch')
       console.error('Error:', err)
@@ -106,7 +106,7 @@ export default function NewBranchPage() {
                 <h1 className="text-2xl font-bold text-core mb-2">Create a new branch</h1>
                 <p className="text-sm text-slate-600">Set up your branch profile and initial settings</p>
               </div>
-              <Link href={`/users/${params.u}/company/${params.companySlug}/branches`}>
+              <Link href={`/users/${params.u}/company/${params.companyId}/branches`}>
                 <Button variant={'outline'} className="text-neutral-500 h-7 hover:text-black text-xs">
                   ✕
                 </Button>
@@ -211,7 +211,7 @@ export default function NewBranchPage() {
 
             {/* Actions */}
             <div className="flex justify-end gap-3 mt-8">
-              <Link href={`/users/${params.u}/company/${params.companySlug}/branches`}>
+              <Link href={`/users/${params.u}/company/${params.companyId}/branches`}>
                 <Button variant="outline" className="text-sm">
                   Cancel
                 </Button>
