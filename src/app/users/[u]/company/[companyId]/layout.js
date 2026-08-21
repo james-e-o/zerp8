@@ -101,11 +101,51 @@ export default async function CompanyLayout({ children, params }) {
   // deeper in the branch pages, not here.
   const allowedBranches = branchesData || []
 
-  // Step 8: Modules
-  const { data: modulesData } = await supabase
-    .from("modules")
-    .select("*")
-    .eq("status", "active")
+  // Step 8: Modules - Fetch only modules that match current subscription plan
+  // Get company's current subscription plan level
+  let currentPlanLevel = null
+
+  const { data: subscription } = await supabase
+    .from("subscriptions")
+    .select("product_id")
+    .eq("company_id", company.id)
+    .in("status", ["active", "trial"])
+    .maybeSingle()
+
+  if (subscription?.product_id) {
+    const { data: planData } = await supabase
+      .from("plans")
+      .select("level")
+      .eq("bachs_product_id", subscription.product_id)
+      .maybeSingle()
+
+    if (planData) {
+      currentPlanLevel = planData.level
+    }
+  }
+
+  // Fetch modules where min_plan_level IS NULL (free) OR min_plan_level <= currentPlanLevel
+  let modulesData = []
+
+  if (currentPlanLevel !== null) {
+    // Company has a subscription plan - fetch modules available for this level
+    const { data } = await supabase
+      .from("modules")
+      .select("*")
+      .eq("status", "active")
+      .or(`min_plan_level.is.null,min_plan_level.lte.${currentPlanLevel}`)
+
+    modulesData = data || []
+  } else {
+    // No subscription - only free modules (min_plan_level IS NULL)
+    const { data } = await supabase
+      .from("modules")
+      .select("*")
+      .eq("status", "active")
+      .is("min_plan_level", null)
+
+    modulesData = data || []
+  }
 
   const info = {
     ...company,
@@ -122,7 +162,7 @@ export default async function CompanyLayout({ children, params }) {
   return (
     <CompanyLayoutClient
       info={info}
-      modules={modulesData || []}
+      modules={modulesData}
       branches={allowedBranches}
       currencies={currenciesArray || []}
       accessLevels={accessLevelsData || []}

@@ -13,6 +13,12 @@ export function StaffProvider({ children, companyId }) {
   const [permissionKeysMetadata, setPermissionKeysMetadata] = useState({});
   const [isLoadingPermissions, setIsLoadingPermissions] = useState(true);
 
+  // Count of items awaiting attention on the Onboarding page
+  // (pending invitations + pending staff onboarding submissions),
+  // used to render the notification badge on the Onboarding nav tab.
+  const [pendingOnboardingCount, setPendingOnboardingCount] = useState(0);
+  const [isLoadingOnboardingCount, setIsLoadingOnboardingCount] = useState(true);
+
   // Fetch staff data on mount and when companyId changes
   useEffect(() => {
     async function fetchStaffData() {
@@ -105,6 +111,47 @@ export function StaffProvider({ children, companyId }) {
     fetchPermissionKeys();
   }, []);
 
+  // Fetch counts for the Onboarding notification badge:
+  // pending company_invites + pending staff_pending_acceptance records.
+  useEffect(() => {
+    async function fetchPendingOnboardingCount() {
+      if (!companyId) {
+        setIsLoadingOnboardingCount(false);
+        return;
+      }
+
+      try {
+        setIsLoadingOnboardingCount(true);
+
+        const [invitesResult, staffPendingResult] = await Promise.all([
+          supabase
+            .from('company_invites')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', companyId)
+            .eq('status', 'pending'),
+          supabase
+            .from('staff_pending_acceptance')
+            .select('id', { count: 'exact', head: true })
+            .eq('company', companyId)
+            .eq('status', 'pending'),
+        ]);
+
+        if (invitesResult.error) throw invitesResult.error;
+        if (staffPendingResult.error) throw staffPendingResult.error;
+
+        const total = (invitesResult.count || 0) + (staffPendingResult.count || 0);
+        setPendingOnboardingCount(total);
+      } catch (error) {
+        console.error('Error fetching pending onboarding count:', error);
+        setPendingOnboardingCount(0);
+      } finally {
+        setIsLoadingOnboardingCount(false);
+      }
+    }
+
+    fetchPendingOnboardingCount();
+  }, [companyId]);
+
   // Function to fetch access level permissions
   const getAccessLevelPermissions = async (accessLevelKey) => {
     try {
@@ -173,6 +220,40 @@ export function StaffProvider({ children, companyId }) {
     }
   };
 
+  // Function to refetch the onboarding badge count manually
+  // (call this after accepting/rejecting an invite or a pending staff record
+  // so the badge updates immediately without a full page reload).
+  const refetchPendingOnboardingCount = async () => {
+    if (!companyId) return;
+
+    try {
+      setIsLoadingOnboardingCount(true);
+
+      const [invitesResult, staffPendingResult] = await Promise.all([
+        supabase
+          .from('company_invites')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', companyId)
+          .eq('status', 'pending'),
+        supabase
+          .from('staff_pending_acceptance')
+          .select('id', { count: 'exact', head: true })
+          .eq('company', companyId)
+          .eq('status', 'pending'),
+      ]);
+
+      if (invitesResult.error) throw invitesResult.error;
+      if (staffPendingResult.error) throw staffPendingResult.error;
+
+      const total = (invitesResult.count || 0) + (staffPendingResult.count || 0);
+      setPendingOnboardingCount(total);
+    } catch (error) {
+      console.error('Error refetching pending onboarding count:', error);
+    } finally {
+      setIsLoadingOnboardingCount(false);
+    }
+  };
+
   const value = {
     staffData,
     isLoadingStaff,
@@ -182,6 +263,9 @@ export function StaffProvider({ children, companyId }) {
     permissionKeysMetadata,
     isLoadingPermissions,
     getAccessLevelPermissions,
+    pendingOnboardingCount,
+    isLoadingOnboardingCount,
+    refetchPendingOnboardingCount,
   };
 
   return (

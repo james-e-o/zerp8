@@ -16,18 +16,20 @@ import { useSidebar } from "@/components/ui/sidebar";
 import BranchSidebarContent from "./branch-sidebar-content";
 import BranchSidebarFooter from "./branch-sidebar-footer";
 import { AppSidebarHeader } from "../app-sidebar/app-sidebar-header";
+import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext";
 
 
 export function BranchSidebar({modules, company,...props }) {
     const isMobile = useIsMobile()
     const params = useParams()
     const {data,setData} = useContext(DataContext)
+    const { currentBranch } = useContext(BranchContext)
 
   return (
     <Sidebar   className={''} collapsible="icon" {...props}>
       <AppSidebarHeader/>
       <BranchSidebarContent modules={modules} company={company} />
-      <BranchSidebarFooter params={params} profile={data.profile}/>
+      <BranchSidebarFooter params={params} profile={data.profile} branch={currentBranch}/>
       <SidebarRail />
     </Sidebar>
   )

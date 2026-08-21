@@ -7,12 +7,23 @@ import { CompanyInfoContext } from "../../companyInfoProvider";
 import { toast } from "sonner";
 import Image from "next/image";
 import supabase from "@/config/supabaseClient";
-import {  AlertDialog,  AlertDialogAction,  AlertDialogCancel,  AlertDialogContent,  AlertDialogDescription,  AlertDialogTitle,} from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function StaffOnboarding() {
   const [loading, setLoading] = useState(false);
-  const { info, user } = useContext(CompanyInfoContext);
+  // `staff_id` is the authenticated user's uuid (see layout.js) — there is
+  // no `user` key on this context. Using `user?.id` here always resolved
+  // to undefined.
+  const { info, staff_id } = useContext(CompanyInfoContext);
 
+  const [companyEmail, setCompanyEmail] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [showExistsDialog, setShowExistsDialog] = useState(false);
   const [showAlreadyMemberDialog, setShowAlreadyMemberDialog] = useState(false);
@@ -31,6 +42,27 @@ export default function StaffOnboarding() {
     return () => clearInterval(timer);
   }, [cooldownSeconds]);
 
+  // `companies` has no `email` column — it lives on `company_info`, which
+  // CompanyInfoContext's `info` object doesn't carry. Fetched separately
+  // here rather than widening the shared layout query.
+  useEffect(() => {
+    if (!info?.id) return;
+    let cancelled = false;
+
+    supabase
+      .from("company_info")
+      .select("email")
+      .eq("company_id", info.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setCompanyEmail(data?.email ?? null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [info?.id]);
+
   const callInviteEdgeFunction = async (email, isResend = false) => {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
@@ -41,7 +73,7 @@ export default function StaffOnboarding() {
     const payload = {
       email,
       company_id: info.id,
-      invited_by: user?.id,
+      invited_by: staff_id,
       is_resend: isResend,
     };
 
@@ -83,7 +115,6 @@ export default function StaffOnboarding() {
         if (existing.status === "accepted") {
           setShowAlreadyMemberDialog(true);
         } else {
-          // Calculate cooldown
           if (existing.last_sent) {
             const lastSentTime = new Date(existing.last_sent).getTime();
             const remainingMs = lastSentTime + COOLDOWN_MINUTES * 60 * 1000 - Date.now();
@@ -99,7 +130,6 @@ export default function StaffOnboarding() {
         return;
       }
 
-      // New Invite
       await sendNewInvite();
     } catch (err) {
       toast.dismiss(checkingToast);
@@ -150,120 +180,122 @@ export default function StaffOnboarding() {
   }
 
   return (
-    <div className=" justify-center items-center flex grow">
-    <div className=" font-WixMade bg-white shadow-md border rounded-lg -mt-12 p-6 min-w-2xl w-fit">
-      {/* Logo Header */}
-      <div className="flex scale-[85%] justify-center items-center w-full -mt-2 -mb-2">
-        <div className="flex pt-0 md:pt-0 size-8 justify-center">
-          <Image
-            className="dark:invert w-7/8 scale-75"
-            src="/logo.png"
-            alt="logo"
-            width={200}
-            height={200}
-            priority
-          />
+    <div className="justify-center items-center flex grow">
+      <div className="bg-card shadow-md border border-border rounded-lg -mt-12 p-6 min-w-2xl w-fit">
+        {/* Logo Header */}
+        <div className="flex scale-[85%] justify-center items-center w-full -mt-2 -mb-2">
+          <div className="flex pt-0 md:pt-0 size-8 justify-center">
+            <Image
+              className="dark:invert w-7/8 scale-75"
+              src="/logo.png"
+              alt="logo"
+              width={200}
+              height={200}
+              priority
+            />
+          </div>
+          <p className="font-Lato text-army -ml-0.5 text-2xl font-extrabold">
+            NEXSHELF
+          </p>
         </div>
-        <p className="font-Lato text-army -ml-0.5 text-2xl font-extrabold">
-          NEXSHELF
-        </p>
-      </div>
 
-      <h2 className="text-sm text-center font-semibold my-4">Invite Staff Member</h2>
+        <h2 className="text-sm text-center font-semibold my-4 text-foreground">
+          Invite Staff Member
+        </h2>
 
-      {/* Company Info */}
-      <div className="bg-slate-50 rounded-lg p-4 mb-5 border border-slate-200">
-        <div className="space-y-2">
+        {/* Company Info */}
+        <div className="bg-muted rounded-lg p-4 mb-5 border border-border">
+          <div className="space-y-2">
+            <div>
+              <p className="text-xs text-muted-foreground font-medium">Company Name</p>
+              <p className="text-sm font-semibold text-foreground">{info?.name || "Company"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground font-medium">Company Email</p>
+              <p className="text-sm text-core">{companyEmail || "Not set"}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Invite Form */}
+        <form className="flex flex-col gap-3 text-xs" onSubmit={handleInviteSubmit}>
           <div>
-            <p className="text-xs text-gray-500 font-medium">Company Name</p>
-            <p className="text-sm font-semibold text-gray-800">{info?.name || "Company"}</p>
+            <Label className="block mb-1 text-xs text-muted-foreground font-medium">
+              Staff Email Address
+            </Label>
+            <Input
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              type="email"
+              required
+              placeholder="staff@example.com"
+              className="text-xs"
+            />
           </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium">Company Email</p>
-            <p className="text-sm text-blue-600">{info?.email || "Not set"}</p>
-          </div>
-        </div>
+          <Button
+            type="submit"
+            disabled={loading}
+            className="mt-3 bg-core hover:bg-army text-white text-xs py-2 rounded-md font-medium"
+          >
+            {loading ? "Processing..." : "Send Invite"}
+          </Button>
+        </form>
+
+        {/* Existing Invite Dialog */}
+        <AlertDialog open={showExistsDialog} onOpenChange={setShowExistsDialog}>
+          <AlertDialogContent>
+            <AlertDialogTitle>Invite Already Sent</AlertDialogTitle>
+            <AlertDialogDescription>
+              An invite has already been sent to <span className="font-semibold">{inviteEmail}</span>.
+              Would you like to resend?
+            </AlertDialogDescription>
+            <div className="flex gap-3 justify-end mt-4">
+              <AlertDialogCancel
+                onClick={() => {
+                  setShowExistsDialog(false);
+                  setExistingInvite(null);
+                  setInviteEmail("");
+                  setCooldownSeconds(0);
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleResend}
+                disabled={resendLoading || cooldownSeconds > 0}
+                className="bg-core hover:bg-army"
+              >
+                {resendLoading
+                  ? "Resending..."
+                  : cooldownSeconds > 0
+                  ? `Resend in ${cooldownSeconds}s`
+                  : "Resend Invite"}
+              </AlertDialogAction>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Already Member Dialog */}
+        <AlertDialog open={showAlreadyMemberDialog} onOpenChange={setShowAlreadyMemberDialog}>
+          <AlertDialogContent>
+            <AlertDialogTitle>User Already a Member</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold">{inviteEmail}</span> is already a member of this company.
+            </AlertDialogDescription>
+            <div className="flex gap-3 justify-end mt-4">
+              <AlertDialogCancel
+                onClick={() => {
+                  setShowAlreadyMemberDialog(false);
+                  setExistingInvite(null);
+                  setInviteEmail("");
+                }}
+              >
+                Close
+              </AlertDialogCancel>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
-
-      {/* Invite Form */}
-      <form className="flex flex-col gap-3 text-xs" onSubmit={handleInviteSubmit}>
-        <div>
-          <Label className="block mb-1 text-xs text-gray-600 font-medium">
-            Staff Email Address
-          </Label>
-          <Input
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            type="email"
-            required
-            placeholder="staff@example.com"
-            className="text-xs"
-          />
-        </div>
-        <Button
-          type="submit"
-          disabled={loading}
-          className="mt-3 bg-core hover:bg-army text-white text-xs py-2 rounded-md font-medium"
-        >
-          {loading ? "Processing..." : "Send Invite"}
-        </Button>
-      </form>
-
-      {/* Existing Invite Dialog */}
-      <AlertDialog open={showExistsDialog} onOpenChange={setShowExistsDialog}>
-        <AlertDialogContent>
-          <AlertDialogTitle>Invite Already Sent</AlertDialogTitle>
-          <AlertDialogDescription>
-            An invite has already been sent to <span className="font-semibold">{inviteEmail}</span>.
-            Would you like to resend?
-          </AlertDialogDescription>
-          <div className="flex gap-3 justify-end mt-4">
-            <AlertDialogCancel
-              onClick={() => {
-                setShowExistsDialog(false);
-                setExistingInvite(null);
-                setInviteEmail("");
-                setCooldownSeconds(0);
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleResend}
-              disabled={resendLoading || cooldownSeconds > 0}
-              className="bg-core hover:bg-army"
-            >
-              {resendLoading
-                ? "Resending..."
-                : cooldownSeconds > 0
-                ? `Resend in ${cooldownSeconds}s`
-                : "Resend Invite"}
-            </AlertDialogAction>
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Already Member Dialog */}
-      <AlertDialog open={showAlreadyMemberDialog} onOpenChange={setShowAlreadyMemberDialog}>
-        <AlertDialogContent>
-          <AlertDialogTitle>User Already a Member</AlertDialogTitle>
-          <AlertDialogDescription>
-            <span className="font-semibold">{inviteEmail}</span> is already a member of this company.
-          </AlertDialogDescription>
-          <div className="flex gap-3 justify-end mt-4">
-            <AlertDialogCancel
-              onClick={() => {
-                setShowAlreadyMemberDialog(false);
-                setExistingInvite(null);
-                setInviteEmail("");
-              }}
-            >
-              Close
-            </AlertDialogCancel>
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
     </div>
   );
 }

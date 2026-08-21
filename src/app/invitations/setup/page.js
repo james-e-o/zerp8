@@ -75,57 +75,58 @@ function SignupPageContent() {
       if (!isMounted) return
 
       try {
-        const emailParam = searchParams.get('email')
-        const errorParam = searchParams.get('error')
-        const errorCode = searchParams.get('error_code')
+      const emailParam = searchParams.get('email')
+      const errorParam = searchParams.get('error')
+      const errorCode = searchParams.get('error_code')
 
-        const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        const hashError = hashParams.get('error')
-        const hashErrorCode = hashParams.get('error_code')
-        const hasError = errorParam || hashError
+      const hashParams = new URLSearchParams(window.location.hash.substring(1))
+      const hashError = hashParams.get('error')
+      const hashErrorCode = hashParams.get('error_code')
+      const hasError = errorParam || hashError
 
-        const hasSession = !!session?.user
+      // Check the link-level error FIRST, regardless of any existing session
+      if (hasError && emailParam && (errorCode === 'otp_expired' || hashErrorCode === 'otp_expired')) {
+        setUserEmail(emailParam)
+        setCaseType('continue-onboarding')
+        setLoading(false)
+        setHasValidated(true)
+        return
+      }
 
-        console.log('Validation parameters:', { emailParam, errorParam, errorCode, hashError, hashErrorCode, hasSession })
+      if (hasError) {
+        setError('System failure, contact your inviting company.')
+        setCaseType('error')
+        setLoading(false)
+        setHasValidated(true)
+        return
+      }
 
-        if (!hasSession) {
-          if (hasError && emailParam && (errorCode === 'otp_expired' || hashErrorCode === 'otp_expired')) {
-            setUserEmail(emailParam)
-            setCaseType('continue-onboarding')
-            setLoading(false)
-            setHasValidated(true)
-            return
-          }
+      const hasSession = !!session?.user
 
-          if (hasError) {
-            setError('System failure, contact your inviting company.')
-            setCaseType('error')
-            setLoading(false)
-            setHasValidated(true)
-            return
-          }
+      if (!hasSession) {
+        setError('You have not been invited by any company.')
+        setCaseType('no-invite')
+        setLoading(false)
+        setHasValidated(true)
+        return
+      }
 
-          // No session, no error — covers both "no email param" and
-          // "email param but no error" cases from the original logic.
-          setError('You have not been invited by any company.')
-          setCaseType('no-invite')
-          setLoading(false)
-          setHasValidated(true)
-          return
-        }
-
-        // STEP 2: We have a confirmed session — check public.users
+// ...rest of the "we have a confirmed session" logic unchanged
+        // We have a confirmed session — the auth.users row (and by
+        // extension the public.users row, via sync_confirmed_user) already
+        // exists at this point; that was never in question. The real
+        // question is whether the profile is actually complete — username,
+        // handle, and password all set — which is exactly what
+        // check_profile_completed() verifies directly, rather than us
+        // guessing from whether one column happens to be non-null.
         const user = session.user
         setUserEmail(user.email)
 
-        const { data: publicUserData, error: userError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('id', user.id)
-          .maybeSingle()
+        const { data: isComplete, error: checkError } = await supabase
+          .rpc('check_profile_completed', { p_user_id: user.id })
 
-        if (userError) {
-          console.error('Error checking public.users:', userError)
+        if (checkError) {
+          console.error('Error checking profile completion:', checkError)
           setError('An error occurred. Please contact your administrator.')
           setCaseType('error')
           setLoading(false)
@@ -133,7 +134,12 @@ function SignupPageContent() {
           return
         }
 
-        if (!publicUserData) {
+        // isComplete is null if no public.users row matched at all (should
+        // not happen given the trigger, but treated as incomplete rather
+        // than crashing if it ever does) — otherwise it's the real boolean.
+        const profileIncomplete = isComplete !== true
+
+        if (profileIncomplete) {
           const metadata = user.user_metadata
           if (metadata?.company_id && metadata?.company_name) {
             setCompanyData({
@@ -157,6 +163,8 @@ function SignupPageContent() {
           }
         }
 
+        // Profile IS complete (username, handle, and password all set) —
+        // this person genuinely already finished signup before.
         setError("You've been successfully signed up. Log in to check your invite status.")
         setCaseType('already-signed-up')
         setLoading(false)
@@ -171,24 +179,46 @@ function SignupPageContent() {
       }
     }
 
-    const hashHasAuthTokens = window.location.hash.includes('access_token')
+    const hashParams = new URLSearchParams(window.location.hash.substring(1))
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
+    const hashHasAuthTokens = Boolean(accessToken && refreshToken)
 
     if (hashHasAuthTokens) {
-      // Confirmation link just landed — wait for Supabase to finish
-      // exchanging the hash for a session instead of racing getSession()
-      // against it. This is what was causing confirmed users with clean
-      // URLs to incorrectly land on "not invited."
+      let validationStarted = false
+      const validateOnce = (session) => {
+        if (validationStarted) return
+        validationStarted = true
+        runValidation(session)
+      }
+
       const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          listener.subscription.unsubscribe()
-          runValidation(session)
+          validateOnce(session)
         }
       })
 
+      const establishSession = async () => {
+        const { data, error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        })
+
+        if (sessionError) {
+          console.error('Unable to establish invitation session:', sessionError)
+          const { data: currentSession } = await supabase.auth.getSession()
+          validateOnce(currentSession?.session)
+          return
+        }
+
+        validateOnce(data?.session)
+      }
+
+      establishSession()
+
       const timeout = setTimeout(async () => {
-        listener.subscription.unsubscribe()
         const { data } = await supabase.auth.getSession()
-        runValidation(data?.session)
+        validateOnce(data?.session)
       }, 4000)
 
       return () => {
@@ -351,7 +381,6 @@ export function SignupForm({
         .eq("username", usernameToCheck.toLowerCase())
         .maybeSingle()
 
-      // Ignore stale responses if the user kept typing
       if (requestId !== usernameCheckId.current) return
 
       if (error) {
@@ -420,46 +449,6 @@ export function SignupForm({
     setIsSubmitting(true)
 
     try {
-      const handle = formData.username.substring(1)
-
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        setError('Failed to get user information')
-        setIsSubmitting(false)
-        return
-      }
-
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session?.access_token) {
-        throw new Error("No active session. Please log in again.")
-      }
-
-      const { error: rpcError } = await supabase.functions.invoke(
-        'complete-user-profile',
-        {
-          body: {
-            password: formData.password,
-            username: formData.username,
-            handle: handle,
-            email: userEmail,
-            invited_by: companyData?.invited_by,
-            company: companyData?.id,
-            company_invite: true,
-            invite_id: companyData?.invite_id
-          },
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      )
-
-      if (rpcError) {
-        console.error('Error:', rpcError)
-        setError(rpcError.message || 'Failed to complete your profile')
-        setIsSubmitting(false)
-        return
-      }
-
       setSignupSuccess(true)
 
     } catch (err) {
@@ -694,8 +683,10 @@ export function ContinueOnboardingForm({ userEmail }) {
   if (sentSuccessfully) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-12">
-        <div className="text-army mb-2">
-          <TriangleAlert className="size-20" />
+        <div className="w-16 h-16 rounded-full bg-green-200 flex items-center justify-center">
+          <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
         </div>
         <div className="bg-core/10 border-2 border-core/30 rounded-lg p-6 text-center">
           <p className="text-core font-semibold mb-2">Verification Code Sent</p>

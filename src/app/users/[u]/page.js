@@ -83,7 +83,6 @@ function UserDashboardContent() {
   useEffect(() => {
   const checkSession = async () => {
     const { data: { session } } = await supabase.auth.getSession()
-    console.log('Access token:', session?.access_token)
   }
   checkSession()
 }, [])

@@ -195,7 +195,7 @@ export default function SignupPage() {
                       </div>
                       
                     </a>
-                    <h1 className="text-xl text-alt font-bold">Get Started @ Nexshelf Pro.</h1>
+                    <h1 className="text-xl text-alt font-bold">Get Started @Zerp-8</h1>
                     <FieldDescription>
                       Already have an account? <Link href="/accounts/login">Login</Link>
                     </FieldDescription>

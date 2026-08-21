@@ -13,30 +13,65 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from '@/components/ui/table';
 import {  Dialog,  DialogContent,  DialogDescription,  DialogFooter,  DialogHeader,  DialogTitle,} from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CheckCircle2, XCircle, Clock, FileText, Mail, Eye } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, FileText, Mail, Eye, HelpCircle, Ban } from 'lucide-react';
 import Link from 'next/link';
 
 const statusConfig = {
-  pending: { label: 'Pending Review', icon: Clock, color: 'bg-yellow-100 text-yellow-800' },
-  approved: { label: 'Approved', icon: CheckCircle2, color: 'bg-green-100 text-green-800' },
-  rejected: { label: 'Rejected', icon: XCircle, color: 'bg-red-100 text-red-800' },
+  pending: { label: 'Pending Review', icon: Clock, color: 'bg-amber-100 text-amber-800' },
+  approved: { label: 'Approved', icon: CheckCircle2, color: 'bg-emerald-100 text-emerald-800' },
+  rejected: { label: 'Rejected', icon: XCircle, color: 'bg-rose-100 text-rose-800' },
 };
 
+// Added 'declined' — for invitations the person explicitly declined,
+// distinct from 'expired' (invite just timed out unanswered).
 const invitationStatusConfig = {
-  pending: { label: 'Pending', icon: Clock, color: 'bg-yellow-100 text-yellow-800' },
-  accepted: { label: 'Accepted', icon: CheckCircle2, color: 'bg-green-100 text-green-800' },
-  expired: { label: 'Expired', icon: XCircle, color: 'bg-red-100 text-red-800' },
+  pending: { label: 'Pending', icon: Clock, color: 'bg-amber-100 text-amber-800' },
+  accepted: { label: 'Accepted', icon: CheckCircle2, color: 'bg-emerald-100 text-emerald-800' },
+  declined: { label: 'Declined', icon: Ban, color: 'bg-gray-100 text-gray-700' },
+  expired: { label: 'Expired', icon: XCircle, color: 'bg-rose-100 text-rose-800' },
 };
 
 const onboardingStatusConfig = {
-  pending: { label: 'Awaiting Review', color: 'bg-orange-100 text-orange-800' },
-  onboarded: { label: 'Onboarded', color: 'bg-green-100 text-green-800' },
-  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800' },
-  info_requested: { label: 'More Info Requested', color: 'bg-purple-100 text-purple-800' },
+  pending: { label: 'Awaiting Review', color: 'bg-amber-100 text-amber-800' },
+  onboarded: { label: 'Onboarded', color: 'bg-emerald-100 text-emerald-800' },
+  rejected: { label: 'Rejected', color: 'bg-rose-100 text-rose-800' },
+  info_requested: { label: 'More Info Requested', color: 'bg-core_light text-core' },
 };
 
 // TODO: confirm the actual storage bucket name used for staff documents
 const STAFF_DOCS_BUCKET = 'staff-documents';
+
+// ─────────────────────────────────────────────────────────────
+// Stat strip — hairline-divided, matches the pattern used across
+// the company/branch/staff dashboards instead of 3 separate cards.
+// Column count is dynamic (3 for Applications, 4 for Invitations)
+// but must stay literal Tailwind classes for JIT to pick them up.
+// ─────────────────────────────────────────────────────────────
+const STAT_STRIP_COLUMN_CLASSES = {
+  2: 'grid-cols-2',
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+  5: 'grid-cols-5',
+};
+
+function StatStrip({ items }) {
+  const gridClass = STAT_STRIP_COLUMN_CLASSES[items.length] || 'grid-cols-3';
+
+  return (
+    <div className={`bg-card border border-border rounded-xl grid ${gridClass} divide-x divide-border`}>
+      {items.map((item, i) => (
+        <div key={i} className="px-5 py-4">
+          <p className="text-xs text-muted-foreground font-medium">{item.label}</p>
+          {item.loading ? (
+            <div className="h-6 w-10 bg-muted rounded animate-pulse mt-1.5" />
+          ) : (
+            <p className={`text-xl font-mono font-semibold mt-1 ${item.colorClass}`}>{item.value}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function OnboardingPage() {
   const { info, user, branches: contextBranches, accessLevels: contextAccessLevels } = useContext(CompanyInfoContext);
@@ -162,7 +197,10 @@ export default function OnboardingPage() {
     fetchStaffPending();
   }, [companyId]);
 
-  // Fetch branches for the company to populate the Branch select
+  // Fetch branches for the company to populate the Branch select.
+  // Fixed: was querying `branches_lite`, which no longer exists —
+  // this silently returned an empty list, leaving the Branch select
+  // in the review panel permanently empty.
   useEffect(() => {
     const fetchBranches = async () => {
       if (!companyId) {
@@ -174,7 +212,7 @@ export default function OnboardingPage() {
         setIsLoadingBranches(true);
 
         const { data, error } = await supabase
-          .from('branches_lite')
+          .from('branches')
           .select('id, name, slug, isheadoffice')
           .eq('company', companyId)
           .order('name', { ascending: true });
@@ -201,12 +239,6 @@ export default function OnboardingPage() {
     return head?.id || '';
   };
 
-  // Sync selected defaults when opening a staff record for review.
-  // FIX: keyed off selectedStaffRecord?.id (not the whole object) and `info` removed
-  // from deps — `info` was never read here, and if the context provider re-creates
-  // that object on every render, this effect was re-firing on every Select change
-  // and snapping the selection back to the record's default.
-
   useEffect(() => {
     if (selectedStaffRecord) {
       setSelectedBranchId(getDefaultBranchId(selectedStaffRecord.branch));
@@ -219,7 +251,6 @@ export default function OnboardingPage() {
     }
   }, [selectedStaffRecord?.id]);
 
-  // Applications handlers
   const handleViewDetails = (application) => {
     setSelectedApp(application);
     setIsDetailDialogOpen(true);
@@ -234,7 +265,9 @@ export default function OnboardingPage() {
     return matchesStatus && matchesSearch;
   });
 
-  // Invitations filters
+  // Normalizes raw DB status values into the four buckets the UI understands:
+  // pending, accepted, declined, expired. Anything else (e.g. a literal
+  // 'declined' value already written by a decline flow) passes through as-is.
   const normalizedInvitations = invitations.map((invite) => {
     const normalizedStatus = invite.status === 'registered' || invite.status === 'pending'
       ? 'pending'
@@ -260,7 +293,6 @@ export default function OnboardingPage() {
     return email.includes(invSearchTerm.toLowerCase()) || fullName.includes(invSearchTerm.toLowerCase());
   });
 
-  // Staff onboarding helpers
   const getPublicFileUrl = (path) => {
     if (!path) return '#';
     if (path.startsWith('http')) return path;
@@ -283,18 +315,9 @@ export default function OnboardingPage() {
 
   const handleAcceptStaff = async (pendingId) => {
     if (!pendingId) return;
-    console.log(
-      'Accepting staff onboarding for pendingId:', pendingId, 
-      'with branch:', selectedBranchId, 
-      'access level:', selectedAccessLevel, 
-      'role:', selectedRoleId
-    );
     try {
       setIsProcessingStaffAction(true);
 
-      // Creates the staff record (insert into `staff`) via the RPC.
-      // The `staff` insert fires accept_company_invite_after_staff_insert,
-      // staff_lite_after_insert, etc. automatically.
       const { error } = await supabase.rpc('accept_staff_onboarding', {
         p_pending_id: pendingId,
         p_branch_id: selectedBranchId || null,
@@ -304,8 +327,6 @@ export default function OnboardingPage() {
 
       if (error) throw error;
 
-      // Record the reviewer's note against review_notes (acceptance notes),
-      // along with who reviewed it and when.
       const { error: reviewUpdateError } = await supabase
         .from('staff_pending_acceptance')
         .update({
@@ -330,7 +351,7 @@ export default function OnboardingPage() {
       setStaffPendingError(err.message || 'Failed to onboard staff member.');
     } finally {
       setIsProcessingStaffAction(false);
-      window.location.reload(); // Refresh the page to reflect the new staff member in the list
+      window.location.reload();
     }
   };
 
@@ -362,7 +383,7 @@ export default function OnboardingPage() {
       setStaffPendingError(err.message || 'Failed to reject application.');
     } finally {
       setIsProcessingStaffAction(false);
-      window.location.reload(); // Refresh the page to reflect the updated staff member status
+      window.location.reload();
     }
   };
 
@@ -407,47 +428,19 @@ export default function OnboardingPage() {
         <div className="flex flex-col gap-4 overflow-y-hidden grow ">
         {/* Applications Tab */}
         <TabsContent value="applications" className="space-y-3 flex flex-col overflow-y-hidden">
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="space-y-2">
-                  <p className=" text-slate-600">Pending Review</p>
-                  <p className="text-xl font-bold text-yellow-600">
-                    {applications.filter(a => a.status === 'pending').length}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="space-y-2">
-                  <p className="text-sm text-slate-600">Approved</p>
-                  <p className="text-3xl font-bold text-green-600">
-                    {applications.filter(a => a.status === 'approved').length}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="space-y-2">
-                  <p className="text-sm text-slate-600">Rejected</p>
-                  <p className="text-3xl font-bold text-red-600">
-                    {applications.filter(a => a.status === 'rejected').length}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <StatStrip
+            items={[
+              { label: 'Pending Review', value: applications.filter(a => a.status === 'pending').length, colorClass: 'text-amber-600' },
+              { label: 'Approved', value: applications.filter(a => a.status === 'approved').length, colorClass: 'text-emerald-600' },
+              { label: 'Rejected', value: applications.filter(a => a.status === 'rejected').length, colorClass: 'text-rose-600' },
+            ]}
+          />
 
-          {/* Filter and Search */}
-           <Card className="rounded-md gap-3 overflow-y-hidden grow p-3">
+          <Card className="rounded-xl border-border gap-3 overflow-y-hidden grow p-3">
             <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Applications</CardTitle>
+              <CardTitle className="text-foreground">Applications</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 grow overflow-y-hidden my-0 p-0">    
-              {/* Status Filter */}
+            <CardContent className="space-y-2 grow overflow-y-hidden my-0 p-0">
               <div className="flex gap-2">
                 {['pending', 'approved', 'rejected'].map(status => (
                   <Button
@@ -455,14 +448,13 @@ export default function OnboardingPage() {
                     variant={appFilterStatus === status ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setAppFilterStatus(status)}
-                    className={appFilterStatus === status ? 'bg-core hover:bg-core/90' : ''}
+                    className={appFilterStatus === status ? 'bg-core hover:bg-core/90 text-white' : 'border-border text-foreground hover:bg-muted'}
                   >
                     {status.charAt(0).toUpperCase() + status.slice(1)}
                   </Button>
                 ))}
               </div>
 
-              {/* Search */}
               <Input
                 placeholder="Search by name or email..."
                 value={appSearchTerm}
@@ -470,10 +462,9 @@ export default function OnboardingPage() {
                 className="max-w-sm"
               />
 
-              {/* Applications Table */}
               {filteredApplications.length === 0 ? (
-                <Alert>
-                  <AlertDescription>No applications found</AlertDescription>
+                <Alert className="border-border">
+                  <AlertDescription className="text-muted-foreground">No applications found</AlertDescription>
                 </Alert>
               ) : (
                 <div className="overflow-x-auto">
@@ -495,12 +486,12 @@ export default function OnboardingPage() {
 
                         return (
                           <TableRow key={application.id}>
-                            <TableCell className="font-medium">
+                            <TableCell className="font-medium text-foreground">
                               {application.data?.firstName} {application.data?.lastName}
                             </TableCell>
-                            <TableCell>{application.email}</TableCell>
-                            <TableCell>{application.data?.phone || '-'}</TableCell>
-                            <TableCell className="text-sm text-slate-600">
+                            <TableCell className="text-muted-foreground">{application.email}</TableCell>
+                            <TableCell className="text-muted-foreground">{application.data?.phone || '-'}</TableCell>
+                            <TableCell className="text-muted-foreground">
                               {new Date(application.submitted_at).toLocaleDateString()}
                             </TableCell>
                             <TableCell>
@@ -513,6 +504,7 @@ export default function OnboardingPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
+                                className="border-border text-foreground hover:bg-muted"
                                 onClick={() => handleViewDetails(application)}
                               >
                                 Review
@@ -528,7 +520,6 @@ export default function OnboardingPage() {
             </CardContent>
           </Card>
 
-          {/* Detail Dialog */}
           <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
@@ -540,33 +531,31 @@ export default function OnboardingPage() {
 
               {selectedApp && (
                 <div className="space-y-6 max-h-96 overflow-y-auto">
-                  {/* Personal Info */}
                   <div>
-                    <h3 className="font-semibold text-slate-900 mb-3">Personal Information</h3>
+                    <h3 className="font-semibold text-foreground mb-3">Personal Information</h3>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <p className="text-slate-600">First Name</p>
-                        <p className="font-medium">{selectedApp.data?.firstName}</p>
+                        <p className="text-muted-foreground">First Name</p>
+                        <p className="font-medium text-foreground">{selectedApp.data?.firstName}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Last Name</p>
-                        <p className="font-medium">{selectedApp.data?.lastName}</p>
+                        <p className="text-muted-foreground">Last Name</p>
+                        <p className="font-medium text-foreground">{selectedApp.data?.lastName}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Email</p>
-                        <p className="font-medium">{selectedApp.email}</p>
+                        <p className="text-muted-foreground">Email</p>
+                        <p className="font-medium text-foreground">{selectedApp.email}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Phone</p>
-                        <p className="font-medium">{selectedApp.data?.phone || '-'}</p>
+                        <p className="text-muted-foreground">Phone</p>
+                        <p className="font-medium text-foreground">{selectedApp.data?.phone || '-'}</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Address */}
                   <div>
-                    <h3 className="font-semibold text-slate-900 mb-3">Address</h3>
-                    <div className="text-sm space-y-1">
+                    <h3 className="font-semibold text-foreground mb-3">Address</h3>
+                    <div className="text-sm space-y-1 text-muted-foreground">
                       <p>{selectedApp.data?.address}</p>
                       <p>
                         {selectedApp.data?.city}, {selectedApp.data?.state} {selectedApp.data?.zipCode}
@@ -574,10 +563,9 @@ export default function OnboardingPage() {
                     </div>
                   </div>
 
-                  {/* Rejection Reason Input (for pending) */}
                   {selectedApp.status === 'pending' && (
                     <div>
-                      <label className="text-sm font-medium text-slate-900">
+                      <label className="text-sm font-medium text-foreground">
                         Rejection Reason (if applicable)
                       </label>
                       <Input
@@ -594,10 +582,10 @@ export default function OnboardingPage() {
               <DialogFooter>
                 {selectedApp?.status === 'pending' && (
                   <div className="flex gap-2">
-                    <Button variant="outline">
+                    <Button variant="outline" className="border-border text-foreground hover:bg-muted">
                       Reject
                     </Button>
-                    <Button className="bg-core hover:bg-core/90">
+                    <Button className="bg-core hover:bg-core/90 text-white">
                       Approve & Create Account
                     </Button>
                   </div>
@@ -605,6 +593,7 @@ export default function OnboardingPage() {
                 {selectedApp?.status !== 'pending' && (
                   <Button
                     variant="outline"
+                    className="border-border text-foreground hover:bg-muted"
                     onClick={() => setIsDetailDialogOpen(false)}
                   >
                     Close
@@ -617,68 +606,29 @@ export default function OnboardingPage() {
 
         {/* Invitations Tab */}
         <TabsContent value="invitations" className="space-y-3 flex flex-col overflow-y-hidden">
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="h-fit p-3 rounded-md">
-              <CardContent className="">
-                <div className="flex items-center gap-4">
-                  <p className=" text-slate-600">Pending</p>
-                  {isLoadingInvitations ? (
-                    <div className="h-6 w-8 bg-slate-200 rounded animate-pulse" />
-                  ) : (
-                    <p className="text-xl font-bold text-yellow-600">
-                      {normalizedInvitations.filter(i => i.normalizedStatus === 'pending').length}
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="h-fit p-3 rounded-md">
-              <CardContent className="">
-                <div className="flex items-center gap-4">
-                  <p className=" text-slate-600">Accepted</p>
-                  {isLoadingInvitations ? (
-                    <div className="h-6 w-8 bg-slate-200 rounded animate-pulse" />
-                  ) : (
-                    <p className="text-xl font-bold text-green-600">
-                      {normalizedInvitations.filter(i => i.normalizedStatus === 'accepted').length}
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="h-fit p-3 rounded-md">
-              <CardContent className="">
-                <div className="flex items-center gap-4">
-                  <p className=" text-slate-600">Expired</p>
-                  {isLoadingInvitations ? (
-                    <div className="h-6 w-8 bg-slate-200 rounded animate-pulse" />
-                  ) : (
-                    <p className="text-xl font-bold text-red-600">
-                      {normalizedInvitations.filter(i => i.normalizedStatus === 'expired').length}
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <StatStrip
+            items={[
+              { label: 'Pending', value: normalizedInvitations.filter(i => i.normalizedStatus === 'pending').length, colorClass: 'text-amber-600', loading: isLoadingInvitations },
+              { label: 'Accepted', value: normalizedInvitations.filter(i => i.normalizedStatus === 'accepted').length, colorClass: 'text-emerald-600', loading: isLoadingInvitations },
+              { label: 'Declined', value: normalizedInvitations.filter(i => i.normalizedStatus === 'declined').length, colorClass: 'text-gray-600', loading: isLoadingInvitations },
+              { label: 'Expired', value: normalizedInvitations.filter(i => i.normalizedStatus === 'expired').length, colorClass: 'text-rose-600', loading: isLoadingInvitations },
+            ]}
+          />
 
-          {/* Filter and Search */}
-          <Card className="rounded-md gap-3 overflow-y-hidden grow p-3">
+          <Card className="rounded-xl border-border gap-3 overflow-y-hidden grow p-3">
             <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="pt-2 font-semibold">Invitations</CardTitle>
+              <CardTitle className="pt-2 font-semibold text-foreground">Invitations</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 grow overflow-y-hidden my-0 p-0">       
-              {/* Search — hidden while a record is being reviewed */}
+            <CardContent className="space-y-2 grow overflow-y-hidden my-0 p-0">
               {!isReviewingStaff && (
                 <>
                   <div className="flex gap-2">
-                    {['pending', 'accepted', 'expired'].map(status => (
+                    {['pending', 'accepted', 'declined', 'expired'].map(status => (
                       <Button
                         key={status}
                         variant={invFilterStatus === status ? 'default' : 'outline'}
                         onClick={() => setInvFilterStatus(status)}
-                        className={invFilterStatus === status ? 'bg-core text-xs hover:bg-core/90' : 'text-xs'}
+                        className={invFilterStatus === status ? 'bg-core text-xs hover:bg-core/90 text-white' : 'text-xs border-border text-foreground hover:bg-muted'}
                       >
                         {status.charAt(0).toUpperCase() + status.slice(1)}
                       </Button>
@@ -695,15 +645,15 @@ export default function OnboardingPage() {
 
               {isReviewingStaff && selectedStaffRecord ? (
                 <div className="space-y-2 h-full overflow-y-auto flex flex-col ">
-                  <Button variant="outline" className="text-xs bg-black text-white h-8 w-fit" onClick={handleBackToStaffList}>
+                  <Button variant="outline" className="text-xs bg-core hover:bg-core/90 text-white h-8 w-fit border-0" onClick={handleBackToStaffList}>
                     ← Go Back
                   </Button>
 
-                  <Card className="border-slate-200 flex-col rounded-md">
+                  <Card className="border-border flex-col rounded-xl">
                     <CardHeader className="">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <CardTitle>
+                          <CardTitle className="text-foreground">
                             {selectedStaffRecord.first_name} {selectedStaffRecord.last_name}
                           </CardTitle>
                           <CardDescription>
@@ -711,7 +661,7 @@ export default function OnboardingPage() {
                           </CardDescription>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Badge className="bg-green-100 text-green-800">
+                          <Badge className="bg-emerald-100 text-emerald-800">
                             <CheckCircle2 className="size-3 mr-1" />
                             Accepted
                           </Badge>
@@ -723,81 +673,81 @@ export default function OnboardingPage() {
                     </CardHeader>
                     <CardContent className="space-y-3 ">
                       <div>
-                        <h3 className="font-semibold text-slate-900 underline italic mb-3">Personal Information</h3>
+                        <h3 className="font-semibold text-foreground mb-3">Personal Information</h3>
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <p className="text-slate-600">First Name</p>
-                            <p className="font-medium">{selectedStaffRecord.first_name || '-'}</p>
+                            <p className="text-muted-foreground">First Name</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.first_name || '-'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-600">Last Name</p>
-                            <p className="font-medium">{selectedStaffRecord.last_name || '-'}</p>
+                            <p className="text-muted-foreground">Last Name</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.last_name || '-'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-600">Gender</p>
-                            <p className="font-medium">{selectedStaffRecord.gender || '-'}</p>
+                            <p className="text-muted-foreground">Gender</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.gender || '-'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-600">Date of Birth</p>
-                            <p className="font-medium">
+                            <p className="text-muted-foreground">Date of Birth</p>
+                            <p className="font-medium text-foreground">
                               {selectedStaffRecord.date_of_birth
                                 ? new Date(selectedStaffRecord.date_of_birth).toLocaleDateString()
                                 : '-'}
                             </p>
                           </div>
                           <div>
-                            <p className="text-slate-600">Phone</p>
-                            <p className="font-medium">{selectedStaffRecord.phone || '-'}</p>
+                            <p className="text-muted-foreground">Phone</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.phone || '-'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-600">Email</p>
-                            <p className="font-medium">{selectedStaffRecord.company_invites?.email || '-'}</p>
+                            <p className="text-muted-foreground">Email</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.company_invites?.email || '-'}</p>
                           </div>
                         </div>
                       </div>
 
                       <div>
-                        <h3 className="font-semibold text-slate-900 mb-3">Address</h3>
-                        <p className="text-sm">{selectedStaffRecord.address || '-'}</p>
+                        <h3 className="font-semibold text-foreground mb-3">Address</h3>
+                        <p className="text-sm text-muted-foreground">{selectedStaffRecord.address || '-'}</p>
                       </div>
 
                       <div>
-                        <h3 className="font-semibold italic underline text-slate-900 mb-3">Identification</h3>
+                        <h3 className="font-semibold text-foreground mb-3">Identification</h3>
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <p className="text-slate-600">ID Type</p>
-                            <p className="font-medium">{selectedStaffRecord.identity_type || '-'}</p>
+                            <p className="text-muted-foreground">ID Type</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.identity_type || '-'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-600">ID Number</p>
-                            <p className="font-medium">{selectedStaffRecord.identity_number || '-'}</p>
+                            <p className="text-muted-foreground">ID Number</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.identity_number || '-'}</p>
                           </div>
                         </div>
                       </div>
 
                       <div>
-                        <h3 className="font-semibold text-slate-900 underline italic mb-3">Bank Details</h3>
+                        <h3 className="font-semibold text-foreground mb-3">Bank Details</h3>
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <p className="text-slate-600">Bank Name</p>
-                            <p className="font-medium">{selectedStaffRecord.bank_name || '-'}</p>
+                            <p className="text-muted-foreground">Bank Name</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.bank_name || '-'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-600">Account Number</p>
-                            <p className="font-medium">{selectedStaffRecord.bank_account || '-'}</p>
+                            <p className="text-muted-foreground">Account Number</p>
+                            <p className="font-medium text-foreground">{selectedStaffRecord.bank_account || '-'}</p>
                           </div>
                         </div>
                       </div>
 
                       <div>
-                        <h3 className="font-semibold text-slate-900 mb-3">Documents</h3>
+                        <h3 className="font-semibold text-foreground mb-3">Documents</h3>
                         <div className="flex flex-wrap gap-3 text-sm">
                           {selectedStaffRecord.photo && (
                             <Link
                               href={getPublicFileUrl(selectedStaffRecord.photo)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 underline flex items-center gap-1"
+                              className="text-core underline flex items-center gap-1"
                             >
                               <FileText className="size-4" /> Photo
                             </Link>
@@ -807,7 +757,7 @@ export default function OnboardingPage() {
                               href={getPublicFileUrl(selectedStaffRecord.signature_file)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 underline flex items-center gap-1"
+                              className="text-core underline flex items-center gap-1"
                             >
                               <FileText className="size-4" /> Signature
                             </Link>
@@ -822,7 +772,7 @@ export default function OnboardingPage() {
                                   href={getPublicFileUrl(path)}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-blue-600 underline flex items-center gap-1"
+                                  className="text-core underline flex items-center gap-1"
                                 >
                                   <FileText className="size-4" /> {label}
                                 </Link>
@@ -831,14 +781,14 @@ export default function OnboardingPage() {
                           {!selectedStaffRecord.photo &&
                             !selectedStaffRecord.signature_file &&
                             (!selectedStaffRecord.additional_documents || selectedStaffRecord.additional_documents.length === 0) && (
-                              <p className="text-slate-500">No documents uploaded</p>
+                              <p className="text-muted-foreground">No documents uploaded</p>
                             )}
                         </div>
                       </div>
 
                       {selectedStaffRecord.status !== 'onboarded' && (
                         <div>
-                          <label className="text-sm font-medium text-slate-900">
+                          <label className="text-sm font-medium text-foreground">
                             Notes (for rejection, info request, or acceptance)
                           </label>
                           <Input
@@ -850,12 +800,11 @@ export default function OnboardingPage() {
                         </div>
                       )}
 
-                      {/* Configuration section */}
                       <div className="mt-3">
-                        <h3 className="font-semibold text-slate-900 italic underline mb-2">Configuration</h3>
+                        <h3 className="font-semibold text-foreground mb-2">Configuration</h3>
                         <div className="grid grid-cols-2 gap-4 text-sm items-center">
                           <div>
-                            <p className="text-slate-600">Branch</p>
+                            <p className="text-muted-foreground">Branch</p>
                             <Select value={selectedBranchId} onValueChange={(v) => setSelectedBranchId(v)}>
                               <SelectTrigger className="mt-1 w-full">
                                 <SelectValue placeholder={isLoadingBranches ? 'Loading...' : 'Select branch'}>{(branchesList || []).find(b => String(b.id) === String(selectedBranchId))?.name}</SelectValue>
@@ -871,7 +820,7 @@ export default function OnboardingPage() {
                           </div>
 
                           <div>
-                            <p className="text-slate-600">Access Level</p>
+                            <p className="text-muted-foreground">Access Level</p>
                             <Select value={selectedAccessLevel} onValueChange={(v) => setSelectedAccessLevel(v)}>
                               <SelectTrigger className="mt-1 w-full">
                                 <SelectValue placeholder="Select access level">{(info?.accessLevels || contextAccessLevels || []).find(a => a.key === selectedAccessLevel)?.name}</SelectValue>
@@ -887,7 +836,7 @@ export default function OnboardingPage() {
                           </div>
 
                           <div className="col-span-1">
-                            <p className="text-slate-600">Role</p>
+                            <p className="text-muted-foreground">Role</p>
                             <Select value={selectedRoleId} onValueChange={(v) => setSelectedRoleId(v)}>
                               <SelectTrigger className="mt-1 w-full">
                                 <SelectValue placeholder={isLoadingRoles ? 'Loading...' : 'Select role'}>{selectedRoleId === 'none' ? 'None' : (rolesList || []).find(r => String(r.id) === String(selectedRoleId))?.role}</SelectValue>
@@ -908,6 +857,7 @@ export default function OnboardingPage() {
                       <div className="flex flex-wrap gap-2 justify-end">
                         <Button
                           variant="outline"
+                          className="border-border text-foreground hover:bg-muted"
                           disabled={isProcessingStaffAction}
                           onClick={() => handleRequestMoreInfo(selectedStaffRecord?.id)}
                         >
@@ -915,13 +865,14 @@ export default function OnboardingPage() {
                         </Button>
                         <Button
                           variant="destructive"
+                          className="bg-rose-600 hover:bg-rose-700 text-white"
                           disabled={isProcessingStaffAction}
                           onClick={() => handleRejectStaff(selectedStaffRecord?.id)}
                         >
                           Reject
                         </Button>
                         <Button
-                          className="bg-core hover:bg-core/90"
+                          className="bg-core hover:bg-core/90 text-white"
                           disabled={isProcessingStaffAction}
                           onClick={() => handleAcceptStaff(selectedStaffRecord?.id)}
                         >
@@ -933,16 +884,16 @@ export default function OnboardingPage() {
                 </div>
               ) : invFilterStatus === 'accepted' ? (
                 isLoadingStaffPending ? (
-                  <Alert>
-                    <AlertDescription>Loading onboarding records...</AlertDescription>
+                  <Alert className="border-border">
+                    <AlertDescription className="text-muted-foreground">Loading onboarding records...</AlertDescription>
                   </Alert>
                 ) : staffPendingError ? (
-                  <Alert>
-                    <AlertDescription>{staffPendingError}</AlertDescription>
+                  <Alert className="border-rose-200 bg-rose-50">
+                    <AlertDescription className="text-rose-700">{staffPendingError}</AlertDescription>
                   </Alert>
                 ) : filteredStaffPending.length === 0 ? (
-                  <Alert>
-                    <AlertDescription>No accepted invitations found</AlertDescription>
+                  <Alert className="border-border">
+                    <AlertDescription className="text-muted-foreground">No accepted invitations found</AlertDescription>
                   </Alert>
                 ) : (
                   <div className="overflow-x-auto overflow-y-auto">
@@ -962,23 +913,23 @@ export default function OnboardingPage() {
 
                           return (
                             <TableRow key={record.id}>
-                              <TableCell className="font-medium">
+                              <TableCell className="font-medium text-foreground">
                                 {record.first_name} {record.last_name}
                               </TableCell>
                               <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <Mail className="size-4 text-gray-400" />
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Mail className="size-4" />
                                   {record.company_invites?.email || '-'}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-sm text-slate-600">
+                              <TableCell className="text-muted-foreground">
                                 {record.company_invites?.created_at
                                   ? new Date(record.company_invites.created_at).toLocaleDateString()
                                   : '-'}
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-wrap gap-1">
-                                  <Badge className="bg-green-100 text-green-800">
+                                  <Badge className="bg-emerald-100 text-emerald-800">
                                     <CheckCircle2 className="size-3 mr-1" />
                                     Accepted
                                   </Badge>
@@ -991,6 +942,7 @@ export default function OnboardingPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  className="border-border text-foreground hover:bg-muted"
                                   disabled={record.status === 'onboarded'}
                                   onClick={() => openStaffReview(record)}
                                 >
@@ -1006,18 +958,17 @@ export default function OnboardingPage() {
                   </div>
                 )
               ) : (
-                /* Pending / Expired: original invitations table */
                 isLoadingInvitations ? (
-                  <Alert>
-                    <AlertDescription>Loading invitations...</AlertDescription>
+                  <Alert className="border-border">
+                    <AlertDescription className="text-muted-foreground">Loading invitations...</AlertDescription>
                   </Alert>
                 ) : invitationError ? (
-                  <Alert>
-                    <AlertDescription>{invitationError}</AlertDescription>
+                  <Alert className="border-rose-200 bg-rose-50">
+                    <AlertDescription className="text-rose-700">{invitationError}</AlertDescription>
                   </Alert>
                 ) : filteredInvitations.length === 0 ? (
-                  <Alert>
-                    <AlertDescription>No invitations found</AlertDescription>
+                  <Alert className="border-border">
+                    <AlertDescription className="text-muted-foreground">No invitations found</AlertDescription>
                   </Alert>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1034,32 +985,33 @@ export default function OnboardingPage() {
                       <TableBody>
                         {filteredInvitations.map((invitation) => {
                           const config = invitationStatusConfig[invitation.status];
-                          const StatusIcon = config.icon;
+                          const StatusIcon = config?.icon || HelpCircle;
 
                           return (
                             <TableRow key={invitation.id}>
                               <TableCell className="font-medium">
-                                <div className="flex items-center gap-2">
-                                  <Mail className="size-4 text-gray-400" />
+                                <div className="flex items-center gap-2 text-foreground">
+                                  <Mail className="size-4 text-muted-foreground" />
                                   {invitation.email}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-sm text-slate-600">
+                              <TableCell className="text-muted-foreground">
                                 {invitation.created_at ? new Date(invitation.created_at).toLocaleDateString() : '-'}
                               </TableCell>
                               <TableCell>
-                                <Badge className={config.color}>
+                                <Badge className={config?.color || 'bg-muted text-muted-foreground'}>
                                   <StatusIcon className="size-3 mr-1" />
-                                  {config.label}
+                                  {config?.label || invitation.status}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-sm text-slate-600">
+                              <TableCell className="text-muted-foreground">
                                 {invitation.expiry ? new Date(invitation.expiry).toLocaleDateString() : '-'}
                               </TableCell>
                               <TableCell>
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  className="border-border text-foreground hover:bg-muted"
                                   disabled={invitation.status !== 'pending'}
                                 >
                                   Resend
@@ -1076,9 +1028,9 @@ export default function OnboardingPage() {
             </CardContent>
           </Card>
 
-          {/* Staff Onboarding Review Dialog (legacy — currently unused since openStaffReview
-              routes to the inline review panel above instead of opening this dialog;
-              left in place and kept in sync in case it's re-enabled) */}
+          {/* Legacy dialog — currently unused since openStaffReview routes to the
+              inline review panel above; left in place and kept in sync in case
+              it's re-enabled. */}
           <Dialog open={isStaffReviewOpen} onOpenChange={setIsStaffReviewOpen}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
@@ -1094,81 +1046,81 @@ export default function OnboardingPage() {
               {selectedStaffRecord && (
                 <div className="space-y-6 max-h-96 overflow-y-auto">
                   <div>
-                    <h3 className="font-semibold text-slate-900 mb-3">Personal Information</h3>
+                    <h3 className="font-semibold text-foreground mb-3">Personal Information</h3>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <p className="text-slate-600">First Name</p>
-                        <p className="font-medium">{selectedStaffRecord.first_name || '-'}</p>
+                        <p className="text-muted-foreground">First Name</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.first_name || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Last Name</p>
-                        <p className="font-medium">{selectedStaffRecord.last_name || '-'}</p>
+                        <p className="text-muted-foreground">Last Name</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.last_name || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Gender</p>
-                        <p className="font-medium">{selectedStaffRecord.gender || '-'}</p>
+                        <p className="text-muted-foreground">Gender</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.gender || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Date of Birth</p>
-                        <p className="font-medium">
+                        <p className="text-muted-foreground">Date of Birth</p>
+                        <p className="font-medium text-foreground">
                           {selectedStaffRecord.date_of_birth
                             ? new Date(selectedStaffRecord.date_of_birth).toLocaleDateString()
                             : '-'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Phone</p>
-                        <p className="font-medium">{selectedStaffRecord.phone || '-'}</p>
+                        <p className="text-muted-foreground">Phone</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.phone || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Email</p>
-                        <p className="font-medium">{selectedStaffRecord.company_invites?.email || '-'}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold text-slate-900 mb-3">Address</h3>
-                    <p className="text-sm">{selectedStaffRecord.address || '-'}</p>
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold text-slate-900 mb-3">Identification</h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-slate-600">ID Type</p>
-                        <p className="font-medium">{selectedStaffRecord.identity_type || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-600">ID Number</p>
-                        <p className="font-medium">{selectedStaffRecord.identity_number || '-'}</p>
+                        <p className="text-muted-foreground">Email</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.company_invites?.email || '-'}</p>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <h3 className="font-semibold text-slate-900 mb-3">Bank Details</h3>
+                    <h3 className="font-semibold text-foreground mb-3">Address</h3>
+                    <p className="text-sm text-muted-foreground">{selectedStaffRecord.address || '-'}</p>
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-foreground mb-3">Identification</h3>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <p className="text-slate-600">Bank Name</p>
-                        <p className="font-medium">{selectedStaffRecord.bank_name || '-'}</p>
+                        <p className="text-muted-foreground">ID Type</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.identity_type || '-'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-600">Account Number</p>
-                        <p className="font-medium">{selectedStaffRecord.bank_account || '-'}</p>
+                        <p className="text-muted-foreground">ID Number</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.identity_number || '-'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-foreground mb-3">Bank Details</h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Bank Name</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.bank_name || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Account Number</p>
+                        <p className="font-medium text-foreground">{selectedStaffRecord.bank_account || '-'}</p>
                       </div>
                     </div>
                   </div>
 
                 <div>
-                    <h3 className="font-semibold text-slate-900 mb-3">Documents</h3>
+                    <h3 className="font-semibold text-foreground mb-3">Documents</h3>
                     <div className="flex flex-wrap gap-3 text-sm">
                       {selectedStaffRecord.photo && (
                         <Link
                           href={getPublicFileUrl(selectedStaffRecord.photo)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 underline flex items-center gap-1"
+                          className="text-core underline flex items-center gap-1"
                         >
                           <FileText className="size-4" /> Photo
                         </Link>
@@ -1178,7 +1130,7 @@ export default function OnboardingPage() {
                           href={getPublicFileUrl(selectedStaffRecord.signature_file)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 underline flex items-center gap-1"
+                          className="text-core underline flex items-center gap-1"
                         >
                           <FileText className="size-4" /> Signature
                         </Link>
@@ -1193,7 +1145,7 @@ export default function OnboardingPage() {
                               href={getPublicFileUrl(path)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 underline flex items-center gap-1"
+                              className="text-core underline flex items-center gap-1"
                             >
                               <FileText className="size-4" /> {label}
                             </Link>
@@ -1203,14 +1155,14 @@ export default function OnboardingPage() {
                         !selectedStaffRecord.signature_file &&
                         (!selectedStaffRecord.additional_documents ||
                           selectedStaffRecord.additional_documents.length === 0) && (
-                          <p className="text-slate-500">No documents uploaded</p>
+                          <p className="text-muted-foreground">No documents uploaded</p>
                         )}
                     </div>
                   </div>
 
                   {selectedStaffRecord.status !== 'onboarded' && (
                     <div>
-                      <label className="text-sm font-medium text-slate-900">
+                      <label className="text-sm font-medium text-foreground">
                         Notes (for rejection, info request, or acceptance)
                       </label>
                       <Input
@@ -1229,6 +1181,7 @@ export default function OnboardingPage() {
                   <div className="flex gap-2 flex-wrap justify-end w-full">
                     <Button
                       variant="outline"
+                      className="border-border text-foreground hover:bg-muted"
                       disabled={isProcessingStaffAction}
                       onClick={() => handleRequestMoreInfo(selectedStaffRecord?.id)}
                     >
@@ -1236,13 +1189,14 @@ export default function OnboardingPage() {
                     </Button>
                     <Button
                       variant="destructive"
+                      className="bg-rose-600 hover:bg-rose-700 text-white"
                       disabled={isProcessingStaffAction}
                       onClick={() => handleRejectStaff(selectedStaffRecord?.id)}
                     >
                       Reject
                     </Button>
                     <Button
-                      className="bg-core hover:bg-core/90"
+                      className="bg-core hover:bg-core/90 text-white"
                       disabled={isProcessingStaffAction}
                       onClick={() => handleAcceptStaff(selectedStaffRecord?.id)}
                     >
@@ -1250,7 +1204,7 @@ export default function OnboardingPage() {
                     </Button>
                   </div>
                 ) : (
-                  <Button variant="outline" onClick={() => setIsStaffReviewOpen(false)}>
+                  <Button variant="outline" className="border-border text-foreground hover:bg-muted" onClick={() => setIsStaffReviewOpen(false)}>
                     Close
                   </Button>
                 )}

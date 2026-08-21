@@ -247,7 +247,7 @@ export default function ModulesManagementPage() {
   return (
     <div className="h-full md:p-3 p-2 overflow-y-auto bg-background">
       {/* Header Section */}
-      <div className="mb-8 border-b border-border pb-6">
+      <div className="mb-6 border-b border-border pb-2">
         <div className="flex items-center justify-between mb-1">
           <div className="flex flex-col p-1">
             <h1 className="text-xl font-semibold text-foreground">Module Access</h1>
@@ -255,13 +255,7 @@ export default function ModulesManagementPage() {
               Manage which features are available to this company
             </p>
           </div>
-          {currentPlan && (
-            <div className="bg-core_light rounded-lg px-4 py-3 border border-core/20">
-              <p className="text-xs text-muted-foreground mb-1">Current Plan</p>
-              <p className="text-sm font-semibold text-core">{currentPlan.name}</p>
-              <p className="text-xs text-muted-foreground mt-1">Level: {currentPlan.level}</p>
-            </div>
-          )}
+
         </div>
 
         {error && (
@@ -291,18 +285,14 @@ export default function ModulesManagementPage() {
             return (
               <article
                 key={module.id}
-                className={`relative rounded-lg border overflow-hidden transition-all ${
-                  hasAccess
-                    ? "border-border bg-card hover:border-core/30"
-                    : "border-core_light bg-core_light/40"
-                }`}
+                className={`relative rounded-lg border overflow-hidden transition-all border-border bg-card hover:border-core/30`}
               >
                 {/* Access Badge */}
                 {!hasAccess && (
                   <div className="absolute right-3 top-3 z-10">
                     <button
                       onClick={() => router.push(`/users/${u}/company/${companyId}/subscriptions/plans`)}
-                      className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-core text-white hover:bg-core/90 transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded-full bg-core text-white hover:bg-core/90 transition-colors cursor-pointer"
                     >
                       <Lock size={12} />
                       Upgrade Required
@@ -336,9 +326,14 @@ export default function ModulesManagementPage() {
                       <h3 className="text-sm font-semibold text-foreground">
                         {module.name}
                       </h3>
-                      {module.premium && (
+                      {!hasAccess && module.min_plan_level && (
                         <span className="text-xs font-medium px-2 py-1 rounded bg-core_light text-core whitespace-nowrap flex-shrink-0">
-                          Premium
+                          {getRequiredPlan(module.min_plan_level)?.name || "Premium"}
+                        </span>
+                      )}
+                      {hasAccess && currentPlan && (
+                        <span className="text-xs font-medium px-2 py-1 rounded bg-core_light text-core whitespace-nowrap flex-shrink-0">
+                          {currentPlan.name}
                         </span>
                       )}
                     </div>

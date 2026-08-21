@@ -122,7 +122,7 @@ export default function LoginPage() {
                   </div>
                  
                 </a>
-                <h1 className="text-xl text-army font-bold">Welcome back @ Nexshelf Pro.</h1>
+                <h1 className="text-xl text-army font-bold">Welcome back @Zerp-8.</h1>
                 <FieldDescription>
                   Don&apos;t have an account? <Link href="/accounts/signup">Sign up</Link>
                 </FieldDescription>
