@@ -327,6 +327,7 @@ export function SignupForm({
     confirmPassword: ''
   })
   const [error, setError] = useState('')
+  const [submissionError, setSubmissionError] = useState('')
   const [usernameExists, setUsernameExists] = useState(null)
   const [checkingUsername, setCheckingUsername] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -425,6 +426,7 @@ export function SignupForm({
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setSubmissionError('')
 
     if (isEmpty(formData.username) || formData.username === '@') {
       setError(message.usernameError)
@@ -449,11 +451,46 @@ export function SignupForm({
     setIsSubmitting(true)
 
     try {
+      const handle = formData.username.substring(1)
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        throw new Error('Failed to get user information')
+      }
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session?.access_token) {
+        throw new Error('No active session. Please log in again.')
+      }
+
+      const { error: rpcError } = await supabase.functions.invoke(
+        'complete-user-profile',
+        {
+          body: {
+            password: formData.password,
+            username: formData.username,
+            handle,
+            email: userEmail,
+            invited_by: companyData?.invited_by,
+            company: companyData?.id,
+            company_invite: true,
+            invite_id: companyData?.invite_id,
+          },
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      )
+
+      if (rpcError) {
+        throw new Error(rpcError.message || 'Failed to complete your profile')
+      }
+
       setSignupSuccess(true)
 
     } catch (err) {
       console.error('Error submitting form:', err)
-      setError(err.message || 'An error occurred while setting up your profile. Please refresh and try again.')
+      setSubmissionError(err.message || 'An error occurred while setting up your profile. Please refresh and try again.')
       setIsSubmitting(false)
     }
   }
@@ -485,10 +522,10 @@ export function SignupForm({
                 if (companyData?.invited_by) params.append('invited_by', companyData.invited_by)
                 if (companyData?.invite_id) params.append('invite_id', companyData.invite_id)
 
-                const loginUrl = `/invitations/login${params.toString() ? '?' + params.toString() : ''}`
+                const loginUrl = `/accounts/login${params.toString() ? '?' + params.toString() : ''}`
                 router.push(loginUrl)
               }}
-              className="bg-army hover:bg-army/90 text-white font-semibold w-full mt-4"
+              className="bg-core hover:bg-core/90 text-white font-semibold w-full mt-4"
             >
               Go to Login
             </Button>
@@ -620,7 +657,7 @@ export function SignupForm({
               </div>
             </Field>
 
-            {error && (
+            {error && !submissionError && (
               <div className="bg-core/10 border-2 border-core/30 rounded-lg p-4 flex gap-3 items-start">
                 <TriangleAlert className="w-5 h-5 text-army shrink-0 mt-0.5" />
                 <p className="text-core text-sm">{error}</p>
@@ -635,6 +672,9 @@ export function SignupForm({
               >
                 {isSubmitting ? 'Signing up...' : 'Complete Sign Up'}
               </Button>
+              {submissionError && (
+                <p className="mt-1 text-xs text-core">{submissionError}</p>
+              )}
             </Field>
 
             <FieldSeparator>or</FieldSeparator>

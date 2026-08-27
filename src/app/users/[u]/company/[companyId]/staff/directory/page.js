@@ -5,12 +5,12 @@ import { CompanyInfoContext } from '../../companyInfoProvider'
 import { StaffContext } from '@/components/contexts/staff-context'
 import { StaffTable } from '@/components/staff-table'
 import { Spinner } from '@/components/ui/spinner'
-import  { useParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
 
 export default function StaffDirectory() {
   const { info, user } = useContext(CompanyInfoContext)
   const { staffData, isLoadingStaff } = useContext(StaffContext)
-  const { companyId } = useParams()
+  const { u, companyId } = useParams()
 
 
   if (isLoadingStaff) {
@@ -24,7 +24,7 @@ export default function StaffDirectory() {
   return (
     <StaffTable 
       staffList={staffData}
-      userId={user?.handle}
+      userId={u}
       companySlug={info?.slug}
       companyId={companyId}
     />

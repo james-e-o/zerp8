@@ -17,7 +17,7 @@ import { toast } from 'sonner'
 export default function StaffDetailLayout() {
   const params = useParams()
   const router = useRouter()
-  const { info, user: currentUser } = useContext(CompanyInfoContext)
+  const { info } = useContext(CompanyInfoContext)
   const [staffData, setStaffData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
@@ -68,7 +68,7 @@ export default function StaffDetailLayout() {
       <div className="flex flex-col items-center justify-center py-12 space-y-4">
         <p className="text-gray-600">Staff member not found</p>
         <Link
-          href={`/users/${currentUser.handle}/company/${info.slug}/staff/directory`}
+          href={`/users/${params.u}/company/${params.companyId}/staff/directory`}
           className="text-core hover:underline text-sm"
         >
           Back to Directory
@@ -97,7 +97,7 @@ export default function StaffDetailLayout() {
 
         <div className="flex items-center gap-4">
           <Link
-            href={`/users/${currentUser.handle}/company/${info.slug}/staff/directory`}
+            href={`/users/${params.u}/company/${params.companyId}/staff/directory`}
             className="flex items-center gap-2 text-army hover:text-gray-900 transition-colors"
           >
             <ChevronLeft className="size-5 text-core" />

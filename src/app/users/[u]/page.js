@@ -96,7 +96,7 @@ function UserDashboardContent() {
           .from('company_invites')
           .select('*')
           .eq('email', data.profile.email)
-          .in('status', ['pending', 'registered'])
+          .in('status', ['pending'])
           .order('created_at', { ascending: false })
 
         if (error) return

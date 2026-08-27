@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Search, ChevronUp, ChevronDown } from 'lucide-react'
 
-export function StaffTable({ staffList = [], onRowClick, userId, companyId }) {
+export function StaffTable({ staffList = [], userId, companyId }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [filters, setFilters] = useState({
     branch: 'all',
@@ -29,7 +29,6 @@ export function StaffTable({ staffList = [], onRowClick, userId, companyId }) {
     access_level: true,
     status: true,
     date_hired: true,
-    actions: true,
   })
 
   // Color mappings for badges
@@ -164,18 +163,6 @@ export function StaffTable({ staffList = [], onRowClick, userId, companyId }) {
               })
             : 'N/A'}
         </div>
-      ),
-    },
-    {
-      accessorKey: 'actions',
-      header: () => <div className="text-gray-700 font-semibold">Actions</div>,
-      cell: ({ row }) => (
-        <Link
-          href={`/users/${userId}/company/${companyId}/staff/directory/${row.original.id}`}
-          className="text-core hover:text-army font-medium text-sm transition-colors"
-        >
-          View →
-        </Link>
       ),
     },
   ]
@@ -400,8 +387,7 @@ export function StaffTable({ staffList = [], onRowClick, userId, companyId }) {
                 table.getRowModel().rows.map((row) => (
                   <TableRow
                     key={row.id}
-                    className="border-gray-100 hover:bg-gray-50/50 transition-colors"
-                    onClick={() => onRowClick?.(row.original)}
+                    className="border-gray-100 hover:bg-gray-50/50 transition-colors cursor-pointer"
                   >
                     {row.getVisibleCells().map((cell) => {
                       const isFirstColumn = cell.column.id === 'name'
@@ -412,7 +398,12 @@ export function StaffTable({ staffList = [], onRowClick, userId, companyId }) {
                             isFirstColumn ? 'sticky left-0 z-30 bg-white shadow-sm' : ''
                           }`}
                         >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          <Link
+                            href={`/users/${userId}/company/${companyId}/staff/directory/${row.original.id}`}
+                            className="block h-full w-full"
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </Link>
                         </TableCell>
                       )
                     })}

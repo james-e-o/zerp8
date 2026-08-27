@@ -24,7 +24,7 @@ export default function StaffOverview({ staffData, setStaffData }) {
         setIsBranchLoading(true)
         try {
           const { data, error } = await supabase
-            .from('branches_lite')
+            .from('branches')
             .select('name')
             .eq('id', staffData.branch)
             .single()
