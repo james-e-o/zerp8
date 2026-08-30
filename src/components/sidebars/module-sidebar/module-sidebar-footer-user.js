@@ -2,13 +2,21 @@
 
 import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar"
 import { LogOut, ChevronsUpDown, Building2, Home } from "lucide-react"
-import supabase from "../../../config/supabaseClient"
+import supabase from "@/config/supabaseClient"
 import { toast } from "sonner"
 
-export function BranchSidebarFooterUser({ user, u, companyId, branch }) {
+export default function ModuleSidebarFooterUser({ user, u, companyId, branch }) {
   const { isMobile } = useSidebar()
   const router = useRouter()
 
@@ -31,9 +39,13 @@ export function BranchSidebarFooterUser({ user, u, companyId, branch }) {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg" variant="ghost" className="data-[state=open]:bg-transparent cursor-pointer data-[state=open]:border-0 border-0 hover:bg-transparent hover:text-zinc-700 data-[state=open]:text-black">
+            <SidebarMenuButton
+              size="lg"
+              variant="ghost"
+              className="data-[state=open]:bg-transparent cursor-pointer data-[state=open]:border-0 border-0 hover:bg-transparent hover:text-zinc-700 data-[state=open]:text-black"
+            >
               <Avatar className="items-center border inline-flex rounded-full size-7 justify-center">
-                <AvatarFallback className="rounded-lg text-base text-core font-bold uppercase">{branchInitial}</AvatarFallback>
+                <AvatarFallback className="rounded-lg text-xl text-core font-bold uppercase">{branchInitial}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-xs leading-tight">
                 <span className="truncate font-semibold">{branchName}</span>
@@ -41,6 +53,7 @@ export function BranchSidebarFooterUser({ user, u, companyId, branch }) {
               <ChevronsUpDown className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
+
           <DropdownMenuContent className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg" side={isMobile ? "bottom" : "right"} align="end" sideOffset={4}>
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">

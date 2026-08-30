@@ -1,3 +1,4 @@
+// src/app/users/[u]/company/[companyId]/staff/directory/[id]/page.js
 'use client'
 
 import { useContext, useState, useEffect } from 'react'
@@ -5,75 +6,120 @@ import { CompanyInfoContext } from '../../../companyInfoProvider'
 import supabase from '@/config/supabaseClient'
 import { Card } from '@/components/ui/card'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { useParams } from 'next/navigation'
 
-export default function StaffOverview({ staffData, setStaffData }) {
+export default function StaffOverview() {
   const { info } = useContext(CompanyInfoContext)
+  const { id, companyId } = useParams()
+  const [staffData, setStaffData] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [branchName, setBranchName] = useState(null)
   const [isBranchLoading, setIsBranchLoading] = useState(false)
   const [roleName, setRoleName] = useState(null)
   const [isRoleLoading, setIsRoleLoading] = useState(false)
 
-  if (!staffData) {
-    return <p className="text-gray-600">Staff member not found</p>
-  }
+  useEffect(() => {
+    const fetchStaffData = async () => {
+      setIsLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('staff')
+          .select('*, staff_info!staff_info_staff_id_fkey(*)')
+          .eq('id', id)
+          .eq('company', companyId)
+          .single()
 
-  // Fetch branch name from branches table
+        if (error) throw error
+
+        const staffInfo = Array.isArray(data.staff_info) ? data.staff_info[0] : data.staff_info
+
+        setStaffData({
+          ...data,
+          ...staffInfo,
+          date_hired: data.staff_info?.[0]?.date_hired || null,
+        })
+      } catch (err) {
+        console.error('Error fetching staff:', err)
+        setStaffData(null)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (companyId && id) {
+      fetchStaffData()
+    }
+  }, [companyId, id])
+
+  // Fetch branch name from branches table.
+  // Moved above the early returns below so hook order stays stable across
+  // renders — guard on staffData?.branch instead of bailing out via return.
   useEffect(() => {
     const fetchBranchName = async () => {
-      if (staffData.branch) {
-        setIsBranchLoading(true)
-        try {
-          const { data, error } = await supabase
-            .from('branches')
-            .select('name')
-            .eq('id', staffData.branch)
-            .single()
+      if (!staffData?.branch) return
 
-          if (error) {
-            console.error('Error fetching branch:', error)
-          } else {
-            setBranchName(data?.name)
-          }
-        } catch (err) {
-          console.error('Error fetching branch:', err)
-        } finally {
-          setIsBranchLoading(false)
+      setIsBranchLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('branches')
+          .select('name')
+          .eq('id', staffData.branch)
+          .single()
+
+        if (error) {
+          console.error('Error fetching branch:', error)
+        } else {
+          setBranchName(data?.name)
         }
+      } catch (err) {
+        console.error('Error fetching branch:', err)
+      } finally {
+        setIsBranchLoading(false)
       }
     }
 
     fetchBranchName()
-  }, [staffData.branch])
+  }, [staffData?.branch])
 
-  // Fetch role name from company_roles table
+  // Fetch role name from company_roles table.
+  // Same fix — moved above the early returns, guarded internally.
   useEffect(() => {
     const fetchRoleName = async () => {
-      if (staffData.role) {
-        setIsRoleLoading(true)
-        try {
-          const { data, error } = await supabase
-            .from('company_roles')
-            .select('role')
-            .eq('id', staffData.role)
-            .single()
+      if (!staffData?.role) {
+        setIsRoleLoading(false)
+        return
+      }
 
-          if (error) {
-            console.error('Error fetching role:', error)
-          } else {
-            setRoleName(data?.role)
-          }
-        } catch (err) {
-          console.error('Error fetching role:', err)
-        } finally {
-          setIsRoleLoading(false)
+      setIsRoleLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('company_roles')
+          .select('role')
+          .eq('id', staffData.role)
+          .single()
+
+        if (error) {
+          console.error('Error fetching role:', error)
+        } else {
+          setRoleName(data?.role)
         }
-      } else {
+      } catch (err) {
+        console.error('Error fetching role:', err)
+      } finally {
         setIsRoleLoading(false)
       }
     }
 
     fetchRoleName()
-  }, [staffData.role])
+  }, [staffData?.role])
+
+  if (isLoading) {
+    return <p className="text-gray-600">Loading staff member...</p>
+  }
+
+  if (!staffData) {
+    return <p className="text-gray-600">Staff member not found</p>
+  }
 
   const InfoField = ({ label, value }) => (
     <div className="space-y-1">
@@ -169,7 +215,7 @@ export default function StaffOverview({ staffData, setStaffData }) {
       </div>
 
       {/* Personal Information Section */}
-      <Card className="border-gray-200 shadow-sm p-6">
+      <Card className="border-gray-200 mb-6 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <InfoField label="First Name" value={staffData.first_name} />

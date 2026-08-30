@@ -3,6 +3,7 @@
 import { useState, useContext, useEffect } from 'react';
 import { CompanyInfoContext } from '../../companyInfoProvider'
 import { DataContext } from '../../../../pageLayoutProvider'
+import { useParams } from 'next/navigation';
 import supabase from '@/config/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow,} from '@/components/ui/table';
 import {  Dialog,  DialogContent,  DialogDescription,  DialogFooter,  DialogHeader,  DialogTitle,} from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CheckCircle2, XCircle, Clock, FileText, Mail, Eye, HelpCircle, Ban } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, FileText, Mail, Eye, HelpCircle, Ban, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 
 const statusConfig = {
@@ -74,6 +75,7 @@ function StatStrip({ items }) {
 }
 
 export default function OnboardingPage() {
+  const { u, companyId: routeCompanyId } = useParams();
   const { info, user, branches: contextBranches, accessLevels: contextAccessLevels } = useContext(CompanyInfoContext);
   const { data: dataContext } = useContext(DataContext);
 
@@ -420,6 +422,15 @@ export default function OnboardingPage() {
 
   return (
     <div className="space-y-4 grow flex flex-col text-xs overflow-y-hidden">
+      <div className="flex items-center justify-between gap-3 shrink-0">
+        <h2 className="text-base font-semibold text-foreground">Staff Onboarding</h2>
+        <Link href={`/users/${u}/company/${routeCompanyId}/staff/new`} className="shrink-0">
+          <Button className="flex items-center bg-core hover:bg-core/90 text-white gap-1.5 text-sm font-medium">
+            <UserPlus className="size-4" />
+            Invite staff
+          </Button>
+        </Link>
+      </div>
       <Tabs defaultValue="invitations" className="w-full flex flex-col h-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="invitations">Invitations</TabsTrigger>

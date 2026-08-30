@@ -6,19 +6,21 @@ import Link from 'next/link';
 import { CompanyInfoContext } from '../companyInfoProvider';
 import { ReusableCompanySidebar } from '../companyLayoutClient';
 import { StaffContext, StaffProvider } from '@/components/contexts/staff-context';
-import { Plus, List, ChartBar, Network, Settings, UserPlus } from 'lucide-react';
+import { useAccess } from '@/hooks/use-access';
+import { Plus, List, ChartBar, Network, Settings } from 'lucide-react';
 
 const TABS = [
-  { key: 'overview', label: 'Overview', icon: ChartBar, path: '' },
-  { key: 'directory', label: 'Directory', icon: List, path: '/directory' },
-  { key: 'hierarchy', label: 'Hierarchy', icon: Network, path: '/hierarchy' },
-  { key: 'onboarding', label: 'Onboarding', icon: Plus, path: '/onboarding' },
-  { key: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
+  { key: 'overview', label: 'Overview', icon: ChartBar, path: '', requiresStaffInfoView: false },
+  { key: 'directory', label: 'Directory', icon: List, path: '/directory', requiresStaffInfoView: true },
+  { key: 'hierarchy', label: 'Hierarchy', icon: Network, path: '/hierarchy', requiresStaffInfoView: false },
+  { key: 'onboarding', label: 'Onboarding', icon: Plus, path: '/onboarding', requiresStaffInfoView: true },
+  { key: 'settings', label: 'Settings', icon: Settings, path: '/settings', requiresStaffInfoView: true },
 ];
 
 function StaffLayoutContent({ children }) {
   const { info } = useContext(CompanyInfoContext);
   const { pendingOnboardingCount } = useContext(StaffContext) || {};
+  const access = useAccess();
   const pathname = usePathname();
   const { u } = useParams();
 
@@ -27,35 +29,42 @@ function StaffLayoutContent({ children }) {
     return pathname.includes(path);
   };
 
+  // Directory, Onboarding, and Settings are gated on staff_info view
+  // access — Overview and Hierarchy stay visible to everyone. While the
+  // permission check is still loading, gated tabs are omitted rather
+  // than shown-then-hidden, to avoid a flash of tabs someone may not
+  // actually have access to.
+  const canViewStaffInfo = access.isOwner || access.hasPermission('staff_info', 'view');
+  const visibleTabs = TABS.filter((tab) => {
+    if (!tab.requiresStaffInfoView) return true
+    if (access.isLoading) return false
+    return canViewStaffInfo
+  });
+
   return (
     <ReusableCompanySidebar>
       <div className="space-y-4 px-4 h-full flex-col flex overflow-hidden">
-        {/* Header — title + primary action, stacks on mobile */}
-        <div className="flex flex-col sm:flex-row sm:items-center my-1 sm:justify-between gap-3">
+        {/* Header */}
+        <div className="my-1">
           <div>
             <h1 className="text-lg m-1 font-semibold text-foreground">Staff Management</h1>
           </div>
-          <Link href={`/users/${u}/company/${info.id}/staff/new`} className="shrink-0">
-            <button className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg bg-core text-white hover:bg-core/90 transition-colors">
-              <UserPlus className="size-4" />
-              Invite staff
-            </button>
-          </Link>
         </div>
 
-        {/* Tab strip — horizontally scrollable, no manual collapse needed */}
-        <div className="flex items-center gap-2 overflow-x-auto no_scroll py-1">
-          {TABS.map((tab) => {
+        {/* Tab strip — same chip-pill pattern (padding, border, active
+            state, icon size) reused by StaffDetailLayout's sub-nav, so
+            both nav bars in this route tree read as one consistent
+            system rather than two different UI treatments. */}
+        <div className="flex items-center gap-2  py-1">
+          {visibleTabs.map((tab) => {
             const active = isActive(tab.path);
             const href = `/users/${u}/company/${info.id}/staff${tab.path}`;
-            // Only the Onboarding tab gets the count badge — a single
-            // rounded indicator showing items awaiting review.
             const showBadge = tab.key === 'onboarding' && (pendingOnboardingCount || 0) > 0;
 
             return (
               <Link key={tab.key} href={href} className="shrink-0 relative">
                 <button
-                  className={`flex cursor-pointer items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+                  className={`flex shrink-0 min-w-max cursor-pointer items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
                     active
                       ? 'bg-core_light text-core border-core/20'
                       : 'text-muted-foreground border-border hover:bg-muted'

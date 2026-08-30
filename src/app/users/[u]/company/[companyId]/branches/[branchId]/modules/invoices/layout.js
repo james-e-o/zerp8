@@ -1,61 +1,38 @@
-'use client';
+import { redirect } from "next/navigation";
+import { isModuleEnabledServer } from "@/lib/module-access-server";
+import { createSupabaseServerClient } from "@/config/supabaseServer";
+import InvoicesLayoutClient from "./invoicesLayoutClient";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { Settings2 ,Palette,LayoutTemplate,FilePlus,FileStack} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useParams } from 'next/navigation';
+export default async function InvoicesLayout({ params, children }) {
+  const { u, companyId, branchId } = await params;
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-export default function InvoicesLayout({ children}) {
-    const params = useParams();
-    const {u, companySlug, branch} = params;
-	const [sidebarOpen, setSidebarOpen] = useState(true);
+  if (!companyId) redirect("/dashboard");
 
-	const navigationItems = [
-		{ label: 'Overview', href: '/', icon: FileStack },
-		{ label: 'Create Invoice', href: 'create', icon: FilePlus },
-		{ label: 'Templates', href: 'templates', icon: LayoutTemplate },
-		{ label: 'Settings', href: 'settings', icon: Settings2 },
-	];
+  await supabase.from("branches").select("id").eq("id", branchId).maybeSingle();
 
-	return (
-		<div className="w-full flex-col font-WixMade flex px-1 h-full overflow-hidden">
-			{/* Sidebar Navigation */}
-			<header
-				className={` bg-white border-gray-200 transition-all py-1 items-center duration-300 flex `}
-			>
-				<div className="text-base ml-2 mr-5">
-					<h2 className=" font-bold  text-gray-800">Invoices</h2>
-				</div>
-				<nav className="flex gap-1.5 overflow-y-auto">
-					{navigationItems.map((item) => (
-						<Link
-							key={item.label}
-							href={`/admin/${u}/company/${companySlug}/branches/${branch}/modules/invoices/${item.href}`}
-						>
-                            <Button variant={'ghost'} className={'h-7'}>
-                                <span className="text-xl"><item.icon className='text-army font-extrabold'/></span>
-                                {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
-                            </Button>
-						</Link>
-					))}
-				</nav>
-				<div className="">
-					<Button
-						onClick={() => setSidebarOpen(!sidebarOpen)}
-						variant="icon"
-					>
-						{sidebarOpen ? '◀' : '▶'}
-					</Button>
-				</div>
-			</header>
+  const isInvoicesEnabled = await isModuleEnabledServer(companyId, "invoices");
 
-			{/* Main Content */}
-			<main className="flex-1 overflow-auto">
-				<div className="p-8">
-					{children}
-				</div>
-			</main>
-		</div>
-	);
+  if (!isInvoicesEnabled) {
+    redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?module=invoices`);
+  }
+
+  const navigationItems = [
+    { label: "Overview", href: "/", icon: "FileStack" },
+    { label: "Create Invoice", href: "create", icon: "FilePlus" },
+    { label: "Templates", href: "templates", icon: "LayoutTemplate" },
+    { label: "Settings", href: "settings", icon: "Settings2" },
+  ];
+
+  return (
+    <InvoicesLayoutClient
+      params={params}
+      title="Invoices"
+      items={navigationItems}
+      basePath={`/users/${u}/company/${companyId}/branches/${branchId}/modules/invoices`}
+    >
+      {children}
+    </InvoicesLayoutClient>
+  );
 }

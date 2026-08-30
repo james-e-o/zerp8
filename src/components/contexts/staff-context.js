@@ -1,9 +1,27 @@
-'use client';
+'use client'
 
 import { createContext, useState, useEffect } from 'react';
 import supabase from '@/config/supabaseClient';
 
 export const StaffContext = createContext();
+
+// Resource keys that should be visually folded into a parent group in the
+// permissions UI. Only staff/company/branch have a split "_info" table.
+const SUPER_GROUP_MAP = {
+  staff_info: 'staff',
+  company_info: 'company',
+  branch_info: 'branch',
+};
+
+function getSuperGroupKey(resourceKey) {
+  return SUPER_GROUP_MAP[resourceKey] || resourceKey;
+}
+
+function toLabel(key) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (l) => l.toUpperCase());
+}
 
 export function StaffProvider({ children, companyId }) {
   const [staffData, setStaffData] = useState([]);
@@ -30,7 +48,7 @@ export function StaffProvider({ children, companyId }) {
       try {
         setIsLoadingStaff(true);
         setError(null);
-        
+
         const { data: staff, error: fetchError } = await supabase
           .from('staff')
           .select('*, staff_info(date_hired)')
@@ -59,44 +77,51 @@ export function StaffProvider({ children, companyId }) {
     fetchStaffData();
   }, [companyId]);
 
-  // Fetch permission keys on mount
+  // Fetch permission keys on mount.
+  // These rows carry the canonical category (core or module) for each
+  // permission definition, and the access-level/override rows should match it.
   useEffect(() => {
     async function fetchPermissionKeys() {
       try {
         setIsLoadingPermissions(true);
+
         const { data: allPermissions, error: permError } = await supabase
           .from('permission_keys')
           .select('*')
-          .order('permission_group', { ascending: true });
+          .order('resource_key', { ascending: true });
 
         if (permError) throw permError;
 
-        // Build metadata map with includes_branch flag
+        // Build metadata map keyed by composite "resource_key:permission_key"
         const metadata = {};
         (allPermissions || []).forEach((perm) => {
-          metadata[perm.permission_key] = {
+          const compositeKey = `${perm.resource_key}:${perm.permission_key}`;
+          metadata[compositeKey] = {
             includes_branch: perm.includes_branch !== false,
+            category: perm.category || 'core',
           };
         });
         setPermissionKeysMetadata(metadata);
 
-        // Group permissions by permission_group
+        // Group by super-group (resource_key, with *_info tables folded
+        // into their parent resource — staff_info -> staff, etc.)
         const groupedPerms = {};
         (allPermissions || []).forEach((perm) => {
-          const group = perm.permission_group || 'ungrouped';
-          if (!groupedPerms[group]) {
-            groupedPerms[group] = {
-              label: group
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, (l) => l.toUpperCase()),
+          const superGroupKey = getSuperGroupKey(perm.resource_key);
+          if (!groupedPerms[superGroupKey]) {
+            groupedPerms[superGroupKey] = {
+              label: toLabel(superGroupKey),
               permissions: [],
             };
           }
-          groupedPerms[group].permissions.push({
-            key: perm.permission_key,
+          groupedPerms[superGroupKey].permissions.push({
+            key: `${perm.resource_key}:${perm.permission_key}`,
+            resource_key: perm.resource_key,
+            permission_key: perm.permission_key,
             label: perm.name,
             description: perm.description,
             status: null,
+            category: perm.category || 'core',
           });
         });
 
@@ -152,23 +177,28 @@ export function StaffProvider({ children, companyId }) {
     fetchPendingOnboardingCount();
   }, [companyId]);
 
-  // Function to fetch access level permissions
+  // Function to fetch access level (default) permissions for a given access level.
+  // category is the canonical permission definition on permission_keys, while
+  // access_level_permissions and staff_permission_overrides mirror that value.
   const getAccessLevelPermissions = async (accessLevelKey) => {
     try {
       const { data: levelPermissions, error: levelError } = await supabase
         .from('access_level_permissions')
-        .select('permission_key, allowed')
+        .select('scope_key, permission_key, allowed, category')
         .eq('access_level_key', accessLevelKey);
 
       if (levelError) throw levelError;
 
-      // Create lookup map for quick status check
+      // Create lookup map keyed by composite "resource_key:permission_key"
       const statusMap = {};
+      const categoryMap = {};
       (levelPermissions || []).forEach((item) => {
-        statusMap[item.permission_key] = item.allowed;
+        const compositeKey = `${item.scope_key}:${item.permission_key}`;
+        statusMap[compositeKey] = item.allowed;
+        categoryMap[compositeKey] = item.category || 'core';
       });
 
-      // Merge status into grouped permissions
+      // Merge status + category into grouped permissions
       const mergedPerms = {};
       Object.keys(permissionKeys).forEach((groupKey) => {
         mergedPerms[groupKey] = {
@@ -176,6 +206,7 @@ export function StaffProvider({ children, companyId }) {
           permissions: permissionKeys[groupKey].permissions.map((perm) => ({
             ...perm,
             status: statusMap[perm.key] !== undefined ? statusMap[perm.key] : null,
+            category: categoryMap[perm.key] !== undefined ? categoryMap[perm.key] : (perm.category || 'core'),
           })),
         };
       });
@@ -194,7 +225,7 @@ export function StaffProvider({ children, companyId }) {
     try {
       setIsLoadingStaff(true);
       setError(null);
-      
+
       const { data: staff, error: fetchError } = await supabase
         .from('staff')
         .select('*, staff_info(date_hired)')

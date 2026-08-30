@@ -5,6 +5,7 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import { BranchContext } from "./branchContext"
 import { CompanyInfoContext } from "../../companyInfoProvider"
+import { ReusableBranchSidebar } from "./branchLayoutClient"
 import {
   MapPin,
   Phone,
@@ -156,29 +157,31 @@ export default function BranchPage() {
   const basePath = `/users/${u}/company/${companyId}/branches/${branchId}`
 
   return (
-    <div className="p-4 space-y-6">
-      <BranchRecordHeader branch={currentBranch} />
+    <ReusableBranchSidebar>
+      <div className="p-4 space-y-6">
+        <BranchRecordHeader branch={currentBranch} />
 
-      <KpiStrip
-        items={[
-          { icon: Receipt, label: "Orders (30d)", value: "312" },
-          { icon: Package, label: "Items in stock", value: "1,204" },
-          { icon: Users2, label: "Staff assigned", value: "6" },
-        ]}
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <ModulesGrid modules={modules} basePath={basePath} />
-        </div>
-        <ActivityLedger
-          entries={[
-            { icon: <Receipt className="size-4 text-muted-foreground" />, text: "New sale recorded", time: "2026-08-08 15:12" },
-            { icon: <Package className="size-4 text-muted-foreground" />, text: "Stock adjusted — 12 units", time: "2026-08-08 11:03" },
-            { icon: <CircleDot className="size-4 text-muted-foreground" />, text: "Branch marked active", time: "2026-08-07 09:00" },
+        <KpiStrip
+          items={[
+            { icon: Receipt, label: "Orders (30d)", value: "312" },
+            { icon: Package, label: "Items in stock", value: "1,204" },
+            { icon: Users2, label: "Staff assigned", value: "6" },
           ]}
         />
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <ModulesGrid modules={modules} basePath={basePath} />
+          </div>
+          <ActivityLedger
+            entries={[
+              { icon: <Receipt className="size-4 text-muted-foreground" />, text: "New sale recorded", time: "2026-08-08 15:12" },
+              { icon: <Package className="size-4 text-muted-foreground" />, text: "Stock adjusted — 12 units", time: "2026-08-08 11:03" },
+              { icon: <CircleDot className="size-4 text-muted-foreground" />, text: "Branch marked active", time: "2026-08-07 09:00" },
+            ]}
+          />
+        </div>
       </div>
-    </div>
+    </ReusableBranchSidebar>
   )
 }

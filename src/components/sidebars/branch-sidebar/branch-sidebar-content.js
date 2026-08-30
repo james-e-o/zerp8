@@ -1,6 +1,6 @@
-import { ChevronRight, Factory, Files, LayoutDashboard, Plus, Group, Building2, Rocket } from "lucide-react"
+import { ChevronRight, Factory,Building,HomeIcon,Blocks,Boxes,Puzzle, Files, LayoutDashboard, Plus, Group, Building2, Rocket } from "lucide-react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarTrigger, SidebarRail, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem } from "@/components/ui/sidebar"
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarTrigger, SidebarRail, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, useSidebar } from "@/components/ui/sidebar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import Image from "next/image"
 import Link from "next/link"
@@ -12,18 +12,20 @@ import {CollapsibleButton, NoCollapsibleButton} from './branch-sidebar'
 export default function BranchSidebarContent({ modules, company }) {
   const params = useParams()
   const { currentBranch } = useContext(BranchContext)
+  const { open } = useSidebar()
 
   return (
     <SidebarContent className="bg-armylight text-sm text-zinc-100">
       <SidebarGroup>
-        {currentBranch?.isheadoffice && (
+        {currentBranch?.isheadoffice && open && (
           <div className="mx-2 mb-2 px-2.5 py-1 rounded-md bg-core_light w-fit">
             <span className="text-[10px] font-semibold text-core tracking-wide">HEAD OFFICE</span>
           </div>
         )}
         <SidebarMenu>
           <NoCollapsibleButton
-            className="capitalize"
+            className="capitalize "
+            iconClass="text-core"
             url={`/users/${params.u}/company/${params.companyId}`}
             title="Dashboard"
             icon={Building2}
@@ -32,9 +34,10 @@ export default function BranchSidebarContent({ modules, company }) {
           />
           <NoCollapsibleButton
             className="capitalize"
+            iconClass="text-core"
             url={`/users/${params.u}/company/${params.companyId}/branches/${params.branchId}`}
             title="Dashboard"
-            icon={Building2}
+            icon={Building}
             active={false}
             name={`${currentBranch?.name || params.branchId.toUpperCase()} Dashboard`}
           />
@@ -42,9 +45,10 @@ export default function BranchSidebarContent({ modules, company }) {
             <CollapsibleButton
               caps="capitalize"
               defaultOpen={true}
+              iconClass="text-core"
               sidebarOpen={true}
               title="Branch Modules"
-              icon={Group}
+              icon={Blocks}
               items={[
                 ...modules
                   .filter((module) => module.branchlevel)

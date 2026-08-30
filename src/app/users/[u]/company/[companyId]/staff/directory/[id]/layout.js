@@ -1,45 +1,46 @@
 'use client'
 
-import { useContext, useState, useEffect } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { CompanyInfoContext } from '../../../companyInfoProvider'
 import supabase from '@/config/supabaseClient'
-import { useParams, useRouter } from 'next/navigation'
-import { Card } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Spinner } from '@/components/ui/spinner'
-import { ChevronLeft } from 'lucide-react'
+import { useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import StaffOverview from './page'
-import EditStaffTab from './edit-staff/page'
-import PermissionsTab from './permissions/page'
-import { toast } from 'sonner'
+import { ChevronLeft, LayoutDashboard, Edit2, ShieldCheck } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 
-export default function StaffDetailLayout() {
+const NAV_ITEMS = [
+  { key: 'overview', label: 'Overview', icon: LayoutDashboard, path: '' },
+  { key: 'edit-staff', label: 'Edit Staff', icon: Edit2, path: '/edit-staff' },
+  { key: 'permissions', label: 'Permissions', icon: ShieldCheck, path: '/permissions' },
+]
+
+export default function StaffDetailLayout({ children }) {
   const params = useParams()
-  const router = useRouter()
+  const pathname = usePathname()
   const { info } = useContext(CompanyInfoContext)
   const [staffData, setStaffData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
 
   useEffect(() => {
     const fetchStaffData = async () => {
       setIsLoading(true)
-      try {        
+      try {
         const { data, error } = await supabase
           .from('staff')
-          .select('*, staff_info(date_hired)')
+          .select('*, staff_info!staff_info_staff_id_fkey(*)')
           .eq('id', params.id)
           .eq('company', info.id)
           .single()
 
-        if (error) {
-          console.error('Supabase error:', error)
-          throw error
-        }
+        if (error) throw error
+
+        const staffInfo = Array.isArray(data.staff_info) ? data.staff_info[0] : data.staff_info
 
         setStaffData({
           ...data,
+          ...staffInfo,
+          // `staff` has no `name` column — only first_name/last_name.
+          name: `${data.first_name || ''} ${data.last_name || ''}`.trim() || 'Unnamed staff',
           date_hired: data.staff_info?.[0]?.date_hired || null,
         })
       } catch (err) {
@@ -66,7 +67,7 @@ export default function StaffDetailLayout() {
   if (!staffData) {
     return (
       <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <p className="text-gray-600">Staff member not found</p>
+        <p className="text-muted-foreground">Staff member not found</p>
         <Link
           href={`/users/${params.u}/company/${params.companyId}/staff/directory`}
           className="text-core hover:underline text-sm"
@@ -77,67 +78,50 @@ export default function StaffDetailLayout() {
     )
   }
 
-  const getStatusColor = (status) => {
-    const colors = {
-      active: 'bg-green/10 text-green border-green/20',
-      pending: 'bg-army/10 text-army border-army/20',
-      suspended: 'bg-red-500/10 text-red-500 border-red-500/20',
-      terminated: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
-    }
-    return colors[status] || colors.active
-  }
+  const basePath = `/users/${params.u}/company/${params.companyId}/staff/directory/${params.id}`
+  const navItems = NAV_ITEMS.map((item) => ({ ...item, href: `${basePath}${item.path}` }))
 
   return (
-    <div className="space-y-6">
-      {/* Header with Back Button */}
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-[calc(100vh-200px)] flex flex-col">
-        <div className='flex items-center justify-start gap-6'>
-
-        <div className="flex items-center gap-4">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-start gap-4">
           <Link
             href={`/users/${params.u}/company/${params.companyId}/staff/directory`}
-            className="flex items-center gap-2 text-army hover:text-gray-900 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-core hover:text-foreground transition-colors"
           >
-            <ChevronLeft className="size-5 text-core" />
+            <ChevronLeft className="size-4" />
             Back to Directory
           </Link>
+
+          <nav className="flex flex-wrap items-center gap-2 py-1">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+
+              return (
+                <Link key={item.href} href={item.href} className="shrink-0">
+                  <button
+                    className={`flex cursor-pointer items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+                      isActive
+                        ? 'bg-core_light text-core border-core/20'
+                        : 'text-muted-foreground border-border hover:bg-muted'
+                    }`}
+                  >
+                    <item.icon className="size-3.5" />
+                    {item.label}
+                  </button>
+                </Link>
+              )
+            })}
+          </nav>
         </div>
-        <TabsList className="grid w-fit gap-5 grid-cols-3 bg-gray-100 p-1 shrink-0">
-          <TabsTrigger
-            value="overview"
-            className="data-[state=active]:bg-white data-[state=active]:text-core data-[state=active]:shadow-sm"
-          >
-            Overview
-          </TabsTrigger>
-          <TabsTrigger
-            value="edit-staff"
-            className="data-[state=active]:bg-white data-[state=active]:text-core data-[state=active]:shadow-sm"
-          >
-            Edit Staff
-          </TabsTrigger>
-          <TabsTrigger
-            value="permissions"
-            className="data-[state=active]:bg-white data-[state=active]:text-core data-[state=active]:shadow-sm"
-          >
-            Permissions
-          </TabsTrigger>
-        </TabsList>
-        </div>
 
-        <TabsContent value="overview" className="space-y-4 flex-1 overflow-y-auto">
-          <StaffOverview staffData={staffData} setStaffData={setStaffData} />
-        </TabsContent>
+        {/* Sub-nav — same chip-pill pattern as the outer Staff layout's
+            tab strip (padding, border, active/inactive states, icon size)
+            so the two nav bars read as one consistent system. */}
+        
+      </div>
 
-        <TabsContent value="edit-staff" className="space-y-4 flex-1 overflow-y-auto">
-          <EditStaffTab staffData={staffData} setStaffData={setStaffData} onSaveSuccess={() => setActiveTab('overview')} />
-        </TabsContent>
-
-        <TabsContent value="permissions" className="space-y-4 flex-1 overflow-y-auto">
-          <PermissionsTab staffData={staffData} setStaffData={setStaffData} companyId={info.id} />
-        </TabsContent>
-      </Tabs>
+      <div className="space-y-4">{children}</div>
     </div>
   )
 }

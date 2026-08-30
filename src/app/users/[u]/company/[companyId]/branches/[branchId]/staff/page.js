@@ -1,26 +1,21 @@
 'use client'
 
-import { useContext, useMemo } from 'react'
-import { CompanyInfoContext } from '../companyInfoProvider'
-import { StaffContext } from '@/components/contexts/staff-context'
-import { useAccess } from '@/hooks/use-access'
-import { Spinner } from '@/components/ui/spinner'
-import Link from 'next/link'
+import { useEffect, useMemo, useState, useContext } from 'react'
 import { useParams } from 'next/navigation'
+import supabase from '@/config/supabaseClient'
+import { CompanyInfoContext } from '@/app/users/[u]/company/[companyId]/companyInfoProvider'
+import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
+import { Spinner } from '@/components/ui/spinner'
+import { useAccess } from '@/hooks/use-access'
 import {
   Users,
   UserCheck,
   UserX,
   Clock,
-  ArrowRight,
   UserPlus,
-  ListTree,
   CircleDot,
 } from 'lucide-react'
 
-// ─────────────────────────────────────────────────────────────
-// KPI strip — hairline-divided, matches the company dashboard.
-// ─────────────────────────────────────────────────────────────
 function KpiStrip({ items }) {
   return (
     <div className="bg-card border border-border rounded-xl mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y lg:divide-y-0 divide-border">
@@ -30,18 +25,13 @@ function KpiStrip({ items }) {
             <item.icon className={`size-3.5 ${item.color}`} />
             <p className="text-xs text-muted-foreground font-medium">{item.label}</p>
           </div>
-          <span className="text-2xl font-mono font-semibold text-foreground">
-            {item.value}
-          </span>
+          <span className="text-2xl font-mono font-semibold text-foreground">{item.value}</span>
         </div>
       ))}
     </div>
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// Distribution bar — one row, label + count + bar.
-// ─────────────────────────────────────────────────────────────
 function DistributionItem({ label, count, percentage }) {
   return (
     <div className="space-y-1.5">
@@ -61,22 +51,18 @@ function DistributionItem({ label, count, percentage }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// Restricted view — for staff without staff_info write access.
-// A plain photo grid of everyone in the company; no counts, no
-// distribution breakdowns, no activity feed — just "who works here."
-// ─────────────────────────────────────────────────────────────
-function StaffPhotoGrid({ staffData }) {
+function BranchStaffPhotoGrid({ staffData }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
       {staffData.length === 0 ? (
         <p className="col-span-full text-sm text-muted-foreground text-center py-12">
-          No staff members yet
+          No staff members in this branch yet
         </p>
       ) : (
         staffData.map((staff) => {
           const displayName = staff.name || `${staff.first_name || ''} ${staff.last_name || ''}`.trim() || 'Unnamed'
           const initials = displayName.slice(0, 2).toUpperCase()
+
           return (
             <div
               key={staff.id}
@@ -107,14 +93,52 @@ function StaffPhotoGrid({ staffData }) {
   )
 }
 
-export default function StaffDashboard() {
+export default function BranchStaffPage() {
   const { info } = useContext(CompanyInfoContext)
-  const { staffData, isLoadingStaff } = useContext(StaffContext)
+  const { currentBranch } = useContext(BranchContext) || {}
   const access = useAccess()
-  const { u } = useParams()
+  const { u, companyId, branchId } = useParams()
+  const [staffData, setStaffData] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  // "Write access to staff info" isn't one single verb in the 6-verb
-  // model — treat it as any of create/edit/manage on staff_info.
+  useEffect(() => {
+    const fetchBranchStaff = async () => {
+      if (!companyId || !branchId) {
+        setIsLoading(false)
+        return
+      }
+
+      try {
+        setIsLoading(true)
+        setError(null)
+
+        const { data, error: fetchError } = await supabase
+          .from('staff')
+          .select('*, staff_info(date_hired)')
+          .eq('company', companyId)
+          .eq('branch', branchId)
+          .order('created_at', { ascending: false })
+
+        if (fetchError) throw fetchError
+
+        setStaffData(
+          (data || []).map((staff) => ({
+            ...staff,
+            date_hired: staff.staff_info?.[0]?.date_hired || null,
+          }))
+        )
+      } catch (err) {
+        console.error('Error fetching branch staff:', err)
+        setError(err?.message || 'Failed to load branch staff')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchBranchStaff()
+  }, [companyId, branchId])
+
   const canManageStaffInfo = access.isOwner || access.hasAnyPermission([
     { scopeKey: 'staff_info', permissionKey: 'edit' },
     { scopeKey: 'staff_info', permissionKey: 'create' },
@@ -155,8 +179,8 @@ export default function StaffDashboard() {
       const level = staff.access_level || 'Unassigned'
       calculated.byAccessLevel[level] = (calculated.byAccessLevel[level] || 0) + 1
 
-      const branch = staff.branch || 'Main Branch'
-      calculated.byBranch[branch] = (calculated.byBranch[branch] || 0) + 1
+      const branchLabel = staff.branch || 'This Branch'
+      calculated.byBranch[branchLabel] = (calculated.byBranch[branchLabel] || 0) + 1
     })
 
     calculated.recentActivity = [
@@ -173,24 +197,45 @@ export default function StaffDashboard() {
     return calculated
   }, [staffData])
 
-  const isLoading = isLoadingStaff || access.isLoading
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Spinner className="size-8 text-core" spinning={true} />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <p className="text-sm text-red-600">Error: {error}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 grow flex flex-col overflow-y-auto">
-      {isLoading ? (
-        <div className="flex items-center justify-center h-96">
-          <Spinner className="size-8 text-core" spinning={true} />
-        </div>
-      ) : !canManageStaffInfo ? (
-        <StaffPhotoGrid staffData={staffData || []} />
+      {!canManageStaffInfo ? (
+        <BranchStaffPhotoGrid staffData={staffData} />
       ) : (
         <>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">
+                {currentBranch?.name || 'Branch'} staff overview
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {info?.name || 'Company'} • {stats.totalStaff} staff member{stats.totalStaff === 1 ? '' : 's'}
+              </p>
+            </div>
+          </div>
+
           <KpiStrip
             items={[
               { icon: Users, label: 'Total', value: stats.totalStaff, color: 'text-core' },
               { icon: UserCheck, label: 'Active', value: stats.activeStaff, color: 'text-emerald-600' },
               { icon: UserX, label: 'Suspended', value: stats.suspendedStaff, color: 'text-rose-600' },
-              { icon: Clock, label: 'Pending', value: stats.pendingInvites, color: 'text-army' },
+              { icon: Clock, label: 'Pending', value: stats.pendingInvites, color: 'text-amber-600' },
               { icon: UserPlus, label: 'New (30d)', value: stats.newThisMonth, color: 'text-core' },
             ]}
           />
@@ -244,55 +289,44 @@ export default function StaffDashboard() {
               </div>
               <div className="divide-y divide-border">
                 {stats.recentActivity.length > 0 ? (
-                  stats.recentActivity.map(({ staff, kind }) => (
-                    <Link
-                      key={staff.id}
-                      href={`/users/${u}/company/${info.slug}/staff/${staff.id}/`}
-                      className="flex items-center justify-between px-6 py-3.5 hover:bg-muted/60 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <CircleDot
-                          className={`size-2.5 shrink-0 ${
-                            kind === 'suspended'
-                              ? 'fill-rose-500 text-rose-500'
-                              : 'fill-emerald-500 text-emerald-500'
-                          }`}
-                        />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            @{staff.users?.handle}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {staff.users?.email}
-                            {kind === 'suspended' ? ' · suspended' : ''}
-                          </p>
+                  stats.recentActivity.map(({ staff, kind }) => {
+                    const displayName = staff.name || `${staff.first_name || ''} ${staff.last_name || ''}`.trim() || 'Unnamed'
+
+                    return (
+                      <div
+                        key={staff.id}
+                        className="flex items-center justify-between px-6 py-3.5"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <CircleDot
+                            className={`size-2.5 shrink-0 ${
+                              kind === 'suspended'
+                                ? 'fill-rose-500 text-rose-500'
+                                : 'fill-emerald-500 text-emerald-500'
+                            }`}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {kind === 'suspended' ? 'Suspended' : 'Added to branch'}
+                            </p>
+                          </div>
                         </div>
+
+                        <span className="text-xs text-muted-foreground capitalize">
+                          {staff.access_level || 'Unassigned'}
+                        </span>
                       </div>
-                      <ArrowRight className="size-4 text-muted-foreground shrink-0" />
-                    </Link>
-                  ))
+                    )
+                  })
                 ) : (
-                  <p className="text-sm text-muted-foreground py-8 text-center">No recent activity</p>
+                  <div className="px-6 py-10 text-sm text-muted-foreground text-center">
+                    No recent activity
+                  </div>
                 )}
               </div>
             </div>
           </div>
-
-          <Link
-            href={`/users/${u}/company/${info.slug}/staff/hierarchy`}
-            className="bg-card border border-border rounded-xl px-6 py-4 flex items-center justify-between hover:border-core/40 hover:bg-core_light/20 transition-colors group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="size-9 rounded-lg bg-muted group-hover:bg-card flex items-center justify-center">
-                <ListTree className="size-4 text-muted-foreground group-hover:text-core transition-colors" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">Access levels</p>
-                <p className="text-xs text-muted-foreground">View the full role hierarchy</p>
-              </div>
-            </div>
-            <ArrowRight className="size-4 text-muted-foreground group-hover:text-core transition-colors" />
-          </Link>
         </>
       )}
     </div>

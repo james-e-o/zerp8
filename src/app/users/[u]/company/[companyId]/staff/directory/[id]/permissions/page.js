@@ -1,30 +1,67 @@
+// components/permissions-tab.jsx
 'use client'
 
 import { useState, useEffect, useContext } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import supabase from '@/config/supabaseClient'
 import { RefreshCw, Edit2, Save, AlertCircle } from 'lucide-react'
+import { useParams } from 'next/navigation'
 import { StaffContext } from '@/components/contexts/staff-context'
 
-export default function PermissionsTab({ staffData, setStaffData, companyId }) {
+export default function PermissionsTab() {
+  const { id, companyId } = useParams()
   const { getAccessLevelPermissions, permissionKeysMetadata, refetchStaffData } = useContext(StaffContext)
+  const [staffData, setStaffData] = useState(null)
 
   const [permissions, setPermissions] = useState({})
   const [originalPermissions, setOriginalPermissions] = useState({})
+  // Keyed by composite "resource_key:permission_key" ->
+  // { resource_key, permission_key, category, allowed }
   const [updatedPermissions, setUpdatedPermissions] = useState({})
   const [staffOverrides, setStaffOverrides] = useState({})
   const [staffAccessScope, setStaffAccessScope] = useState(null)
-  const [disabledPermissions, setDisabledPermissions] = useState({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
-  const [showDisabledDialog, setShowDisabledDialog] = useState(false)
+
+  // Which tab is active: 'core' or 'module'. Filters what's displayed only —
+  // fetch/merge/save logic is unaffected, and category is read per-permission
+  // in case a single resource group ever mixes core + module permissions.
+  const [activeTab, setActiveTab] = useState('core')
+
+  // Holds the toggle that's waiting on the branch-warning confirmation.
+  // Shape: { permissionKey, currentStatus } | null
+  const [pendingBranchToggle, setPendingBranchToggle] = useState(null)
+
+  useEffect(() => {
+    const fetchStaffData = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('staff')
+          .select('*')
+          .eq('id', id)
+          .eq('company', companyId)
+          .single()
+
+        if (error) throw error
+        setStaffData(data)
+      } catch (err) {
+        console.error('Error fetching staff:', err)
+        setError(err.message)
+      }
+    }
+
+    if (id && companyId) {
+      fetchStaffData()
+    }
+  }, [id, companyId])
 
   const getPermissionState = (groupKey, permKey) => {
     const perm = permissions[groupKey]?.permissions.find(p => p.key === permKey)
@@ -64,7 +101,8 @@ export default function PermissionsTab({ staffData, setStaffData, companyId }) {
       setIsLoading(true)
       setError(null)
 
-      // Step 1: Get staff's access level scope (branch or company)
+      // Step 1: Get staff's access level scope (branch or company).
+      // Still needed — it drives whether the branch-override warning applies.
       const { data: accessLevelData, error: accessLevelError } = await supabase
         .from('access_level')
         .select('access')
@@ -76,24 +114,13 @@ export default function PermissionsTab({ staffData, setStaffData, companyId }) {
       const scope = accessLevelData?.access // 'branch' or 'company'
       setStaffAccessScope(scope)
 
-      // Step 2: Calculate disabled permissions
-      const disabled = {}
-      Object.keys(permissionKeysMetadata).forEach((permKey) => {
-        const includesBranch = permissionKeysMetadata[permKey]?.includes_branch
-        // Disable if staff has branch access AND permission is company-only
-        if (scope === 'branch' && includesBranch === false) {
-          disabled[permKey] = true
-        }
-      })
-      setDisabledPermissions(disabled)
-
-      // Step 3: Get merged permissions from role
+      // Step 2: Get merged default permissions from access level (includes category)
       const mergedPerms = await getAccessLevelPermissions(staffData.access_level)
 
-      // Step 4: Get user overrides
+      // Step 3: Get this staff's overrides
       const { data: overrides, error: overridesError } = await supabase
         .from('staff_permission_overrides')
-        .select('permission_key, allowed')
+        .select('scope_key, permission_key, allowed, category')
         .eq('staff_id', staffData.id)
         .eq('company_id', companyId)
 
@@ -101,11 +128,14 @@ export default function PermissionsTab({ staffData, setStaffData, companyId }) {
 
       const overridesMap = {}
       ;(overrides || []).forEach((override) => {
-        overridesMap[override.permission_key] = override.allowed
+        const compositeKey = `${override.scope_key}:${override.permission_key}`
+        overridesMap[compositeKey] = override.allowed
       })
       setStaffOverrides(overridesMap)
 
-      // Step 5: Build final permissions with overrides
+      // Step 4: Build final permissions with overrides applied.
+      // category always comes from the access-level default row — it's the
+      // same underlying resource whether the value is defaulted or overridden.
       const finalPerms = {}
       Object.keys(mergedPerms).forEach((groupKey) => {
         finalPerms[groupKey] = {
@@ -141,21 +171,27 @@ export default function PermissionsTab({ staffData, setStaffData, companyId }) {
     }
   }
 
-  const handlePermissionToggle = (permissionKey, currentStatus) => {
-    // Check if this permission is disabled
-    if (disabledPermissions[permissionKey]) {
-      setShowDisabledDialog(true)
-      return
-    }
+  // Does toggling this permission need the "staff isn't company-level" warning?
+  // True only when the staff's own access level is branch-scoped AND this
+  // specific permission is marked company-only (includes_branch === false).
+  const needsBranchWarning = (permissionKey) => {
+    const includesBranch = permissionKeysMetadata[permissionKey]?.includes_branch
+    return staffAccessScope === 'branch' && includesBranch === false
+  }
 
+  // Performs the actual toggle — no gating, called either directly or after
+  // the user confirms the branch-warning dialog.
+  const applyToggle = (permissionKey, currentStatus) => {
     let targetGroup = null
     let targetPermIndex = null
+    let targetPerm = null
 
     Object.keys(permissions).forEach((groupKey) => {
       const permIndex = permissions[groupKey].permissions.findIndex(p => p.key === permissionKey)
       if (permIndex !== -1) {
         targetGroup = groupKey
         targetPermIndex = permIndex
+        targetPerm = permissions[groupKey].permissions[permIndex]
       }
     })
 
@@ -173,35 +209,64 @@ export default function PermissionsTab({ staffData, setStaffData, companyId }) {
 
     setUpdatedPermissions((prev) => ({
       ...prev,
-      [permissionKey]: newStatus,
+      [permissionKey]: {
+        resource_key: targetPerm.resource_key,
+        permission_key: targetPerm.permission_key,
+        category: targetPerm.category || 'core',
+        allowed: newStatus,
+      },
     }))
+  }
+
+  const handlePermissionToggle = (permissionKey, currentStatus) => {
+    if (needsBranchWarning(permissionKey)) {
+      setPendingBranchToggle({ permissionKey, currentStatus })
+      return
+    }
+
+    applyToggle(permissionKey, currentStatus)
+  }
+
+  const confirmBranchToggle = () => {
+    if (pendingBranchToggle) {
+      applyToggle(pendingBranchToggle.permissionKey, pendingBranchToggle.currentStatus)
+    }
+    setPendingBranchToggle(null)
+  }
+
+  const cancelBranchToggle = () => {
+    setPendingBranchToggle(null)
   }
 
   const handleSave = async () => {
     try {
       setIsSaving(true)
 
-      // Batch all permission updates into a single array
-      const upsertRows = Object.keys(updatedPermissions).map((permissionKey) => ({
+      // Batch all permission updates into a single array.
+      // The database schema stores the canonical category on the permission
+      // definition, and override rows must mirror that value.
+      const upsertRows = Object.values(updatedPermissions).map((item) => ({
         company_id: companyId,
         staff_id: staffData.id,
-        permission_key: permissionKey,
-        allowed: updatedPermissions[permissionKey],
+        category: item.category || 'core',
+        scope_key: item.resource_key,
+        permission_key: item.permission_key,
+        allowed: item.allowed,
       }))
 
       // Single upsert call with onConflict to update existing rows
       const { error } = await supabase
         .from('staff_permission_overrides')
-        .upsert(upsertRows, { 
-          onConflict: 'staff_id,company_id,permission_key' 
+        .upsert(upsertRows, {
+          onConflict: 'staff_id,company_id,category,scope_key,permission_key'
         })
 
       if (error) throw error
 
       // Update local overrides
       const newOverrides = { ...staffOverrides }
-      Object.keys(updatedPermissions).forEach((key) => {
-        newOverrides[key] = updatedPermissions[key]
+      Object.keys(updatedPermissions).forEach((compositeKey) => {
+        newOverrides[compositeKey] = updatedPermissions[compositeKey].allowed
       })
       setStaffOverrides(newOverrides)
 
@@ -289,10 +354,10 @@ export default function PermissionsTab({ staffData, setStaffData, companyId }) {
   }
 
   return (
-    <div className="p-6 h-full flex flex-col overflow-y-auto">
+    <div className="h-full flex flex-col overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8 shrink-0">
-        <h4 className="text-lg font-semibold text-core">Staff Permissions Override</h4>
+      <div className="flex items-center justify-between mb-3 shrink-0">
+        <h4 className="text-base  font-semibold text-core">Staff Permissions Override</h4>
 
         <div className="flex gap-2">
           {isEditMode && Object.keys(updatedPermissions).length > 0 && (
@@ -332,141 +397,152 @@ export default function PermissionsTab({ staffData, setStaffData, companyId }) {
         </div>
       </div>
 
+      {/* Core / Module Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-3 shrink-0">
+        <TabsList className=" w-[260px] md:w-[300px] px-2 py-1">
+          <TabsTrigger value="core" className="min-w-[120px] text-sm">Core</TabsTrigger>
+          <TabsTrigger value="module" className="min-w-[120px] text-sm">Modules</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Permissions List */}
       <div className="flex-1 overflow-y-auto">
-        {Object.keys(permissions).length === 0 ? (
-          <Card className="p-8 text-center text-gray-500">
-            No permissions available
-          </Card>
-        ) : (
-          <TooltipProvider>
-            {Object.entries(permissions).map(([groupKey, groupData]) => (
-              <Card key={groupKey} className="mb-8 overflow-hidden">
-                <div className="bg-muted px-6 py-4 border-b">
-                  <h2 className="text-xl font-semibold">{groupData.label}</h2>
-                </div>
+        {(() => {
+          // Filter to groups that have at least one permission matching the
+          // active tab, and within each group, only render matching permissions.
+          const visibleGroups = Object.entries(permissions)
+            .map(([groupKey, groupData]) => [
+              groupKey,
+              {
+                ...groupData,
+                permissions: groupData.permissions.filter((perm) => (perm.category || 'core') === activeTab),
+              },
+            ])
+            .filter(([, groupData]) => groupData.permissions.length > 0)
 
-                <div className="divide-y">
-                  {groupData.permissions.map((perm) => {
-                    const { currentState, originalState, isOverriding } = getPermissionState(groupKey, perm.key)
-                    const hasChanged = updatedPermissions[perm.key] !== undefined
-                    const isCompanyLevelOnly = permissionKeysMetadata[perm.key]?.includes_branch === false
-                    const isDisabled = disabledPermissions[perm.key]
+          if (visibleGroups.length === 0) {
+            return (
+              <Card className="p-8 text-center text-gray-500">
+                No {activeTab === 'core' ? 'core' : 'module'} permissions available
+              </Card>
+            )
+          }
 
-                    const permissionRow = (
-                      <div
-                        key={perm.key}
-                        className={`grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-5 items-center hover:bg-muted/50 transition-colors ${isDisabled ? 'opacity-50' : ''}`}
-                      >
-                        <div className="md:col-span-5">
-                          <div className="flex items-center gap-2">
-                            <div className="font-medium">{perm.label}</div>
-                            {isCompanyLevelOnly && (
-                              <span className="px-2 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-                                Company level
-                              </span>
-                            )}
-                            {isOverriding && !isEditMode && (
-                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
-                                Overriding
-                              </span>
-                            )}
-                            {isDisabled && (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-500 cursor-help" />
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs">
-                                  <p>This staff is not a company level staff. To grant this user this permission, give the staff a company access level.</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </div>
-                          <div className="text-sm text-muted-foreground mt-1">
-                            {perm.description}
-                          </div>
-                        </div>
+          return (
+            <TooltipProvider>
+              {visibleGroups.map(([groupKey, groupData]) => (
+                <Card key={groupKey} className="mb-8 overflow-hidden">
+                  <div className="bg-muted px-6 py-4 border-b">
+                    <h2 className="text-xl font-semibold">{groupData.label}</h2>
+                  </div>
 
-                        <div className="md:col-span-2 text-sm text-muted-foreground font-mono break-all">
-                          {perm.key}
-                        </div>
+                  <div className="divide-y">
+                    {groupData.permissions.map((perm) => {
+                      const { currentState, originalState, isOverriding } = getPermissionState(groupKey, perm.key)
+                      const hasChanged = updatedPermissions[perm.key] !== undefined
+                      const isCompanyLevelOnly = permissionKeysMetadata[perm.key]?.includes_branch === false
+                      const isBranchRestricted = isCompanyLevelOnly && staffAccessScope === 'branch'
 
-                        <div className="md:col-span-5 flex justify-end items-center gap-3">
-                          {isEditMode ? (
-                            <>
-                              <div className="flex gap-3 items-center">
-                                {hasChanged && (
-                                  <>
-                                    <div className="flex flex-col items-center">
-                                      <div className="text-xs text-gray-500 mb-1">Original</div>
-                                      {getStatusBadge(originalState)}
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                      <div className="text-xs text-gray-500 mb-1">Updated</div>
-                                      {getStatusBadge(currentState)}
-                                    </div>
-                                  </>
-                                )}
-                                {!hasChanged && (
-                                  <>
-                                    {getStatusBadge(currentState)}
-                                    {isOverriding && (
-                                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
-                                        Overriding
-                                      </span>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-
-                              {isDisabled ? (
-                                <span className="px-3 py-1 text-xs font-medium text-gray-400 dark:text-gray-600">
+                      return (
+                        <div
+                          key={perm.key}
+                          className="grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-5 items-center hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="md:col-span-5">
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium">{perm.label}</div>
+                              {isCompanyLevelOnly && (
+                                <span className="px-2 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
                                   Company level
                                 </span>
-                              ) : (
+                              )}
+                              {isOverriding && !isEditMode && (
+                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
+                                  Overriding
+                                </span>
+                              )}
+                              {isBranchRestricted && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <AlertCircle className="w-6 h-6 text-amber-600 dark:text-amber-500 cursor-help" />
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <p>This staff is not a company level staff. This permission is company level — overriding it will grant company-level access to a branch-scoped staff member.</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground mt-1">
+                              {perm.description}
+                            </div>
+                          </div>
+
+                          <div className="md:col-span-2 text-sm text-muted-foreground font-mono break-all">
+                            {perm.key}
+                          </div>
+
+                          <div className="md:col-span-5 flex justify-end items-center gap-3">
+                            {isEditMode ? (
+                              <>
+                                <div className="flex gap-3 items-center">
+                                  {hasChanged && (
+                                    <>
+                                      <div className="flex flex-col items-center">
+                                        <div className="text-xs text-gray-500 mb-1">Original</div>
+                                        {getStatusBadge(originalState)}
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <div className="text-xs text-gray-500 mb-1">Updated</div>
+                                        {getStatusBadge(currentState)}
+                                      </div>
+                                    </>
+                                  )}
+                                  {!hasChanged && (
+                                    <>
+                                      {getStatusBadge(currentState)}
+                                      {isOverriding && (
+                                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
+                                          Overriding
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+
                                 <button
                                   onClick={() => handlePermissionToggle(perm.key, currentState)}
                                   className="px-3 py-1 text-xs font-medium rounded-md bg-core/10 text-core hover:bg-core/20 transition-colors"
                                 >
                                   Toggle
                                 </button>
-                              )}
-                            </>
-                          ) : (
-                            getStatusBadge(currentState)
-                          )}
+                              </>
+                            ) : (
+                              getStatusBadge(currentState)
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )
-
-                    return isDisabled ? (
-                      <Tooltip key={perm.key}>
-                        <TooltipTrigger asChild>
-                          {permissionRow}
-                        </TooltipTrigger>
-                      </Tooltip>
-                    ) : (
-                      permissionRow
-                    )
-                  })}
-                </div>
-              </Card>
-            ))}
-          </TooltipProvider>
-        )}
+                      )
+                    })}
+                  </div>
+                </Card>
+              ))}
+            </TooltipProvider>
+          )
+        })()}
       </div>
 
-      {/* Company Level Access Dialog */}
-      <AlertDialog open={showDisabledDialog} onOpenChange={setShowDisabledDialog}>
+      {/* Branch-level staff / company-level permission warning */}
+      <AlertDialog open={!!pendingBranchToggle} onOpenChange={(open) => { if (!open) cancelBranchToggle() }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Company Level Access Required</AlertDialogTitle>
+            <AlertDialogTitle>Company-Level Permission Override</AlertDialogTitle>
             <AlertDialogDescription>
-              This staff does not have company access. This permission is company level and the staff does not have company access. Change the staff access to company access to enable this permission.
+              This staff is not a company-level staff. Are you sure you want to override this permission for them?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-3">
-            <AlertDialogCancel>Close</AlertDialogCancel>
+            <AlertDialogCancel onClick={cancelBranchToggle}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className={'bg-core'} onClick={confirmBranchToggle}>Continue</AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>

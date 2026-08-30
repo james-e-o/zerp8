@@ -1,44 +1,29 @@
 "use client"
 
-import {useContext} from "react"
-import { ArrowBigDownDash, ChevronRight, AudioWaveform, BookOpen, Bot, Calculator, ChartCandlestick,Files, Command, Factory, FileChartLine, Frame, GalleryVerticalEnd, LayoutDashboard, Map, PieChart, Plus, Settings, Settings2, SquareTerminal,} from "lucide-react"
-import { Button,buttonVariants } from "@/components/ui/button";
-import { DataContext } from "@/app/users/[u]/pageLayoutProvider";
-import Link from "next/link";
-import {  Sidebar,  SidebarContent,  SidebarFooter,  SidebarHeader,SidebarTrigger,  SidebarRail,} from "@/components/ui/sidebar"
-import {  Collapsible,  CollapsibleContent,  CollapsibleTrigger,} from "@/components/ui/collapsible"
-import {  SidebarGroup,  SidebarGroupLabel,  SidebarMenu,  SidebarMenuButton,  SidebarMenuItem,  SidebarMenuSub,  SidebarMenuSubButton,  SidebarMenuSubItem,} from "@/components/ui/sidebar"
-import { useParams } from "next/navigation";
-import { useSidebar } from "@/components/ui/sidebar";
+import Link from "next/link"
+import { ChevronRight } from "lucide-react"
+import {
+  Sidebar,
+  SidebarRail,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  useSidebar,
+} from "@/components/ui/sidebar"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { AppSidebarHeader } from "@/components/sidebars/app-sidebar/app-sidebar-header"
+import ModuleSidebarContent from "./module-sidebar-content"
+import ModuleSidebarFooter from "./module-sidebar-footer"
 
-import { useIsMobile } from "@/hooks/use-mobile";
-import CompanySidebarContent from "./company-sidebar-content";
-import CompanySidebarFooter from "./company-sidebar-footer";
-import { AppSidebarHeader } from "../app-sidebar/app-sidebar-header";
-
-
-export function AppSidebar({modules, branches, company, accessLevel, accessLevelScope, branchId, suspended, ...props }) {
-    const isMobile = useIsMobile()
-    const params = useParams()
-    const {data,setData} = useContext(DataContext)
-
+export default function ModuleSidebar({ title, items = [], basePath = "", profile, company, branch }) {
   return (
-    <Sidebar  className={''} collapsible="icon" {...props}>
-      <AppSidebarHeader/>
-      <CompanySidebarContent 
-        modules={modules} 
-        company={company} 
-        branches={branches}
-        accessLevel={accessLevel}
-        accessLevelScope={accessLevelScope}
-        branchId={branchId}
-        suspended={suspended}
-      />
-      <CompanySidebarFooter 
-        params={params} 
-        profile={data.profile}
-        company={company}
-      />
+    <Sidebar className="bg-white" collapsible="icon">
+      <AppSidebarHeader />
+      <ModuleSidebarContent title={title} items={items} basePath={basePath} company={company} branch={branch} />
+      <ModuleSidebarFooter profile={profile} company={company} branch={branch} />
       <SidebarRail />
     </Sidebar>
   )
@@ -57,13 +42,13 @@ export const CollapsibleButton = ({title,icon,items,sidebarCollapse,sidebarOpen,
               </SidebarMenuButton>
             </CollapsibleTrigger>
             <CollapsibleContent>
-            <SidebarMenuSub className="mt-1.5 space-y-12">
+            <SidebarMenuSub className="mt-1.5 space-y-1.5">
                 {items?.map((subItem) => {
                 const subBtnClass = subItem.className || 'text-black text-sm'
                 const titleClass = subItem.titleClass || 'font-medium data-[caps=capitalize]:capitalize data-[caps=lowercase]:lowercase data-[caps=uppercase]:uppercase font-Poppins text-sm ml-1'
                 const SubIcon = subItem.icon
                 return (
-                <SidebarMenuSubItem key={subItem.title} className="my-1">
+                <SidebarMenuSubItem key={subItem.title} className="my-0.5">
                   <SidebarMenuSubButton className={`${subBtnClass} py-1.5`} style={subItem.style} asChild>
                     <Link href={subItem.url} className="flex items-center gap-2 w-full">
                       {SubIcon && <SubIcon className={subItem.iconClass || subIconClass || 'h-3.5 w-3.5 text-core'} />}

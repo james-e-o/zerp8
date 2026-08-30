@@ -522,10 +522,10 @@ export function SignupForm({
                 if (companyData?.invited_by) params.append('invited_by', companyData.invited_by)
                 if (companyData?.invite_id) params.append('invite_id', companyData.invite_id)
 
-                const loginUrl = `/accounts/login${params.toString() ? '?' + params.toString() : ''}`
+                const loginUrl = `/invitations/login${params.toString() ? '?' + params.toString() : ''}`
                 router.push(loginUrl)
               }}
-              className="bg-core hover:bg-core/90 text-white font-semibold w-full mt-4"
+              className="bg-army hover:bg-army/90 text-white font-semibold w-full mt-4"
             >
               Go to Login
             </Button>
