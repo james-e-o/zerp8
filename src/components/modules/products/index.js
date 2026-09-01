@@ -13,9 +13,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { useParams } from "next/navigation"
 
 
-
-
-
 export default function Productpage() {
 
     const params = useParams()

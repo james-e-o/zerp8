@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useContext } from "react";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -11,15 +12,17 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { CompanyInfoContext } from "@/app/users/[u]/company/[companyId]/companyInfoProvider";
 
 export default function CompanyHeader({ children }) {
   const pathname = usePathname();
-  const segments = pathname.split("/").filter(Boolean);
-  // Example: ["admin", "john", "company", "fedeco", "settings"]
+  const { info } = useContext(CompanyInfoContext); // NEW: pull slug from context, not the URL
 
+  const segments = pathname.split("/").filter(Boolean);
   const userId = segments[1];
-  const companyId = segments[3];
-  const companySegments = segments.slice(4); // e.g. ["settings"]
+  const companyId = segments[3]; // still the raw id — stays in every href
+  const companyLabel = info?.slug || companyId; // NEW: what actually renders
+  const companySegments = segments.slice(4);
 
   const isAtCompanyRoot = segments.length === 4;
 
@@ -31,7 +34,6 @@ export default function CompanyHeader({ children }) {
 
         <Breadcrumb>
           <BreadcrumbList className="flex items-center gap-1">
-            {/* Always show "Dashboard" */}
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
                 <Link href={`/users/${userId}`}>Admin Page</Link>
@@ -40,25 +42,20 @@ export default function CompanyHeader({ children }) {
 
             <BreadcrumbSeparator />
 
-            {/* Company breadcrumb */}
             {isAtCompanyRoot ? (
               <BreadcrumbItem>
-                <BreadcrumbPage className="capitalize">{companyId}</BreadcrumbPage>
+                <BreadcrumbPage className="capitalize">{companyLabel}</BreadcrumbPage>
               </BreadcrumbItem>
             ) : (
               <>
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
-                    <Link
-                      href={`/users/${userId}/company/${companyId}`}
-                      className="capitalize"
-                    >
-                      {companyId}
+                    <Link href={`/users/${userId}/company/${companyId}`} className="capitalize">
+                      {companyLabel}
                     </Link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>
 
-                {/* Sub-page breadcrumbs */}
                 {companySegments.map((segment, i) => {
                   const href = `/users/${userId}/company/${companyId}/${companySegments
                     .slice(0, i + 1)
@@ -90,9 +87,7 @@ export default function CompanyHeader({ children }) {
         </Breadcrumb>
       </div>
 
-      {/* Right side content (e.g. profile, buttons, etc.) */}
       <div>{children}</div>
     </header>
   );
 }
-

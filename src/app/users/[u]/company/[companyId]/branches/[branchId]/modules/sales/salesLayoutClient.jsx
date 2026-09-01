@@ -28,7 +28,7 @@ export default function SalesLayoutClient({ params, title, items, basePath, chil
               </ModuleHeader>
             </div>
 
-            <div className="grow overflow-y-auto p-2 bg-background">{children}</div>
+            <div className="grow overflow-y-auto md:px-4 px-2 py-2 bg-background">{children}</div>
           </div>
         </SidebarInset>
       </SidebarProvider>

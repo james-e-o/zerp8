@@ -167,6 +167,7 @@ export function StaffTable({ staffList = [], userId, companyId }) {
     },
   ]
 
+  
   // Filter function
   const globalFilterFn = (row, columnId, value) => {
     const searchableData = [

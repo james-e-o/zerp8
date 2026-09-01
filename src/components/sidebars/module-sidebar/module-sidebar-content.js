@@ -1,36 +1,37 @@
 "use client"
 
-import {
-  BarChart3,
-  Boxes,
-  Building2,
-  ClipboardList,
-  FilePlus,
-  FileStack,
-  Building,
-  LayoutTemplate,
-  List,
-  Palette,
-  Plus,
-  Settings2,
+import { ArrowLeftRight, BarChart3, Boxes, Building2, Building, ClipboardCheck, ClipboardList, FileText, FilePlus, FileStack, Home, LayoutTemplate, List, Lock, PackageCheck, Palette, Plus, Receipt, Settings2, ShoppingCart, SlidersHorizontal, Undo2, Truck, Warehouse, Users,
 } from "lucide-react"
 import { useParams } from "next/navigation"
 import { SidebarContent, SidebarGroup, SidebarMenu } from "@/components/ui/sidebar"
 import { NoCollapsibleButton } from "./module-sidebar"
 
 const ICONS = {
-  Building2,
-  List,
-  Building,
-  Plus,
-  Palette,
-  Settings2,
+  ArrowLeftRight,
   BarChart3,
   Boxes,
+  Building2,
+  Building,
+  ClipboardCheck,
   ClipboardList,
+  FileText,
   FilePlus,
   FileStack,
+  Home,
   LayoutTemplate,
+  List,
+  Lock,
+  PackageCheck,
+  Palette,
+  Plus,
+  Receipt,
+  Settings2,
+  ShoppingCart,
+  SlidersHorizontal,
+  Truck,
+  Undo2,
+  Users,
+  Warehouse,
 }
 
 export default function ModuleSidebarContent({ title, items = [], basePath = "", company, branch }) {
@@ -49,8 +50,14 @@ export default function ModuleSidebarContent({ title, items = [], basePath = "",
             name={`${branch?.name || "Branch"} Dashboard`}
           />
 
+          {title && (
+            <div className=" my-3 mx-2 px-4 py-1.5  flex justify-center items-center rounded-sm bg-core_light w-fit">
+              <span className="text-xs font-semibold text-core tracking-wide">{title.toUpperCase()}</span>
+            </div>
+          )}
+
           {(items || []).map((item) => {
-            const href = item.href === "/" ? basePath : `${basePath}/${item.href}`.replace(/\/+/g, "/")
+            const href = item.path === "" ? basePath : item.path === "/" ? basePath : `${basePath}${item.path}`.replace(/\/+/g, "/")
             const Icon = typeof item.icon === "string" ? ICONS[item.icon] || List : item.icon
 
             return (

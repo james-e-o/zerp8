@@ -1,10 +1,10 @@
-import PageHeader from "@/components/modules/sales/PageHeader";
-import StatCard from "@/components/modules/sales/StatCard";
-import DataTable from "@/components/modules/sales/DataTable";
-import StatusBadge from "@/components/modules/sales/StatusBadge";
+import PageHeader from "@/components/PageHeader";
+import StatCard from "@/components/StatCard";
+import DataTable from "@/components/DataTable";
+import StatusBadge from "@/components/StatusBadge";
 import { naira, orders, invoices } from "@/lib/mock-data";
 
-export default function SalesOverviewPage() {
+export default function OverviewPage() {
   const outstanding = invoices
     .filter((i) => i.balance > 0)
     .reduce((sum, i) => sum + i.balance, 0);
@@ -14,7 +14,7 @@ export default function SalesOverviewPage() {
   return (
     <div>
       <PageHeader
-        title="Sales Overview"
+        title="Overview"
         description="Revenue, orders, and outstanding invoices across this branch."
       />
 

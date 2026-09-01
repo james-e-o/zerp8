@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -13,11 +13,16 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { CompanyInfoContext } from "@/app/users/[u]/company/[companyId]/companyInfoProvider";
+import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext";
 
 export default function ModuleHeader({ title, children }) {
   const pathname = usePathname();
   const params = useParams();
   const [isSmallScreen, setIsSmallScreen] = useState(false);
+
+  const { info } = useContext(CompanyInfoContext);
+  const { currentBranch } = useContext(BranchContext);
 
   useEffect(() => {
     const checkScreen = () => setIsSmallScreen(window.innerWidth < 640);
@@ -33,23 +38,44 @@ export default function ModuleHeader({ title, children }) {
   const moduleIndex = segments.indexOf("modules");
   const moduleSlug = moduleIndex >= 0 ? segments[moduleIndex + 1] : "";
 
+  const companyLabel = info?.slug || companyId;
+  const branchLabel = currentBranch?.slug || currentBranch?.name || branchId;
+
+  // `title` is a display override for the MODULE's own breadcrumb entry only
+  // (e.g. "sales" -> "Sales"). It must never bleed into whatever the actual
+  // last URL segment is (e.g. "customers") — that was the bug.
+  const moduleLabel = title || (moduleSlug ? moduleSlug.replace(/-/g, " ") : "");
+
   const baseCompany = `/users/${userId}/company/${companyId}`;
   const baseBranch = `${baseCompany}/branches/${branchId}`;
   const baseModule = moduleSlug ? `${baseBranch}/modules/${moduleSlug}` : baseBranch;
 
   const breadcrumbItems = [
     { label: "Admin", href: `/users/${userId}` },
-    { label: companyId, href: baseCompany },
-    ...(branchId ? [{ label: "Branches", href: `${baseCompany}/branches` }, { label: branchId, href: baseBranch }] : []),
-    ...(moduleSlug ? [{ label: "modules", href: `${baseBranch}/modules` }, { label: moduleSlug, href: baseModule }] : []),
+    { label: companyLabel, href: baseCompany },
+    ...(branchId ? [{ label: branchLabel, href: baseBranch }] : []),
+    ...(moduleSlug ? [{ label: moduleLabel, href: baseModule }] : []),
   ];
+
+  // Sub-routes beneath the module (e.g. "customers") each get their own
+  // untouched breadcrumb entry — nothing overrides these anymore.
+  if (moduleSlug) {
+    for (let i = moduleIndex + 2; i < segments.length; i++) {
+      const subLabel = segments[i].replace(/-/g, " ");
+      const subPath = segments.slice(moduleIndex + 2, i + 1).join("/");
+      breadcrumbItems.push({ label: subLabel, href: `${baseModule}/${subPath}` });
+    }
+  }
 
   const collapsedItems =
     isSmallScreen && breadcrumbItems.length > 3
-      ? [breadcrumbItems[0], { label: "..." }, breadcrumbItems[breadcrumbItems.length - 2], breadcrumbItems[breadcrumbItems.length - 1]]
+      ? [
+          breadcrumbItems[0],
+          { label: "..." },
+          breadcrumbItems[breadcrumbItems.length - 2],
+          breadcrumbItems[breadcrumbItems.length - 1],
+        ]
       : breadcrumbItems;
-
-  const currentTitle = title || (moduleSlug ? moduleSlug.replace(/-/g, " ") : "Module");
 
   return (
     <header className="flex h-12 w-full justify-between items-center gap-2 border-b px-4">
@@ -76,7 +102,7 @@ export default function ModuleHeader({ title, children }) {
                   {index > 0 && <BreadcrumbSeparator className="mx-1" />}
                   {isLast ? (
                     <BreadcrumbItem>
-                      <BreadcrumbPage className="capitalize">{currentTitle}</BreadcrumbPage>
+                      <BreadcrumbPage className="capitalize">{item.label}</BreadcrumbPage>
                     </BreadcrumbItem>
                   ) : (
                     <BreadcrumbItem>
