@@ -1,8 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import DataTable from "@/components/DataTable";
-import StatusBadge from "@/components/StatusBadge";
+import DataTable from "@/components/modules/sales/DataTable";
+import StatusBadge from "@/components/modules/sales/StatusBadge";
 import { Truck, HandPlatter } from "lucide-react";
 import { deliveries } from "@/lib/mock-data";
 

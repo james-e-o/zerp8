@@ -19,10 +19,14 @@ export default async function ProductsLayout({ params, children }) {
   }
 
   const navigationItems = [
-    { label: "Products", href: "/", icon: "List" },
-    { label: "Create Product", href: "create", icon: "Plus" },
-    { label: "Categories", href: "categories", icon: "Palette" },
-    { label: "Settings", href: "settings", icon: "Settings2" },
+    { label: "Overview", path: "", icon: "Home" },
+    { label: "All Products", path: "/all-products", icon: "PackageSearch" },
+    { label: "Create Product", path: "/create", icon: "Plus" },
+    { label: "Categories", path: "/categories", icon: "FolderTree" },
+    { label: "Brands", path: "/brands", icon: "Tags" },
+    { label: "Attributes", path: "/attributes", icon: "ListFilter" },
+    { label: "Pricing", path: "/pricing", icon: "BadgeDollarSign" },
+    { label: "Settings", path: "/settings", icon: "Settings2" },
   ];
 
   return (

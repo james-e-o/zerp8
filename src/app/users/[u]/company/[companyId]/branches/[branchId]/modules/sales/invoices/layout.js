@@ -1,5 +1,5 @@
-import PageHeader from "@/components/PageHeader";
-import TabNav from "@/components/TabNav";
+import PageHeader from "@/components/modules/sales/PageHeader";
+import TabNav from "@/components/modules/sales/TabNav";
 
 // Sales Invoices, Proforma Invoices, and Credit Notes all live under one
 // list — they're variants of the same billing concern, not separate

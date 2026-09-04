@@ -1,38 +1,12 @@
 "use client"
 
-import { ArrowLeftRight, BarChart3, Boxes, Building2, Building, ClipboardCheck, ClipboardList, FileText, FilePlus, FileStack, Home, LayoutTemplate, List, Lock, PackageCheck, Palette, Plus, Receipt, Settings2, ShoppingCart, SlidersHorizontal, Undo2, Truck, Warehouse, Users,
+import { ArrowLeftRight, BadgeDollarSign, BarChart3, Boxes, Building2, Building, ClipboardCheck, ClipboardList, CreditCard, FileText, FilePlus, FileStack, FolderTree, Home, LayoutTemplate, List, ListFilter, Lock, PackageCheck, PackageSearch, Palette, Plus, Receipt, Settings2, ShoppingCart, SlidersHorizontal, Tags, Undo2, Truck, Warehouse, Users,
 } from "lucide-react"
 import { useParams } from "next/navigation"
 import { SidebarContent, SidebarGroup, SidebarMenu } from "@/components/ui/sidebar"
 import { NoCollapsibleButton } from "./module-sidebar"
 
-const ICONS = {
-  ArrowLeftRight,
-  BarChart3,
-  Boxes,
-  Building2,
-  Building,
-  ClipboardCheck,
-  ClipboardList,
-  FileText,
-  FilePlus,
-  FileStack,
-  Home,
-  LayoutTemplate,
-  List,
-  Lock,
-  PackageCheck,
-  Palette,
-  Plus,
-  Receipt,
-  Settings2,
-  ShoppingCart,
-  SlidersHorizontal,
-  Truck,
-  Undo2,
-  Users,
-  Warehouse,
-}
+const ICONS = { BarChart3, ArrowLeftRight, Boxes, BadgeDollarSign, Building2, Building, ClipboardCheck, ClipboardList, CreditCard, FileText, FilePlus, FileStack, FolderTree, Home, LayoutTemplate, List, ListFilter, Lock, PackageCheck, PackageSearch, Palette, Plus, Receipt, Settings2, ShoppingCart, SlidersHorizontal, Tags, Truck, Undo2, Users, Warehouse,}
 
 export default function ModuleSidebarContent({ title, items = [], basePath = "", company, branch }) {
   const params = useParams()

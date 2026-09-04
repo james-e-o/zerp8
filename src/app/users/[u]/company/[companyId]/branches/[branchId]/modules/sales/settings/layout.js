@@ -1,5 +1,5 @@
-import PageHeader from "@/components/PageHeader";
-import TabNav from "@/components/TabNav";
+import PageHeader from "@/components/modules/sales/PageHeader";
+import TabNav from "@/components/modules/sales/TabNav";
 
 const TABS = [
   { label: "General", value: "all" },

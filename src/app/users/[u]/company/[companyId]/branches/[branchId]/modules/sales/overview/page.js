@@ -1,7 +1,7 @@
-import PageHeader from "@/components/PageHeader";
-import StatCard from "@/components/StatCard";
-import DataTable from "@/components/DataTable";
-import StatusBadge from "@/components/StatusBadge";
+import PageHeader from "@/components/modules/sales/PageHeader";
+import StatCard from "@/components/modules/sales/StatCard";
+import DataTable from "@/components/modules/sales/DataTable";
+import StatusBadge from "@/components/modules/sales/StatusBadge";
 import { naira, orders, invoices } from "@/lib/mock-data";
 
 export default function OverviewPage() {

@@ -66,11 +66,34 @@ export default async function SubscriptionOverviewPage({ params }) {
     return currentPlan?.title || currentPlan?.name || "Unknown Plan"
   }
 
+  const isSubscriptionExpired = () => {
+    if (!currentSubscription) return false
+    
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    if (currentSubscription.status === "trial" && currentSubscription.trial_end) {
+      const trialEnd = new Date(currentSubscription.trial_end)
+      trialEnd.setHours(0, 0, 0, 0)
+      return today > trialEnd
+    }
+    
+    if (currentSubscription.end_date) {
+      const endDate = new Date(currentSubscription.end_date)
+      endDate.setHours(0, 0, 0, 0)
+      return today > endDate
+    }
+    
+    return false
+  }
+
+  const hasExpired = isSubscriptionExpired()
+
   const baseUrl = `/users/${u}/company/${companyId}/subscriptions`
 
   return (
     <div className="space-y-6">
-      {currentSubscription ? (
+      {currentSubscription && !hasExpired ? (
         <div className="grid md:grid-cols-2 gap-6">
           <div className="border border-gray-200 rounded-lg p-6 shadow">
             <div className="flex items-center justify-between mb-6">
@@ -149,7 +172,7 @@ export default async function SubscriptionOverviewPage({ params }) {
         <div className="grid md:grid-cols-2 gap-6">
           <div className="bg-blue-50 border border-blue-200 flex flex-col justify-center items-center rounded-lg p-6 shadow">
             <p className="text-blue-900 text-lg font-semibold">
-              Your Company does not have an active subscription currently
+              You don't have an active subscription
             </p>
             <p className="text-blue-700 text-sm mt-2">
               Start a subscription to unlock all features and get premium support.
@@ -160,10 +183,7 @@ export default async function SubscriptionOverviewPage({ params }) {
             <h3 className="text-sm font-semibold text-gray-500 uppercase mb-4">Actions</h3>
             <div className="space-y-3">
               <Link href={`${baseUrl}/plans`} className="block">
-                <Button className="w-full bg-core text-white hover:bg-core/90">Upgrade Plan</Button>
-              </Link>
-              <Link href={`${baseUrl}/billing`} className="block">
-                <Button variant="outline" className="w-full">Update Billing Address</Button>
+                <Button className="w-full bg-core text-white hover:bg-core/90">View Plans</Button>
               </Link>
               <div className="block">
                 <StartFreeTrialButton

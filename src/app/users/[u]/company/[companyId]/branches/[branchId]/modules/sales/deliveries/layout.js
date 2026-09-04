@@ -1,5 +1,5 @@
-import PageHeader from "@/components/PageHeader";
-import TabNav from "@/components/TabNav";
+import PageHeader from "@/components/modules/sales/PageHeader";
+import TabNav from "@/components/modules/sales/TabNav";
 
 // Tabs split by fulfillment_type and by status — Delivery and Pickup are
 // both just Delivery Note records (see lib/mock-data), filtered client-side.

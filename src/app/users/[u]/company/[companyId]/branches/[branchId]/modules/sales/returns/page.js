@@ -1,8 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import DataTable from "@/components/DataTable";
-import StatusBadge from "@/components/StatusBadge";
+import DataTable from "@/components/modules/sales/DataTable";
+import StatusBadge from "@/components/modules/sales/StatusBadge";
 import { returns } from "@/lib/mock-data";
 
 export default function ReturnsPage() {
