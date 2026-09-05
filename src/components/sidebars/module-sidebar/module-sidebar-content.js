@@ -2,7 +2,7 @@
 
 import { ArrowLeftRight, BadgeDollarSign, BarChart3, Boxes, Building2, Building, ClipboardCheck, ClipboardList, CreditCard, FileText, FilePlus, FileStack, FolderTree, Home, LayoutTemplate, List, ListFilter, Lock, PackageCheck, PackageSearch, Palette, Plus, Receipt, Settings2, ShoppingCart, SlidersHorizontal, Tags, Undo2, Truck, Warehouse, Users,
 } from "lucide-react"
-import { useParams } from "next/navigation"
+import { useParams, usePathname } from "next/navigation"
 import { SidebarContent, SidebarGroup, SidebarMenu } from "@/components/ui/sidebar"
 import { NoCollapsibleButton } from "./module-sidebar"
 
@@ -10,17 +10,22 @@ const ICONS = { BarChart3, ArrowLeftRight, Boxes, BadgeDollarSign, Building2, Bu
 
 export default function ModuleSidebarContent({ title, items = [], basePath = "", company, branch }) {
   const params = useParams()
+  const pathname = usePathname()
+
+  const isActive = (href, exact = false) => exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`)
+
+  const branchDashboardPath = `/users/${params.u}/company/${params.companyId}/branches/${params.branchId}`
 
   return (
     <SidebarContent className="bg-armylight text-sm text-zinc-100">
       <SidebarGroup>
         <SidebarMenu>
           <NoCollapsibleButton
-            url={`/users/${params.u}/company/${params.companyId}/branches/${params.branchId}`}
+            url={branchDashboardPath}
             title="Dashboard"
             icon={Building}
             iconClass="text-core"
-            active={false}
+            active={pathname === branchDashboardPath}
             name={`${branch?.name || "Branch"} Dashboard`}
           />
 
@@ -40,7 +45,7 @@ export default function ModuleSidebarContent({ title, items = [], basePath = "",
                 url={href}
                 title={item.label}
                 icon={Icon}
-                active={false}
+                active={isActive(href, item.path === "")}
                 name={item.label}
               />
             )

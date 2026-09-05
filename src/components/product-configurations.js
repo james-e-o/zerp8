@@ -20,7 +20,7 @@ import supabase from '../config/supabaseClient';
  *   handoff between the two files sane, related fields are grouped into
  *   a small number of objects instead of being passed as 20+ individual
  *   useState/setState pairs:
- *     - categorization   { category, tags }  (+ open/close + sheets)
+ *     - categorization   { category }  (+ open/close + sheet)
  *     - costPrice / setCostPrice        -> base cost, still product-level
  *     - standardPricing / setStandardPricing
  *          { marginPercentage, marginValue, sellingPrice }
@@ -57,13 +57,6 @@ export const ProductConfigurations = forwardRef(({
   categorySheetOpen,
   setCategorySheetOpen,
   CategorySheet,
-  selectedTags,
-  selectedTagNames,
-  setSelectedTags,
-  setSelectedTagNames,
-  tagSheetOpen,
-  setTagSheetOpen,
-  TagSheet,
 
   // Pricing (Standard only - see note above)
   costPrice,
@@ -172,24 +165,15 @@ export const ProductConfigurations = forwardRef(({
 
       <div className="space-y-4 text-xs text-gray-700">
 
-        {/* Categories + Tags */}
+        {/* Categories */}
         <div className="rounded-sm bg-white p-4 space-y-4" data-field="category">
           <div className="flex gap-4">
-            <div className="flex-1">
+            <div className="flex-1 max-w-xl">
               <label className="text-gray-600 text-xs">Categories </label>
               <div className="flex gap-2 mt-1 items-center">
                 <input className={`flex-1 border border-neutral-500 rounded-sm p-2 text-xs ${errors.category ? 'border-red-500 border-2 bg-red-50' : ''}`} value={selectedCategoryName || ''} readOnly placeholder="Select category" />
                 <Button variant="outline" className="h-8 px-2 text-xs" onClick={() => setCategorySheetOpen(true)}>Select</Button>
                 <CategorySheet branch={branch} open={categorySheetOpen} onOpenChange={setCategorySheetOpen} onConfirm={(id, name) => { setSelectedCategoryId(id); setSelectedCategoryName(name || ''); setCategorySheetOpen(false) }} initialSelected={selectedCategoryId} />
-              </div>
-            </div>
-
-            <div className="flex-1">
-              <label className="text-gray-600 text-xs">Tags (Optional)</label>
-              <div className="flex gap-2 mt-1 items-center">
-                <input className="flex-1 border border-neutral-500 rounded-sm p-2 text-xs" value={(selectedTagNames && selectedTagNames.length) ? selectedTagNames.join(', ') : ''} readOnly placeholder="Select tags" />
-                <Button variant="outline" className="h-8 px-2 text-xs" onClick={() => setTagSheetOpen(true)}>Choose</Button>
-                <TagSheet open={tagSheetOpen} onOpenChange={setTagSheetOpen} onConfirm={(ids, names) => { setSelectedTags(ids || []); setSelectedTagNames(names || []); setTagSheetOpen(false) }} initialSelected={selectedTags} />
               </div>
             </div>
           </div>

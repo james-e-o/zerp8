@@ -83,7 +83,7 @@ export const NoCollapsibleButton = ({
         tooltip={title}
         asChild
         isActive={active}
-        className="relative text-black border-2 border-transparent hover:border-zinc-100 bg-transparent"
+        className="relative text-black border-2 border-transparent hover:border-zinc-100 bg-transparent data-[active=true]:bg-zinc-200/50 data-[active=true]:hover:bg-zinc-100"
       >
         <Link href={url} className="relative flex items-center w-full">
           {item.icon && <item.icon className={iconClass || "font-bold"} />}

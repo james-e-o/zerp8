@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Plus, List, Workflow, Package, AlertCircle, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 
 export default function OrdersLayout({ children }) {
 	const params = useParams();
 	const { u, companySlug, branch } = params;
+	const pathname = usePathname();
 	const [sidebarOpen, setSidebarOpen] = useState(true);
 
 	const navigationItems = [
@@ -35,7 +36,14 @@ export default function OrdersLayout({ children }) {
 							key={item.label}
 							href={`/users/${u}/company/${companySlug}/branches/${branch}/modules/orders/${item.href}`}
 						>
-                            <Button variant={'ghost'} className={'h-7'}>
+														<Button
+															variant="ghost"
+															className={`flex min-w-max cursor-pointer items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+																pathname.endsWith(`/modules/orders/${item.href}`) || (item.href === '/' && pathname.endsWith('/modules/orders/'))
+																	? 'bg-core_light text-core border-core/20'
+																	: 'text-muted-foreground border-border hover:bg-muted'
+															}`}
+														>
                                 <span className="text-xl"><item.icon className='text-army font-extrabold'/></span>
                                 {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
                             </Button>

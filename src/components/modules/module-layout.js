@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 
 /**
  * ModuleLayout - Reusable layout for all modules (products, invoices, etc)
@@ -21,6 +21,7 @@ export function ModuleLayout({
 }) {
 	const params = useParams();
 	const { u, companySlug, branch } = params;
+	const pathname = usePathname();
 	const [sidebarOpen, setSidebarOpen] = useState(true);
 
 	return (
@@ -38,7 +39,14 @@ export function ModuleLayout({
 							key={item.label}
 							href={`/users/${u}/company/${companySlug}/branches/${branch}/modules/${moduleSlug}/${item.href}`}
 						>
-                            <Button variant={'ghost'} className={'h-7'}>
+														<Button
+															variant="ghost"
+															className={`flex min-w-max cursor-pointer items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+																pathname.endsWith(`/modules/${moduleSlug}/${item.href}`) || (item.href === '/' && pathname.endsWith(`/modules/${moduleSlug}/`))
+																	? 'bg-core_light text-core border-core/20'
+																	: 'text-muted-foreground border-border hover:bg-muted'
+															}`}
+														>
                                 <span className="text-xl"><item.icon className='text-army font-extrabold'/></span>
                                 {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
                             </Button>

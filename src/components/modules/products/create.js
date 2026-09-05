@@ -39,7 +39,7 @@ import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[bra
 //   - quantities / setQuantities             { measurementType, totalProductUnits,
 //                                               totalProductUnitsType, minSaleQuantity,
 //                                               quantityIncrement, bulkThreshold, reorderLevel }
-// Category/Tag sheets and the Variants tab are unaffected and
+// The Category sheet and Variants tab are unaffected and
 // keep their existing shape.
 //
 // Removed entirely (per the Sept 2026 schema discussion):
@@ -92,15 +92,12 @@ const CreateProductPage = () => {
   const { currentBranch } = useContext(BranchContext);
 
   // Product state
-  const [tagSheetOpen, setTagSheetOpen] = useState(false)
   const [categorySheetOpen, setCategorySheetOpen] = useState(false)
   const [hasVariants, setHasVariants] = useState(false);
   const [selectedImages, setSelectedImages] = useState([]);
   const [variantCombinations, setVariantCombinations] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState('')
   const [selectedCategoryName, setSelectedCategoryName] = useState('')
-  const [selectedTags, setSelectedTags] = useState([])
-  const [selectedTagNames, setSelectedTagNames] = useState([])
   const [selectedImage, setSelectedImage] = useState(null);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [productType, setProductType] = useState('physical');
@@ -225,7 +222,6 @@ const CreateProductPage = () => {
     setVariantCombinations([]);
     setSelectedCategoryId('');
     setSelectedCategoryName('');
-    setSelectedTags([]);
     setHasVariants(false);
     setQuantities(DEFAULT_QUANTITIES);
     setStandardPricing(DEFAULT_STANDARD_PRICING);
@@ -449,7 +445,6 @@ const CreateProductPage = () => {
         p_description: description || null,
         p_brand: brand || null,
         p_category: selectedCategoryId || null,
-        p_tags: selectedTags?.length > 0 ? selectedTags : null,
         p_length: dimensions?.length ? parseFloat(dimensions.length) : null,
         p_width: dimensions?.width ? parseFloat(dimensions.width) : null,
         p_height: dimensions?.height ? parseFloat(dimensions.height) : null,
@@ -774,13 +769,6 @@ const CreateProductPage = () => {
                         categorySheetOpen={categorySheetOpen}
                         setCategorySheetOpen={setCategorySheetOpen}
                         CategorySheet={CategorySheet}
-                        selectedTags={selectedTags}
-                        selectedTagNames={selectedTagNames}
-                        setSelectedTags={setSelectedTags}
-                        setSelectedTagNames={setSelectedTagNames}
-                        tagSheetOpen={tagSheetOpen}
-                        setTagSheetOpen={setTagSheetOpen}
-                        TagSheet={TagSheet}
                         costPrice={costPrice}
                         setCostPrice={setCostPrice}
                         standardPricing={standardPricing}
@@ -1064,82 +1052,6 @@ function CategorySheet({ branch, open, onOpenChange, onConfirm, initialSelected 
           <div className="flex w-full mb-4 justify-start gap-2">
             <Button className="h-7 bg-core hover:bg-core/80 text-xs" onClick={() => { const selNode = list.find(x => String(x.id) === String(selected)); onConfirm(selected, selNode?.name || ''); onOpenChange(false) }}>Confirm</Button>
             <SheetClose asChild><Button variant="outline" className="h-7 text-xs">Cancel</Button></SheetClose>
-          </div>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-function TagSheet({ open, onOpenChange, onConfirm, initialSelected = [] }) {
-  const [list, setList] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [selected, setSelected] = useState(initialSelected || [])
-  const [newTagName, setNewTagName] = useState('')
-
-  useEffect(() => {
-    if (!open) return
-    const fetch = async () => {
-      setLoading(true)
-      try {
-        const { data } = await supabase.from('tags').select('*')
-        if (!data || data.length === 0) setList([{ id: 'default-new-1', name: 'New' }, { id: 'default-sale-2', name: 'Sale' }, { id: 'default-limited-3', name: 'Limited' }])
-        else setList(data)
-      } catch (e) { console.error(e) }
-      setLoading(false)
-    }
-    fetch()
-  }, [open])
-
-  const toggle = (id, checked) => {
-    if (checked) setSelected(prev => [...new Set([...(prev || []), id])])
-    else setSelected(prev => (prev || []).filter(x => x !== id))
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Select Tags</SheetTitle>
-          <SheetDescription>Select one or more tags for the product.</SheetDescription>
-        </SheetHeader>
-        <div className="p-4 overflow-y-auto max-h-[60vh]">
-          <div className="mb-3">
-            <div className="text-sm font-medium mb-2">Add tag</div>
-            <div className="flex items-center gap-2">
-              <Input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Tag name" className="h-7 px-2 w-44 text-sm rounded-sm border" />
-              <Button disabled={!newTagName} className="h-7 bg-army" onClick={async () => {
-                if (!newTagName) return
-                try {
-                  const { data, error } = await supabase.from('tags').insert({ name: newTagName }).select().single()
-                  if (error) throw error
-                  setList(prev => [...prev, data]); setNewTagName('')
-                  toast.success('Tag created')
-                } catch (err) { console.error(err); toast.error('Failed to create tag') }
-              }}>Create</Button>
-            </div>
-          </div>
-          {loading ? <div className="text-sm">Loading...</div> : (
-            <div className="space-y-2">
-              {list.map(n => (
-                <div key={n.id} className="py-1">
-                  <label className="inline-flex items-center gap-2">
-                    <Checkbox checked={(selected || []).some(id => String(id) === String(n.id))} onCheckedChange={(v) => toggle(n.id, v)} className="w-4 h-4" />
-                    <span className="text-sm">{n.name}</span>
-                  </label>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <SheetFooter>
-          <div className="flex w-full justify-end gap-2">
-            <SheetClose asChild><Button variant="outline" className="h-8 text-xs">Cancel</Button></SheetClose>
-            <Button className="h-8 text-xs" onClick={() => {
-              const selectedNames = list.filter(item => (selected || []).some(id => String(id) === String(item.id))).map(item => item.name)
-              onConfirm(selected, selectedNames)
-              onOpenChange(false)
-            }}>Confirm</Button>
           </div>
         </SheetFooter>
       </SheetContent>

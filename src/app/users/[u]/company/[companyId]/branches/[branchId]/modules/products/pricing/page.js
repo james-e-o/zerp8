@@ -1,9 +1,7 @@
-"use client";
+import { redirect } from "next/navigation"
 
-export default function PricingPage() {
-  return (
-    <div className="p-4">
-      <p className="text-muted-foreground">Select a pricing section from the navigation.</p>
-    </div>
-  )
+export default async function PricingPage({ params }) {
+  const { u, companyId, branchId } = await params
+
+  redirect(`/users/${u}/company/${companyId}/branches/${branchId}/modules/products/pricing/contexts`)
 }
