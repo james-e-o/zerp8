@@ -1,5 +1,6 @@
 "use client"
 
+import { useContext } from "react"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 import {
@@ -17,13 +18,20 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { AppSidebarHeader } from "@/components/sidebars/app-sidebar/app-sidebar-header"
 import ModuleSidebarContent from "./module-sidebar-content"
 import ModuleSidebarFooter from "./module-sidebar-footer"
+import { DataContext } from "@/app/users/[u]/pageLayoutProvider"
+import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext"
+import { CompanyInfoContext } from "@/app/users/[u]/company/[companyId]/companyInfoProvider"
 
-export default function ModuleSidebar({ title, items = [], basePath = "", profile, company, branch }) {
+export default function ModuleSidebar({ title, items = [], basePath = "" }) {
+  const { data } = useContext(DataContext)
+  const { currentBranch } = useContext(BranchContext)
+  const { info: company } = useContext(CompanyInfoContext)
+
   return (
     <Sidebar className="bg-white" collapsible="icon">
       <AppSidebarHeader />
-      <ModuleSidebarContent title={title} items={items} basePath={basePath} company={company} branch={branch} />
-      <ModuleSidebarFooter profile={profile} company={company} branch={branch} />
+      <ModuleSidebarContent title={title} items={items} basePath={basePath} company={company} branch={currentBranch} />
+      <ModuleSidebarFooter profile={data.profile} company={company} branch={currentBranch} />
       <SidebarRail />
     </Sidebar>
   )

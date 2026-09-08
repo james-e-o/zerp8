@@ -7,11 +7,11 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import ModuleSidebar from "@/components/sidebars/module-sidebar/module-sidebar"
 import ModuleHeader from "@/components/headers/module-header"
 
-export default function InventoryLayoutClient({ params, title, items, basePath, children }) {
+export default function InventoryLayoutClient({ params, title, items, basePath, profile, company, branch, children }) {
   return (
     <ParamsProvider params={params}>
       <SidebarProvider className="relative">
-        <ModuleSidebar title={title} items={items} basePath={basePath} />
+        <ModuleSidebar title={title} items={items} basePath={basePath} profile={profile} company={company} branch={branch} />
 
         <SidebarInset className="h-svh overflow-hidden static">
           <div className="flex flex-col h-full">

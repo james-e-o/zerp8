@@ -47,7 +47,7 @@ import supabase from "@/config/supabaseClient"
 export default function CategoryTable() {
       const params = useParams();
       const toastShownRef = useRef(false);
-      const { branchId } = params;
+      const { branchId, companyId } = params;
 
       // Form states
       // compact top inline form visibility
@@ -133,7 +133,7 @@ export default function CategoryTable() {
             toast.dismiss(t)
             const l = toast.loading('Creating category...')
 
-          const { data, error } = await supabase.from('categories').insert({ name: categoryName, parent: null , slug: categorySlug, description: categoryDescription ,branch: branchId}).select().single()
+          const { data, error } = await supabase.from('categories').insert({ name: categoryName, parent: null , slug: categorySlug, description: categoryDescription ,branch: branchId, company: companyId}).select().single()
           if (error) {
             toast(error)
             throw error
@@ -290,8 +290,9 @@ export default function CategoryTable() {
             }
             // slug available
             toast.dismiss(t)
-            const branchId = params?.branch || null
-            const insertObj = { name: subCategoryName, slug, parent: parentId ? parentId : null, description: '', branch: branchId }
+            const branchId = params?.branchId || null
+            const companyIdValue = params?.companyId || null
+            const insertObj = { name: subCategoryName, slug, parent: parentId ? parentId : null, description: '', branch: branchId, company: companyIdValue }
             const { data, error } = await supabase.from('categories').insert(insertObj).select().single()
             if (error) {
               console.error(error)

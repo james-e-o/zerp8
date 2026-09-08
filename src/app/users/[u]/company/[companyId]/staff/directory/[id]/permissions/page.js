@@ -24,6 +24,15 @@ export default function PermissionsTab() {
   // { resource_key, permission_key, category, allowed }
   const [updatedPermissions, setUpdatedPermissions] = useState({})
   const [staffOverrides, setStaffOverrides] = useState({})
+
+  // Branch access now comes straight from get_staff_branch_access(), one row
+  // per branch: { branch_id, branch_name, is_default, has_override, has_access }.
+  // No more client-side default computation.
+  const [branchAccessRows, setBranchAccessRows] = useState([])
+  const [selectedBranchIds, setSelectedBranchIds] = useState([])
+  const [originalBranchIds, setOriginalBranchIds] = useState([])
+  const [originalBranchOverrideIds, setOriginalBranchOverrideIds] = useState([])
+
   const [staffAccessScope, setStaffAccessScope] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -39,6 +48,11 @@ export default function PermissionsTab() {
   // Holds the toggle that's waiting on the branch-warning confirmation.
   // Shape: { permissionKey, currentStatus } | null
   const [pendingBranchToggle, setPendingBranchToggle] = useState(null)
+
+  // Derived views over branchAccessRows — kept as plain consts so nothing else
+  // in the render tree has to know about the row shape.
+  const branches = branchAccessRows.map((r) => ({ id: r.branch_id, name: r.branch_name }))
+  const defaultBranchIds = branchAccessRows.filter((r) => r.is_default).map((r) => r.branch_id)
 
   useEffect(() => {
     const fetchStaffData = async () => {
@@ -102,7 +116,8 @@ export default function PermissionsTab() {
       setError(null)
 
       // Step 1: Get staff's access level scope (branch or company).
-      // Still needed — it drives whether the branch-override warning applies.
+      // Still needed here for the permission-tab branch-warning logic
+      // (needsBranchWarning) — unrelated to the Branch Access tab itself.
       const { data: accessLevelData, error: accessLevelError } = await supabase
         .from('access_level')
         .select('access')
@@ -132,6 +147,28 @@ export default function PermissionsTab() {
         overridesMap[compositeKey] = override.allowed
       })
       setStaffOverrides(overridesMap)
+
+      // Step 3.5 (Branch Access tab): single RPC call replaces the previous
+      // separate `branches` + `staff_branch_overrides` fetches and the
+      // client-side default computation. The backend now owns the
+      // is_default / has_override / has_access resolution entirely.
+      const { data: branchAccessData, error: branchAccessError } = await supabase
+        .rpc('get_staff_branch_access', {
+          p_staff_id: staffData.id,
+          p_company_id: companyId,
+        })
+
+      if (branchAccessError) throw branchAccessError
+
+      const rows = branchAccessData || []
+      setBranchAccessRows(rows)
+
+      const effectiveIds = rows.filter((r) => r.has_access).map((r) => r.branch_id)
+      const overrideIds = rows.filter((r) => r.has_override).map((r) => r.branch_id)
+
+      setSelectedBranchIds(effectiveIds)
+      setOriginalBranchIds(effectiveIds)
+      setOriginalBranchOverrideIds(overrideIds)
 
       // Step 4: Build final permissions with overrides applied.
       // category always comes from the access-level default row — it's the
@@ -254,14 +291,49 @@ export default function PermissionsTab() {
         allowed: item.allowed,
       }))
 
-      // Single upsert call with onConflict to update existing rows
-      const { error } = await supabase
-        .from('staff_permission_overrides')
-        .upsert(upsertRows, {
-          onConflict: 'staff_id,company_id,category,scope_key,permission_key'
-        })
+      if (upsertRows.length > 0) {
+        const { error } = await supabase
+          .from('staff_permission_overrides')
+          .upsert(upsertRows, {
+            onConflict: 'staff_id,company_id,category,scope_key,permission_key'
+          })
 
-      if (error) throw error
+        if (error) throw error
+      }
+
+      // A branch needs an override row exactly when the user's selection
+      // disagrees with that branch's backend-computed default.
+      const branchOverrideIds = branches
+        .filter((branch) => defaultBranchIds.includes(branch.id) !== selectedBranchIds.includes(branch.id))
+        .map((branch) => branch.id)
+      const branchUpsertRows = branchOverrideIds.map((branchId) => ({
+        staff_id: staffData.id,
+        company_id: companyId,
+        branch_id: branchId,
+      }))
+
+      if (branchUpsertRows.length > 0) {
+        const { error: branchUpsertError } = await supabase
+          .from('staff_branch_overrides')
+          .upsert(branchUpsertRows, { onConflict: 'staff_id,branch_id' })
+
+        if (branchUpsertError) throw branchUpsertError
+      }
+
+      const removedBranchIds = originalBranchOverrideIds.filter(
+        (branchId) => !branchOverrideIds.includes(branchId)
+      )
+
+      if (removedBranchIds.length > 0) {
+        const { error: branchDeleteError } = await supabase
+          .from('staff_branch_overrides')
+          .delete()
+          .eq('staff_id', staffData.id)
+          .eq('company_id', companyId)
+          .in('branch_id', removedBranchIds)
+
+        if (branchDeleteError) throw branchDeleteError
+      }
 
       // Update local overrides
       const newOverrides = { ...staffOverrides }
@@ -271,13 +343,16 @@ export default function PermissionsTab() {
       setStaffOverrides(newOverrides)
 
       setOriginalPermissions(JSON.parse(JSON.stringify(permissions)))
+      setOriginalBranchIds(selectedBranchIds)
+      setOriginalBranchOverrideIds(branchOverrideIds)
       setUpdatedPermissions({})
       setIsEditMode(false)
 
       // Refetch staff data from context to update automatically
       await refetchStaffData()
 
-      // Refetch permissions data to update badges based on latest database state
+      // Refetch permissions data (incl. branch access via the RPC) to update
+      // badges based on latest database state
       await fetchPermissionsData()
     } catch (err) {
       console.error('Error saving permissions:', err)
@@ -290,6 +365,14 @@ export default function PermissionsTab() {
   const handleRefresh = async () => {
     setIsRefreshing(true)
     await fetchPermissionsData()
+  }
+
+  const handleBranchToggle = (branchId) => {
+    setSelectedBranchIds((currentIds) => (
+      currentIds.includes(branchId)
+        ? currentIds.filter((id) => id !== branchId)
+        : [...currentIds, branchId]
+    ))
   }
 
   useEffect(() => {
@@ -357,7 +440,7 @@ export default function PermissionsTab() {
     <div className="h-full flex flex-col overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-3 shrink-0">
-        <h4 className="text-base  font-semibold text-core">Staff Permissions Override</h4>
+        <h4 className="text-sm mx-1.5 font-semibold text-neutral-800">Staff Permissions Override</h4>
 
         <div className="flex gap-2">
           {isEditMode && Object.keys(updatedPermissions).length > 0 && (
@@ -373,10 +456,26 @@ export default function PermissionsTab() {
             </Button>
           )}
 
+          {isEditMode && JSON.stringify(selectedBranchIds) !== JSON.stringify(originalBranchIds) && Object.keys(updatedPermissions).length === 0 && (
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              variant="default"
+              size="sm"
+              className="bg-core hover:bg-core/90 text-white"
+            >
+              <Save className="mr-2 h-4 w-4" />
+              Save Changes
+            </Button>
+          )}
+
           <Button
             onClick={() => {
               setIsEditMode(!isEditMode)
-              if (isEditMode) setUpdatedPermissions({})
+              if (isEditMode) {
+                setUpdatedPermissions({})
+                setSelectedBranchIds(originalBranchIds)
+              }
             }}
             variant="outline"
             size="sm"
@@ -399,15 +498,58 @@ export default function PermissionsTab() {
 
       {/* Core / Module Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-3 shrink-0">
-        <TabsList className=" w-[260px] md:w-[300px] px-2 py-1">
+        <TabsList className=" w-fit px-2 py-1">
           <TabsTrigger value="core" className="min-w-[120px] text-sm">Core</TabsTrigger>
           <TabsTrigger value="module" className="min-w-[120px] text-sm">Modules</TabsTrigger>
+          <TabsTrigger value="branch-access" className="min-w-[120px] text-sm">Branch Access</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {/* Permissions List */}
       <div className="flex-1 overflow-y-auto">
-        {(() => {
+        {activeTab === 'branch-access' ? (
+          branches.length === 0 ? (
+            <Card className="p-8 text-center text-gray-500">
+              No branches available
+            </Card>
+          ) : (
+            <Card className="overflow-hidden">
+              <div className="bg-muted px-6 py-4 border-b">
+                <h2 className="text-xl font-semibold">Branch Access</h2>
+              </div>
+              <div className="divide-y">
+                {branches.map((branch) => {
+                  const isSelected = selectedBranchIds.includes(branch.id)
+                  const hasDefaultAccess = defaultBranchIds.includes(branch.id)
+                  const isOverriding = isSelected !== hasDefaultAccess
+
+                  return (
+                    <div
+                      key={branch.id}
+                      className="flex items-center justify-between gap-4 px-6 py-5 hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="font-medium">{branch.name}</span>
+                      <div className="flex items-center gap-3">
+                        {getStatusBadge(isSelected)}
+                        <span className="text-xs text-muted-foreground">
+                          {isOverriding ? 'Overriding' : 'Default'}
+                        </span>
+                        {isEditMode && (
+                          <button
+                            onClick={() => handleBranchToggle(branch.id)}
+                            className="px-3 py-1 text-xs font-medium rounded-md bg-core/10 text-core hover:bg-core/20 transition-colors"
+                          >
+                            Toggle
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </Card>
+          )
+        ) : (() => {
           // Filter to groups that have at least one permission matching the
           // active tab, and within each group, only render matching permissions.
           const visibleGroups = Object.entries(permissions)

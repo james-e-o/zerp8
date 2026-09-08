@@ -9,8 +9,12 @@ export const StaffContext = createContext();
 // permissions UI. Only staff/company/branch have a split "_info" table.
 const SUPER_GROUP_MAP = {
   staff_info: 'staff',
-  company_info: 'company',
-  branch_info: 'branch',
+  company_info: 'companies',
+  company: 'companies',
+  companies: 'companies',
+  branch_info: 'branches',
+  branch: 'branches',
+  branches: 'branches',
 };
 
 function getSuperGroupKey(resourceKey) {

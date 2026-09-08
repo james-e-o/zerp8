@@ -45,7 +45,7 @@ export default function ModuleSidebarFooterUser({ user, u, companyId, branch }) 
               className="data-[state=open]:bg-transparent cursor-pointer data-[state=open]:border-0 border-0 hover:bg-transparent hover:text-zinc-700 data-[state=open]:text-black"
             >
               <Avatar className="items-center border inline-flex rounded-full size-7 justify-center">
-                <AvatarFallback className="rounded-lg text-xl text-core font-bold uppercase">{branchInitial}</AvatarFallback>
+                <AvatarFallback className="rounded-lg text-base text-core font-bold uppercase">{branchInitial}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-xs leading-tight">
                 <span className="truncate font-semibold">{branchName}</span>

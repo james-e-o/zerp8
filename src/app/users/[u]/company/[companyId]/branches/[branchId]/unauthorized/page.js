@@ -9,7 +9,9 @@ export default function UnauthorizedPage() {
 	const params = useParams();
 	const searchParams = useSearchParams();
 	const module = searchParams.get('module');
+	const reason = searchParams.get('reason');
 	const { u, companyId, branchId } = params;
+	const isBranchAccessDenied = reason === 'branch-access';
 
 	return (
 		<div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -21,12 +23,16 @@ export default function UnauthorizedPage() {
 				</div>
 				<h1 className="text-2xl font-bold text-core mb-2">Access Denied</h1>
 				<p className="text-gray-600 mb-6">
-					{module
+					{isBranchAccessDenied
+						? 'You do not have access to this branch.'
+						: module
 						? `Your subscription plan doesn't include access to the ${module} module.`
 						: 'You do not have permission to access this resource.'}
 				</p>
 				<p className="text-sm text-gray-500 mb-6">
-					Please upgrade your subscription plan to unlock this feature.
+					{isBranchAccessDenied
+						? 'Please contact your company administrator if you need access to this branch.'
+						: 'Please upgrade your subscription plan to unlock this feature.'}
 				</p>
 				<Link href={`/users/${u}/company/${companyId}/branches/${branchId}`}>
 					<Button className="w-full bg-army hover:bg-army/90 text-white font-semibold">

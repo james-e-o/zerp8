@@ -87,7 +87,7 @@ export default function StaffDetailLayout({ children }) {
         <div className="flex flex-wrap items-center justify-start gap-4">
           <Link
             href={`/users/${params.u}/company/${params.companyId}/staff/directory`}
-            className="flex items-center gap-1.5 text-sm text-core hover:text-foreground transition-colors"
+            className="flex italic items-center gap-1.5 text-[13px] text-core hover:text-foreground transition-colors"
           >
             <ChevronLeft className="size-4" />
             Back to Directory
@@ -95,7 +95,10 @@ export default function StaffDetailLayout({ children }) {
 
           <nav className="flex flex-wrap items-center gap-2 py-1">
             {navItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+              const isActive =
+                item.path === ''
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`)
 
               return (
                 <Link key={item.href} href={item.href} className="shrink-0">

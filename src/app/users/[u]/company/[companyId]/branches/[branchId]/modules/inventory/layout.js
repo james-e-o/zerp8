@@ -10,13 +10,35 @@ export default async function InventoryLayout({ params, children }) {
 
   if (!companyId) redirect("/dashboard");
 
-  await supabase.from("branches").select("id").eq("id", branchId).maybeSingle();
+  const { data: branchData } = await supabase
+    .from("branches")
+    .select("*, branch_info(*)")
+    .eq("id", branchId)
+    .maybeSingle();
+
+  const { data: companyData } = await supabase
+    .from("companies")
+    .select("id, name, slug, owner")
+    .eq("id", companyId)
+    .single();
 
   const isInventoryEnabled = await isModuleEnabledServer(companyId, "inventory");
 
   if (!isInventoryEnabled) {
     redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?module=inventory`);
   }
+
+  const infoRow = Array.isArray(branchData?.branch_info)
+    ? branchData.branch_info[0]
+    : branchData?.branch_info;
+
+  const currentBranch = branchData ? {
+    ...branchData,
+    ...infoRow,
+    branch_info: undefined,
+  } : null;
+
+  const profile = user ? { email: user.email, id: user.id } : null;
 
   const navigationItems = [
     { key: 'overview', label: 'Overview', icon: 'Home', path: '' },
@@ -36,6 +58,9 @@ export default async function InventoryLayout({ params, children }) {
       title="Inventory"
       items={navigationItems}
       basePath={`/users/${u}/company/${companyId}/branches/${branchId}/modules/inventory`}
+      profile={profile}
+      company={companyData}
+      branch={currentBranch}
     >
       {children}
     </InventoryLayoutClient>

@@ -45,11 +45,11 @@ function StaffLayoutContent({ children }) {
     <ReusableCompanySidebar>
       <div className="space-y-4 px-4 h-full flex-col flex overflow-hidden">
         {/* Header */}
-        <div className="my-1">
+        <div className="my-1 flex items-center justify-start gap-2 flex-wrap">
           <div>
-            <h1 className="text-lg m-1 font-semibold text-foreground">Staff Management</h1>
+            <h1 className="text-lg m-1 font-semibold text-core">Staff Management</h1>
           </div>
-        </div>
+       
 
         {/* Tab strip — same chip-pill pattern (padding, border, active
             state, icon size) reused by StaffDetailLayout's sub-nav, so
@@ -85,6 +85,7 @@ function StaffLayoutContent({ children }) {
               </Link>
             );
           })}
+        </div>
         </div>
 
         {/* Page content */}
