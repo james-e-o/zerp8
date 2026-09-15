@@ -14,8 +14,13 @@ function dataURLtoFile(dataurl, filename) {
   return new File([u8arr], filename, { type: mime });
 }
 
-export async function uploadImagesToSupabase(files, { bucket, companyName, folder, owner }, replaceImage) {
+export async function uploadImagesToSupabase(files, { bucket, slug, folder, company }, replaceImage) {
   const results = [];
+
+  if (!slug?.trim()) {
+    const error = new Error('Company slug is required for image upload');
+    return files.map(() => ({ data: null, error, path: null }));
+  }
 
   for (const item of files) {
     let fileObj = item.file;
@@ -37,10 +42,10 @@ export async function uploadImagesToSupabase(files, { bucket, companyName, folde
       continue;
     }
 
-    // Build storage path including optional folder
-    const safeCompany = companyName ? companyName.replace(/\s+/g, '_') : 'company';
+    // Build storage path using the company's slug (matches RLS policy exactly)
     const safeFolder = folder ? `${folder.replace(/\s+/g, '_')}/` : '';
-    const fullPath = `${safeCompany}/${safeFolder}${fileObj.name}`;
+    const fullPath = `${slug}/${safeFolder}${fileObj.name}`;
+    console.log('Uploading to Supabase:', fullPath);
 
     try {
       const { data, error } = await supabase.storage.from(bucket).upload(fullPath, fileObj, { upsert: replaceImage });
@@ -53,11 +58,12 @@ export async function uploadImagesToSupabase(files, { bucket, companyName, folde
 
       const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(fullPath);
       const publicUrl = publicData?.publicUrl || null;
+  
 
       // Insert into images table following your exact schema
       const { data: images, error: imagesError } = await supabase.from('images').insert({
         id: data?.id,
-        owner: owner,
+        company,
         name: fileObj.name,
         folder: folder || null,
         storage: bucket,
@@ -80,4 +86,3 @@ export async function uploadImagesToSupabase(files, { bucket, companyName, folde
 
   return results;
 }
-

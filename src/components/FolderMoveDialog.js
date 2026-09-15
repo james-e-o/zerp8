@@ -21,7 +21,7 @@ const FolderMoveDialog = ({ open, onOpenChange, selectedItems, onMoveSuccess }) 
     const { data, error } = await supabase
       .from("folders")
       .select("*")
-      .eq("owner", info.id);
+      .eq("company", info.id);
 
     if (error) {
       console.error("Fetch folders error:", error);

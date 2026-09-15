@@ -5,22 +5,6 @@ import supabase from '@/config/supabaseClient';
 
 export const StaffContext = createContext();
 
-// Resource keys that should be visually folded into a parent group in the
-// permissions UI. Only staff/company/branch have a split "_info" table.
-const SUPER_GROUP_MAP = {
-  staff_info: 'staff',
-  company_info: 'companies',
-  company: 'companies',
-  companies: 'companies',
-  branch_info: 'branches',
-  branch: 'branches',
-  branches: 'branches',
-};
-
-function getSuperGroupKey(resourceKey) {
-  return SUPER_GROUP_MAP[resourceKey] || resourceKey;
-}
-
 function toLabel(key) {
   return key
     .replace(/_/g, ' ')
@@ -92,7 +76,7 @@ export function StaffProvider({ children, companyId }) {
         const { data: allPermissions, error: permError } = await supabase
           .from('permission_keys')
           .select('*')
-          .order('resource_key', { ascending: true });
+          .order('permission_group', { ascending: true });
 
         if (permError) throw permError;
 
@@ -107,18 +91,17 @@ export function StaffProvider({ children, companyId }) {
         });
         setPermissionKeysMetadata(metadata);
 
-        // Group by super-group (resource_key, with *_info tables folded
-        // into their parent resource — staff_info -> staff, etc.)
+        // Group permissions by the database-defined permission group.
         const groupedPerms = {};
         (allPermissions || []).forEach((perm) => {
-          const superGroupKey = getSuperGroupKey(perm.resource_key);
-          if (!groupedPerms[superGroupKey]) {
-            groupedPerms[superGroupKey] = {
-              label: toLabel(superGroupKey),
+          const groupKey = perm.permission_group || 'ungrouped';
+          if (!groupedPerms[groupKey]) {
+            groupedPerms[groupKey] = {
+              label: toLabel(groupKey),
               permissions: [],
             };
           }
-          groupedPerms[superGroupKey].permissions.push({
+          groupedPerms[groupKey].permissions.push({
             key: `${perm.resource_key}:${perm.permission_key}`,
             resource_key: perm.resource_key,
             permission_key: perm.permission_key,

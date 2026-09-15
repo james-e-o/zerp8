@@ -301,15 +301,18 @@ export default function PermissionsTab() {
         if (error) throw error
       }
 
-      // A branch needs an override row exactly when the user's selection
-      // disagrees with that branch's backend-computed default.
-      const branchOverrideIds = branches
-        .filter((branch) => defaultBranchIds.includes(branch.id) !== selectedBranchIds.includes(branch.id))
-        .map((branch) => branch.id)
-      const branchUpsertRows = branchOverrideIds.map((branchId) => ({
+           // A branch needs an override row whenever the user's selection
+      // disagrees with that branch's backend-computed default — but now we
+      // write the EXPLICIT allowed value, not just presence of a row.
+      const branchesNeedingOverride = branches.filter(
+        (branch) => defaultBranchIds.includes(branch.id) !== selectedBranchIds.includes(branch.id)
+      )
+      const branchOverrideIds = branchesNeedingOverride.map((b) => b.id)
+      const branchUpsertRows = branchesNeedingOverride.map((branch) => ({
         staff_id: staffData.id,
         company_id: companyId,
-        branch_id: branchId,
+        branch_id: branch.id,
+        allowed: selectedBranchIds.includes(branch.id),
       }))
 
       if (branchUpsertRows.length > 0) {
@@ -334,7 +337,6 @@ export default function PermissionsTab() {
 
         if (branchDeleteError) throw branchDeleteError
       }
-
       // Update local overrides
       const newOverrides = { ...staffOverrides }
       Object.keys(updatedPermissions).forEach((compositeKey) => {

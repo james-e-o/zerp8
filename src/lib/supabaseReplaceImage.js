@@ -5,7 +5,7 @@ export async function replaceImageInSupabase(
   oldPath,
   bucket,
   newFile,
-  { companyName, folder, owner }
+  { companyName, folder, company }
 ) {
   try {
     // 1️⃣ Upload new image (upsert: true)
@@ -31,7 +31,7 @@ export async function replaceImageInSupabase(
         path: newFullPath,
         size: newFile.size,
         mime_type: newFile.type,
-        owner,
+        company,
       })
       .eq("id", oldId);
 

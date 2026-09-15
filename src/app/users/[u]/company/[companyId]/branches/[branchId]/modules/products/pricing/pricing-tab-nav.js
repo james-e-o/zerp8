@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 const TABS = [
-  { label: "Pricing Contexts", path: "/contexts" },
+  { label: "Pricing Contexts", path: "" },
   { label: "Promotions", path: "/promotions" },
   { label: "Settings", path: "/settings" },
 ]

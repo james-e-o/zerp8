@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState,useContext } from 'react'
 import ImageUploading from 'react-images-uploading';
-import { Plus,XIcon,BriefcaseBusiness,Users, Trash2, File,Pen, ImageIcon, X, LucideRollerCoaster, RotateCcw, FolderPlusIcon, LayoutGridIcon, FolderCheck, FolderPlus, Check, FolderOpen, Ellipsis, Upload, Move, SquareSplitHorizontal } from 'lucide-react'
+import { Plus,XIcon,BriefcaseBusiness,Users, Trash2, File,Pen, ImageIcon, X, LucideRollerCoaster, RotateCcw, FolderPlusIcon, LayoutGridIcon, List, FolderCheck, FolderPlus, Check, FolderOpen, Ellipsis, Upload, Move, SquareSplitHorizontal } from 'lucide-react'
 import { toast } from 'sonner';
 
 import { uploadImagesToSupabase } from '@/lib/supabaseUpload'
@@ -17,7 +17,6 @@ import { CompanyInfoContext } from '@/app/users/[u]/company/[companyId]/companyI
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input"
 import supabase from '../config/supabaseClient';
-import Image from 'next/image';
 import Link from "next/link"
 import AvatarEditor from "react-avatar-editor";
 import { set } from 'date-fns';
@@ -42,7 +41,6 @@ const AddImage = () => {
    
      const [isLoading,setIsLoading] = useState(true)
      const [selectedFiles,setSelectedFiles] = useState([])
-     const [folder,setFolder] = useState('')
      const [selectedFolders,setSelectedFolders] = useState([])
      const [breadCrumbsList,setBreadCrumbsList] = useState([{id:null,name:'All'}])
      const [currentFolder,setCurrentFolder] = useState([])
@@ -53,6 +51,11 @@ const AddImage = () => {
      const [targetFolderId, setTargetFolderId] = useState(undefined);
 
       const { info,setInfo,modules } = useContext(CompanyInfoContext)
+
+     // The folder to upload into is always derived from wherever the user
+     // is currently browsing (the last breadcrumb) - there is no separate
+     // "selected upload folder" concept, so no standalone state for it.
+     const activeFolderId = breadCrumbsList[breadCrumbsList.length - 1]?.id || null
      
      const [files, setFiles] = useState([
         
@@ -103,7 +106,7 @@ const AddImage = () => {
                     .insert({
                          name: newFolderValue,
                          folderId: breadCrumbsList[breadCrumbsList.length-1].id,
-                         owner: info.id
+                         company: info.id
                     })
                     .select()
                     .single();
@@ -131,10 +134,6 @@ const AddImage = () => {
                toast.dismiss();
           }
      }
-
-    //  const openFolder =(folder)=> {
-    //       setBreadCrumbsList(prev=>[...prev,{id:folder.id,name:folder.name}])
-    //  }
 
      const openFolder = (folder) => {
         const active = breadCrumbsList[breadCrumbsList.length - 1];
@@ -184,8 +183,8 @@ const AddImage = () => {
      const fetchFilesAndFolders = async () => {
        try {
          const [imageList, folderList] = await Promise.all([
-           fetchCompanyImages(info.name),
-           fetchFolders(info.name)
+           fetchCompanyImages(),
+           fetchFolders()
          ]);
          setFiles(imageList);
          setFolders(folderList);
@@ -322,7 +321,7 @@ const AddImage = () => {
          folder: f.folderId,
          path: f.path,
          storage: f.bucket,
-         owner: f.owner,
+         company: f.company,
          size: f.size,
          mime_type: f.mime_type,
          deleted_at: new Date().toISOString()
@@ -339,12 +338,14 @@ const AddImage = () => {
        await supabase.from('trash').delete().in('id', ids);
      }
 
-     async function fetchTrashedImages(companyName) {
-       const safeCompanyName = companyName ? companyName.replace(/\s+/g, '_') : 'company';
+     // NOTE: unused at the top level (TrashBox below has its own copy that's
+     // actually called) - fixed anyway for consistency in case this is
+     // wired up later.
+     async function fetchTrashedImages() {
        const { data, error } = await supabase
          .from("trash")
          .select("*")
-         .eq("owner", info.id);
+         .eq("company", info.id);
 
        if (error) {
          console.error("Fetch trashed images error:", error);
@@ -358,20 +359,18 @@ const AddImage = () => {
          folderId: row.folder || null,
          path: row.path,
          bucket: row.storage,
-         owner: row.owner,
+         company: row.company,
          size: row.size,
          mime_type: row.mime_type,
          deleted_at: row.deleted_at
        }));
      }
 
-     async function fetchCompanyImages(companyName) {
-      console.log("Fetchingcompany:", companyName);
-      const safeCompanyName = companyName ? companyName.replace(/\s+/g, '_') : 'company';
+     async function fetchCompanyImages() {
         const { data, error } = await supabase
           .from("images")
           .select("*")
-          .ilike("path", `${safeCompanyName}/%`);  // all images under company folder
+          .eq("company", info.id);
 
         if (error) {
           console.error("Fetch images error:", error);
@@ -382,21 +381,21 @@ const AddImage = () => {
         return data.map(row => ({
           id: row.id,
           name: row.name,
-          url: `${row.url}`, // Add cache-busting parameter
+          url: `${row.url}`,
           folderId: row.folder || null,
           path: row.path,
           bucket: row.storage,
-          owner: row.owner,
+          company: row.company,
           size: row.size,
           mime_type: row.mime_type,
         }));
       }
 
-     async function fetchFolders(companyName) {
+     async function fetchFolders() {
         const { data, error } = await supabase
           .from("folders")
           .select("*")
-          .eq("owner", info.id);  // folders owned by this company
+          .eq("company", info.id);  // folders owned by this company
 
         if (error) {
          toast.error("Fetch folders error:", error);
@@ -408,7 +407,7 @@ const AddImage = () => {
           id: row.id,
           name: row.name,
           folderId: row.folderId || null,
-          owner: row.owner,
+          company: row.company,
         }));
       }
 
@@ -437,8 +436,8 @@ const AddImage = () => {
 
      useEffect(()=>{  
           Promise.all([
-               fetchCompanyImages(info.name),
-               fetchFolders(info.name)
+               fetchCompanyImages(),
+               fetchFolders()
           ]).then(([imageList, folderList]) => {
                setFiles(imageList)
                setFolders(folderList)
@@ -500,9 +499,8 @@ const AddImage = () => {
                                 oldEditInfo.bucket,
                                 file,
                                 {
-                                  companyName: oldEditInfo.companyName || info.name,
-                                  folder: oldEditInfo.folder || '',
-                                  owner: oldEditInfo.owner || info.id,
+                                  company: oldEditInfo.company || info.id,
+                                  folder: oldEditInfo.folderId,
                                 }
                               )
 
@@ -517,9 +515,9 @@ const AddImage = () => {
                               toast.loading('Uploading new image...')
                               const uploadResults = await uploadImagesToSupabase([{ file }], {
                                 bucket: 'products',
-                                companyName: info.name,
-                                folder: '',
-                                owner: info.id,
+                                slug: info.slug,
+                                folder: activeFolderId,
+                                company: info.id,
                               },false)
 
                               const result = uploadResults[0]
@@ -532,7 +530,7 @@ const AddImage = () => {
                             }
 
                             // Refresh file list to show changes
-                            const imageList = await fetchCompanyImages(info.name)
+                            const imageList = await fetchCompanyImages()
                             setFiles(imageList)
                           } catch (err) {
                             console.error('Save error:', err)
@@ -563,7 +561,7 @@ const AddImage = () => {
                                                     <Input placeholder="Search image..." className="w-full md:w-4/5 text-xs rounded-lg mb-1"/>
                                                     <div className="w-full justify-end inline-flex gap-3">
                                                         <div className="inline-flex gap-0 overflow-x-clip "><p data-open={newFolderState} className="inline-flex items-center transition-all -z-10 opacity-0 data-[open=true]:opacity-100 data-[open=true]:right-0 data-[open=true]:z-0 relative -right-3"><Input id='newfolder' onBlur={()=>{!newFolderValue?setNewFolderState(false):""}} className='h-5 rounded-e-none outline-transparent  ml-1 w-24 rounded-s-md' value={newFolderValue} onChange={({target})=>{setNewFolderValue(target.value)}}/><Button onClick={()=>{addFolder()}} size='icon' disabled={!newFolderValue} className='px-1 rounded-e-md rounded-s-none w-fit h-5'><Plus className=''/></Button></p><Tooltip><TooltipTrigger asChild><Button onClick={()=>{setNewFolderState(!newFolderState)}} variant='icon' className='p-1 relative min-w-max'><FolderPlus data-open={newFolderState} className='relative transition-all scale-125 data-[open=true]:-z-10 data-[open=true]:opacity-0 opacity-100 z-0'/><FolderCheck data-open={newFolderState} className='absolute transition-all scale-125 data-[open=true]:z-0 -z-10 data-[open=true]:opacity-100 opacity-0'/></Button></TooltipTrigger><TooltipContent><p className="text-xs">Add new folder</p></TooltipContent></Tooltip></div>
-                                                        <Button onClick={()=>{setDisplayGrid(!displayGrid)}} variant='ghost'><LayoutGridIcon/></Button>
+                                                        <Button aria-label={displayGrid ? 'Switch to list view' : 'Switch to grid view'} onClick={()=>{setDisplayGrid(!displayGrid)}} variant='ghost'>{displayGrid ? <LayoutGridIcon/> :<List/> }</Button>
                                                     </div>
                                                   </div>
                                                   <div className='md:grow h-full flex md:overflow-hidden flex-col'>
@@ -596,7 +594,7 @@ const AddImage = () => {
                                                        <div className='px-2 mt-2 text-[11px] text-army'>
                                                           <div className="flex items-center gap-2 mb-1">
                                                             <Checkbox
-                                                              className={'size-3'}
+                                                              className={'text-white fill-white border scale-110'}
                                                               checked={(() => {
                                                                 const currentFolderId = breadCrumbsList[breadCrumbsList.length - 1].id;
                                                                 const folderItems = folders.filter(folder => folder.folderId === currentFolderId).map(folder => `folder-${folder.id}`);
@@ -624,8 +622,8 @@ const AddImage = () => {
                                                             : "None"}
                                                         </div>
 
-                                                       <div className="h-full overflow-y-scroll">
-                                                            <div data-grid={displayGrid} className="grid data-[grid=true]:justify-items-start h-fit data-[grid=true]:gap-3  grid-cols-1 data-[grid=true]:lg:grid-cols-4 data-[grid=true]:md:grid-cols-3 data-[grid=true]:sm:grid-cols-2">
+                                                      <div className="h-full overflow-y-scroll">
+                                                        <div data-grid={displayGrid} className="grid px-1 data-[grid=true]:justify-items-start data-[grid=false]:p-1 mt-2 h-fit data-[grid=true]:gap-3 grid-cols-1 data-[grid=true]:lg:grid-cols-4 data-[grid=true]:md:grid-cols-3 data-[grid=true]:sm:grid-cols-2">
 
                                                                  {folders.filter(folder => folder.folderId === currentFolder.id).map(folder => (
                                                                       <Folder key={folder.id} folder={folder} children={{folders:folders.filter(item=>item.folderId==folder.id).length, files:files.filter(item=>item.folderId==folder.id).length}} click={()=>{openFolder(folder)}} moveFile={moveFile} moveFolder={moveFolder} checked={selectedItems&&selectedItems.some(item=>item===`folder-${folder.id}`)} onCheck={(status)=>{handleToggle(`folder-${folder.id}`)}} grid={displayGrid}/>
@@ -730,9 +728,9 @@ const AddImage = () => {
                               list,
                               {
                                 bucket: "products",
-                                companyName: info.name,
-                                folder: folder || "",
-                                owner: info.id
+                                slug: info.slug,
+                                folder: activeFolderId,
+                                company: info.id
                               },
                               false
                             );
@@ -744,7 +742,7 @@ const AddImage = () => {
                               toast(`Uploaded ${success.length} image(s)`);
 
                               // 🔥 Fetch from DB and update UI
-                              const imageList = await fetchCompanyImages(info.name);
+                              const imageList = await fetchCompanyImages();
                               setFiles(imageList);
                             }
 
@@ -828,7 +826,7 @@ export const TrashBox = () => {
     const { data, error } = await supabase
       .from("trash")
       .select("*")
-      .eq("owner", info.id);
+      .eq("company", info.id);
 
     if (error) {
       console.error("Fetch trashed images error:", error);
@@ -842,7 +840,7 @@ export const TrashBox = () => {
       folderId: row.folder || null,
       path: row.path,
       bucket: row.storage,
-      owner: row.owner,
+      company: row.company,
       size: row.size,
       mime_type: row.mime_type,
       deleted_at: row.deleted_at
@@ -935,12 +933,12 @@ export const TrashBox = () => {
   useEffect(() => {
     const loadTrashedFiles = async () => {
       setIsLoading(true);
-      const trashed = await fetchTrashedImages(info.name);
+      const trashed = await fetchTrashedImages();
       setTrashedFiles(trashed);
       setIsLoading(false);
     };
     loadTrashedFiles();
-  }, [info.name]);
+  }, [info.id]);
 
   return (
     <div className='w-full h-full gap-2 md:justify-end justify-start flex md:flex-row flex-col'>
@@ -948,8 +946,8 @@ export const TrashBox = () => {
         <div className="flex flex-col md:flex-row md:justify-between">
           <Input placeholder="Search trashed images..." className="w-full md:w-4/5 text-xs rounded-lg mb-1"/>
           <div className="w-full justify-end inline-flex gap-3">
-            <Button onClick={() => setDisplayGrid(!displayGrid)} variant='ghost'>
-              <LayoutGridIcon />
+            <Button aria-label={displayGrid ? 'Switch to list view' : 'Switch to grid view'} onClick={() => setDisplayGrid(!displayGrid)} variant='ghost'>
+              {displayGrid ? <List /> : <LayoutGridIcon />}
             </Button>
           </div>
         </div>
@@ -979,7 +977,7 @@ export const TrashBox = () => {
             <span className='text-neutral-800'>Selected Items: {selectedTrashedItems.length}</span>
           </div>
           <div className="h-full overflow-y-scroll">
-            <div data-grid={displayGrid} className="grid data-[grid=true]:justify-items-start h-fit data-[grid=true]:gap-3 grid-cols-1 data-[grid=true]:lg:grid-cols-4 data-[grid=true]:md:grid-cols-3 data-[grid=true]:sm:grid-cols-2">
+            <div data-grid={displayGrid} className="grid data-[grid=true]:justify-items-start data-[grid=false]:pt-0.5 h-fit data-[grid=true]:gap-3 grid-cols-1 data-[grid=true]:lg:grid-cols-4 data-[grid=true]:md:grid-cols-3 data-[grid=true]:sm:grid-cols-2">
               {isLoading ? (
                 <Spinner className='size-4 ml-2 text-core' spinning={isLoading} />
               ) : trashedFiles.length === 0 ? (
@@ -996,20 +994,21 @@ export const TrashBox = () => {
                 </div>
               ) : (
                 trashedFiles.map(file => (
-                  <div key={file.id} className={`border-b relative hover:bg-core_grey2/50 p-1 flex justify-between gap-2 items-center h-fit data-[checked=true]:bg-core_grey2 data-[grid=true]:inline-flex data-[grid=true]:flex-col data-[grid=true]:justify-start data-[grid=true]:items-center data-[grid=true]:gap-0 data-[grid=true]:border-none data-[grid=true]:w-36 data-[grid=true]:h-48`}>
+                  <div key={file.id} data-grid={displayGrid} data-checked={selectedTrashedItems.includes(file.id)} className={`border-b relative hover:bg-core_grey2/50 p-1 flex justify-between gap-2 items-center w-full h-fit data-[checked=true]:bg-core_grey2 data-[grid=false]:border data-[grid=false]:rounded data-[grid=true]:inline-flex data-[grid=true]:flex-col data-[grid=true]:justify-start data-[grid=true]:items-center data-[grid=true]:gap-0 data-[grid=true]:border-none data-[grid=true]:w-36 data-[grid=true]:h-48`}>
                     <p className="inline-flex w-fit items-center justify-start data-[grid=true]:justify-between data-[grid=true]:w-full">
                       <Checkbox
                         checked={selectedTrashedItems.includes(file.id)}
                         onCheckedChange={() => handleTrashedToggle(file.id)}
-                        className="text-white fill-white border scale-90 data-[grid=true]:scale-75"
+                        className="text-white fill-white border scale-110"
                       />
                     </p>
-                    <div className="inline-flex gap-2 items-center grow justify-start data-[grid=true]:flex-col data-[grid=true]:gap-1">
-                      <div className="data-[grid=true]:h-32 data-[grid=true]:w-full data-[grid=true]:flex data-[grid=true]:items-center data-[grid=true]:justify-center overflow-hidden">
-                        <Image src={file.url} alt="trashed file" height={80} width={80} className="object-contain max-h-full max-w-full data-[grid=true]:w-24 data-[grid=true]:h-auto" />
+                    <div data-grid={displayGrid} className="inline-flex gap-2 items-center grow min-w-0 justify-start data-[grid=true]:flex-col data-[grid=true]:gap-1">
+                      <div data-grid={displayGrid} className="h-14 w-14 shrink-0 flex items-center justify-center data-[grid=true]:h-32 data-[grid=true]:w-full overflow-hidden">
+                        <img src={file.url} alt="trashed file" height={80} width={80} className="h-14 w-14 object-contain data-[grid=true]:w-24 data-[grid=true]:h-auto" />
                       </div>
-                      <p className="flex overflow-hidden whitespace-nowrap text-xs flex-col items-start text-center gap-0 data-[grid=true]:whitespace-normal data-[grid=true]:leading-tight data-[grid=true]:text-[11px] data-[grid=true]:max-w-32 data-[grid=true]:line-clamp-2 data-[grid=true]:overflow-hidden data-[grid=true]:text-ellipsis">
+                      <p className="flex min-w-0 overflow-hidden whitespace-normal text-xs flex-col items-start text-left gap-0 data-[grid=true]:whitespace-normal data-[grid=true]:leading-tight data-[grid=true]:text-[11px] data-[grid=true]:max-w-32 data-[grid=true]:line-clamp-2 data-[grid=true]:overflow-hidden data-[grid=true]:text-ellipsis">
                         <span>{file.name}</span>
+                        <span className="text-gray-500 text-[10px] data-[grid=true]:hidden">{formatFileSize(file.size)}</span>
                       </p>
                     </div>
                   </div>
@@ -1055,6 +1054,13 @@ export const TrashBox = () => {
           DOCUMENT: "file",
           FOLDER: "folder",
      };
+
+    const formatFileSize = (size) => {
+      if (!size) return '0 B';
+      if (size < 1024) return `${size} B`;
+      if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+      return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    };
    
 const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
@@ -1081,7 +1087,8 @@ const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
       data-grid={grid}
       onClick={handleClick}
       className={`
-        border-b relative hover:bg-core_grey2/50 p-1 flex justify-between gap-2 items-center
+        border-b relative hover:bg-core_grey2/50 p-1 flex justify-between gap-2 items-center w-full
+        data-[grid=false]:border
         h-fit cursor-pointer
         data-[drag=true]:border-b-2 data-[drag=true]:border-army data-[drag=true]:opacity-60 
         data-[checked=true]:bg-core_grey2
@@ -1092,7 +1099,10 @@ const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
         data-[grid=true]:gap-0 
         data-[grid=true]:border-none 
         data-[grid=true]:w-32 
-        data-[grid=true]:h-44    
+        data-[grid=false]:px-4 
+        data-[grid=false]:py-2
+        data-[grid=true]:h-44
+        rounded-md
       `}
     >
 
@@ -1125,6 +1135,7 @@ const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
         <div
           data-grid={grid}
           className={`
+            h-14 w-14 shrink-0 flex items-center justify-center
             data-[grid=true]:h-28      
             data-[grid=true]:w-full 
             data-[grid=true]:flex 
@@ -1133,7 +1144,7 @@ const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
             overflow-hidden             
           `}
         >
-          <Image
+          <img
             src={file.url}
             alt="file-item"
             height={80}
@@ -1142,13 +1153,15 @@ const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
             data-grid={grid}
             className={`
               data-[drag=true]:border-army w-auto
-              object-cover scale-150
+              object-contain scale-100
+              h-14 w-14
               max-h-full 
               max-w-full
 
          
               data-[grid=true]:w-20 
               data-[grid=true]:h-auto
+              data-[grid=true]:scale-150
             `}
           />
         </div>
@@ -1157,7 +1170,7 @@ const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
         <p
           data-grid={grid}
           className={`
-            flex overflow-hidden whitespace-nowrap text-xs flex-col items-start text-center
+            flex min-w-0 overflow-hidden whitespace-normal text-xs flex-col items-start text-left
             gap-0 
             data-[grid=true]:whitespace-normal
             data-[grid=true]:leading-tight
@@ -1169,6 +1182,7 @@ const Files = ({ file, grid, checked, onCheck, onFileClick, onCtrlClick }) => {
           `}
         >
           <span>{file.name}</span>
+          <span className="text-gray-500 text-[10px] data-[grid=true]:hidden">{formatFileSize(file.size)}</span>
         </p>
       </div>
     </div>
@@ -1209,7 +1223,8 @@ const Folder = ({ folder, moveFile, moveFolder, click, grid, checked, onCheck, c
       data-drag={isDragging}
       data-grid={grid}
       className={`
-        border-b relative hover:bg-core_grey2/50 py-1 px-1 flex justify-between gap-2 items-center
+        border-b relative hover:bg-core_grey2/50 py-1 px-1 flex justify-between gap-2 items-center w-full
+        data-[grid=false]:border data-[grid=false]:rounded
         data-[drag=true]:border-b-2 data-[drag=true]:border-army data-[drag=true]:opacity-60
 
         /* GRID MODE BOX STYLE (MATCH FILES COMPONENT) */
@@ -1419,7 +1434,7 @@ const FileDetailsPanel = ({ selectedFile, setEditState, setEditInfo ,updateName}
         <>
           {/* FILE PREVIEW */}
           <div className="mb-4 flex justify-center items-center bg-gray-100 rounded-lg p-2 h-40 w-full">
-            <Image
+            <img
               src={selectedFile.url}
               alt={selectedFile.name}
               height={150}

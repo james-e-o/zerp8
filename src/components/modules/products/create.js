@@ -17,13 +17,13 @@ import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHe
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { X, Plus, GripVertical, Upload } from "lucide-react"
+import { X, Plus, GripVertical, Upload, Pencil } from "lucide-react"
 import { toast } from 'sonner'
 import { useRouter, useParams } from 'next/navigation'
 
 import AddImage from "@/components/add-image";
 import { VariantTable } from '@/components/variants';
-import { ProductConfigurations } from "@/components/product-configurations";
+import { ProductConfigurations } from "@/components/modules/products/product-configurations";
 import supabase from "@/config/supabaseClient";
 
 import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext";
@@ -39,6 +39,12 @@ import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[bra
 //   - quantities / setQuantities             { measurementType, totalProductUnits,
 //                                               totalProductUnitsType, minSaleQuantity,
 //                                               quantityIncrement, bulkThreshold, reorderLevel }
+//   - contextAdjustments / setContextAdjustments
+//        { [contextId]: { mode: 'reduction'|'markup', adjustmentType: 'percentage'|'fixed', value } }
+//        One entry per non-Standard active pricing context (Wholesale,
+//        custom ones). Nothing is stored per-context unless a value is
+//        set - this is resolved into a per-product pricing_rules
+//        override row in handleSubmit, after the product's id exists.
 // The Category sheet and Variants tab are unaffected and
 // keep their existing shape.
 //
@@ -84,6 +90,52 @@ const DEFAULT_STANDARD_PRICING = {
   sellingPrice: '',
 };
 
+const ATTRIBUTE_PRESETS = [
+  {
+    name: 'Color',
+    values: [
+      'Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple',
+      'Pink', 'Brown', 'Gray', 'Navy', 'Teal', 'Turquoise', 'Gold', 'Silver',
+      'Beige', 'Cream', 'Maroon', 'Olive', 'Lime', 'Coral', 'Violet', 'Indigo',
+      'Magenta', 'Cyan', 'Burgundy', 'Mint', 'Lavender', 'Charcoal',
+    ],
+    swatches: [
+      '#111827', '#FFFFFF', '#EF4444', '#3B82F6', '#22C55E', '#FACC15', '#F97316', '#A855F7',
+      '#EC4899', '#92400E', '#9CA3AF', '#1E3A8A', '#0F766E', '#14B8A6', '#D4AF37', '#C0C0C0',
+      '#D6C2A1', '#FFF7D6', '#800000', '#64743B', '#84CC16', '#FB7185', '#8B5CF6', '#4F46E5',
+      '#D946EF', '#06B6D4', '#7F1D1D', '#6EE7B7', '#C4B5FD', '#374151',
+    ],
+  },
+  { name: 'Size', values: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'One Size'] },
+  { name: 'Country', values: ['Nigeria', 'Ghana', 'Kenya', 'South Africa', 'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany', 'France', 'China', 'India'] },
+];
+
+function getOptionValueLabel(value) {
+  return typeof value === 'object' ? value.label : value;
+}
+
+function getColorSwatch(value) {
+  const colorAttribute = ATTRIBUTE_PRESETS.find(attribute => attribute.name === 'Color');
+  const colorIndex = colorAttribute.values.indexOf(getOptionValueLabel(value));
+  return colorIndex >= 0 ? colorAttribute.swatches[colorIndex] : null;
+}
+
+function OptionValueDisplay({ attributeName, value, visualOnly = false }) {
+  const label = getOptionValueLabel(value);
+  const colorSwatch = attributeName.toLowerCase() === 'color' ? getColorSwatch(value) : null;
+  const flag = attributeName.toLowerCase() === 'country' && typeof value === 'object' ? value.flag : null;
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {colorSwatch && (
+        <span className="size-4 shrink-0 rounded-full border border-black/20" style={{ backgroundColor: colorSwatch }} />
+      )}
+      {flag && <img src={flag} alt="" className="h-4 w-6 shrink-0 rounded-sm object-cover" />}
+      {!visualOnly && <span>{label}</span>}
+    </span>
+  );
+}
+
 const CreateProductPage = () => {
   const [activeTab, setActiveTab] = useState("details");
   const params = useParams();
@@ -93,6 +145,8 @@ const CreateProductPage = () => {
 
   // Product state
   const [categorySheetOpen, setCategorySheetOpen] = useState(false)
+  const [attributeSheetOpen, setAttributeSheetOpen] = useState(false)
+  const [attributeToEdit, setAttributeToEdit] = useState(null)
   const [hasVariants, setHasVariants] = useState(false);
   const [selectedImages, setSelectedImages] = useState([]);
   const [variantCombinations, setVariantCombinations] = useState([]);
@@ -116,6 +170,10 @@ const CreateProductPage = () => {
   // Pricing state - base cost + the single required Standard pricing context
   const [costPrice, setCostPrice] = useState('');
   const [standardPricing, setStandardPricing] = useState(DEFAULT_STANDARD_PRICING);
+
+  // Pricing contexts other than Standard (Reduction/Markup adjustments,
+  // resolved into per-product pricing_rules override rows at submit time)
+  const [contextAdjustments, setContextAdjustments] = useState({});
 
   // Quantity rules - maps to product_variants columns
   const [quantities, setQuantities] = useState(DEFAULT_QUANTITIES);
@@ -177,7 +235,7 @@ const CreateProductPage = () => {
       }
       combinations = newCombinations;
     }
-    return combinations.map((combo) => ({ combination: combo, id: combo.map(item => `${item.optionName}-${item.value}`).join('-') }));
+    return combinations.map((combo) => ({ combination: combo, id: combo.map(item => `${item.optionName}-${getOptionValueLabel(item.value)}`).join('-') }));
   };
 
   const updateVariantValue = useCallback((rowIndex, columnId, value) => {
@@ -225,23 +283,31 @@ const CreateProductPage = () => {
     setHasVariants(false);
     setQuantities(DEFAULT_QUANTITIES);
     setStandardPricing(DEFAULT_STANDARD_PRICING);
+    setContextAdjustments({});
     setErrors({});
   };
 
   useEffect(() => { resetAllInputs(); }, [productType]);
 
   useEffect(() => {
-    const handler = (e) => {
-      if (e?.detail && Array.isArray(e.detail)) {
-        const incoming = e.detail || [];
-        const merged = [...selectedImages];
-        incoming.forEach(img => { if (!merged.find(m => m.id === img.id)) merged.push(img); });
-        setSelectedImages(merged);
-      }
-    };
-    window.addEventListener('nexshelf:selectedImages', handler);
-    return () => window.removeEventListener('nexshelf:selectedImages', handler);
-  }, []);
+      const handler = (e) => {
+        if (e?.detail && Array.isArray(e.detail)) {
+          const incoming = e.detail || [];
+          setSelectedImages(prev => {
+            const merged = [...prev];
+            incoming.forEach(img => {
+              if (!merged.find(m => m.id === img.id)) {
+                merged.push(img);
+              }
+            });
+            return merged;
+          });
+        }
+      };
+      window.addEventListener('nexshelf:selectedImages', handler);
+      return () => window.removeEventListener('nexshelf:selectedImages', handler);
+    }, []);
+
 
   useEffect(() => {
     if (justAdded && lastOptionRef.current) {
@@ -266,8 +332,32 @@ const CreateProductPage = () => {
   };
 
   const addOption = () => {
-    setOptions([...options, { id: Date.now(), name: '', values: [], Input: '' }]);
+    setOptions([...options, { id: Date.now(), name: '', values: [], Input: '', source: 'manual' }]);
     setJustAdded(true);
+  };
+  const importAttributes = (attributes) => {
+    setOptions(prev => {
+      const next = [...prev];
+      attributes.forEach(attribute => {
+        const existingIndex = next.findIndex(option => option.name.trim().toLowerCase() === attribute.name.toLowerCase());
+        if (existingIndex === -1) {
+          next.push({ id: `${Date.now()}-${attribute.name}`, name: attribute.name, values: attribute.values, Input: '', source: 'built-in' });
+          return;
+        }
+
+        next[existingIndex] = {
+          ...next[existingIndex],
+          source: 'built-in',
+          values: [...next[existingIndex].values, ...attribute.values].filter((value, index, values) =>
+            values.findIndex(candidate => getOptionValueLabel(candidate) === getOptionValueLabel(value)) === index
+          ),
+        };
+      });
+      return next;
+    });
+    setHasVariants(true);
+    setAttributeToEdit(null);
+    setAttributeSheetOpen(false);
   };
   const removeOption = (index) => setOptions(options.filter((_, i) => i !== index));
   const updateOptionName = (index, name) => setOptions(options.map((opt, i) => i === index ? { ...opt, name } : opt));
@@ -371,7 +461,10 @@ const CreateProductPage = () => {
 
   const goToNextTab = () => {
     if (activeTab === 'details') setActiveTab('configure');
-    else if (activeTab === 'configure') setActiveTab('variants');
+    else if (activeTab === 'configure') {
+      productConfigRef.current?.commitEditingState?.();
+      setActiveTab('variants');
+    }
   };
 
   const handleSubmit = async () => {
@@ -394,12 +487,21 @@ const CreateProductPage = () => {
       // Build variant SKUs + quantity rules first so p_standard_prices can key off the same SKUs
       const variantsPayload = variantCombinations.map((variant, index) => {
         const sku = variant.sku || `${convertToSlug(handle)}-${Date.now()}-${index}`;
+        // variant_label is nullable but nothing else populates it - build it
+        // here from the combination itself so it isn't silently lost.
+        const variantLabel = variant.combination?.length > 0
+          ? variant.combination.map(item => `${typeof item.value === 'object' ? item.value.label : item.value}`).join(' / ')
+          : null;
         return {
           sku,
+          variant_label: variantLabel,
           cost: parseFloat(variant.costPrice || costPrice) || 0,
-          cost_currency: 'NGN',
           is_variant: variant.combination?.length > 0,
           is_active: true,
+          // Default true unless a row was explicitly unchecked - mirrors
+          // the read used for the checkboxes themselves in variants.jsx.
+          is_tracked_inventory: variant.managed !== false,
+          is_tracked_shop: variant.trackedInShop !== false,
           reserve: 0,
           reorder_level: parseFloat(quantities.reorderLevel) || 0,
           min_sale_quantity: parseInt(quantities.minSaleQuantity, 10) || 1,
@@ -439,6 +541,9 @@ const CreateProductPage = () => {
         p_title: title,
         p_handle: convertToSlug(handle),
         p_variants: variantsPayload,
+        // Mandatory - the function has no default for this and will reject
+        // the call outright without it.
+        p_currency: 'NGN',
         p_standard_prices: standardPrices,
 
         p_sub_title: subtitle || null,
@@ -460,6 +565,46 @@ const CreateProductPage = () => {
 
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Failed to create product');
+
+      const productId = data.product_id;
+
+      // Step 2 - resolve contextAdjustments into per-product pricing_rules
+      // override rows now that the product id exists. This is intentionally
+      // a separate step from product creation: the product already exists
+      // by the time this runs, so a failure here must never be reported as
+      // "product creation failed" (that would risk the user re-submitting
+      // and creating a duplicate product).
+      const adjustmentEntries = Object.entries(contextAdjustments).filter(
+        ([, adjustment]) => adjustment?.value !== undefined && adjustment?.value !== ''
+      );
+
+      if (adjustmentEntries.length > 0 && productId) {
+        try {
+          const overrideRows = adjustmentEntries.map(([contextId, adjustment]) => {
+            const numericValue = parseFloat(adjustment.value) || 0;
+            // Reduction stores the positive value as-is; Markup stores it negated.
+            const actionValue = adjustment.mode === 'markup' ? -numericValue : numericValue;
+            return {
+              pricing_context: contextId,
+              scope_type: 'product',
+              scope_id: productId,
+              condition_type: 'always',
+              action_type: adjustment.adjustmentType,
+              action_value: actionValue,
+              // Product-scoped overrides must outrank the context's branch-wide
+              // catch-all rule (created at priority 0) so the invoice engine
+              // resolves to this row instead of the generic context rule.
+              priority: 100,
+            };
+          });
+
+          const { error: rulesError } = await supabase.from('pricing_rules').insert(overrideRows);
+          if (rulesError) throw rulesError;
+        } catch (rulesErr) {
+          console.error(rulesErr);
+          toast.warning('Product created, but one or more pricing overrides failed to save.');
+        }
+      }
 
       toast.success('🎉 Product created successfully!');
       router.push(`/users/${u}/company/${companyId}/branches/${branchId}/modules/products`);
@@ -598,7 +743,7 @@ const CreateProductPage = () => {
                                   <div className="w-fit">
                                     <AlertDialogTrigger asChild>
                                       <Button variant={'ghost'} className="flex flex-col h-fit items-center justify-center gap-0.5 px-3 py-2">
-                                        <span className="text-[11px] text-army">Add / Edit Images</span>
+                                        <span className="text-[11px] text-core_light">Add / Edit Images</span>
                                       </Button>
                                     </AlertDialogTrigger>
                                   </div>
@@ -608,7 +753,7 @@ const CreateProductPage = () => {
                                   <AlertDialogTrigger asChild>
                                     <Button variant={'ghost'} className="flex flex-col h-fit items-center justify-center gap-0.5">
                                       <span className="text-lg mb-1"><Upload className="text-core size-4" /></span>
-                                      <span className="text-[11px] text-army">Click to Upload images</span>
+                                      <span className="text-[11px] text-core_light">Click to Upload images</span>
                                     </Button>
                                   </AlertDialogTrigger>
                                 </div>
@@ -691,16 +836,32 @@ const CreateProductPage = () => {
                                   {options.map((option, index) => (
                                     <div key={option.id} ref={index === options.length - 1 ? lastOptionRef : null} className="border border-neutral-300 rounded-sm">
                                       <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-500">
-                                        <Input type="text" autoFocus={justAdded} defaultValue={option.name} onInput={(e) => { e.target.value = e.target.value.toUpperCase(); updateOptionName(index, e.target.value); }} className="font-medium text-xs border-0 outline-0 flex-1" placeholder="Option name" />
-                                        <Button variant="ghost" size="sm" onClick={() => removeOption(index)} className="h-6 w-6 p-0"><X className="h-4 w-4" /></Button>
+                                        <Input type="text" autoFocus={justAdded} defaultValue={option.name} onInput={(e) => { e.target.value = e.target.value.toUpperCase(); updateOptionName(index, e.target.value); }} className="font-medium text-xs uppercase border-0 outline-0 flex-1" placeholder="Option name" />
+                                        <div className="flex items-center gap-1">
+                                          {option.source === 'built-in' && (
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              title={`Edit ${option.name}`}
+                                              onClick={() => { setAttributeToEdit(option.name); setAttributeSheetOpen(true); }}
+                                              className="h-6 w-6 p-0"
+                                            >
+                                              <Pencil className="h-3.5 w-3.5" />
+                                            </Button>
+                                          )}
+                                          <Button variant="ghost" size="sm" onClick={() => removeOption(index)} className="h-6 w-6 p-0"><X className="h-4 w-4" /></Button>
+                                        </div>
                                       </div>
                                       <div className="px-4 py-3 space-y-2">
                                         <label className="text-[10px] italic ml-1 font-medium">Values</label>
-                                        <Input ref={(el) => InputRefs.current[index] = el} type="text" value={option.Input} onChange={(e) => updateOptionInput(index, e.target.value.toLowerCase())} onKeyDown={(e) => handleKeyDown(e, index)} className="w-full border-0 outline-0 mt-1 text-xs placeholder-neutral-400" placeholder={productType === 'service' ? 'e.g., fade, crew cut, taper or standard, deluxe, premium' : 'Add values...'} />
+                                        {option.source !== 'built-in' && !ATTRIBUTE_PRESETS.some(attribute => attribute.name.toLowerCase() === option.name.trim().toLowerCase()) && (
+                                          <Input ref={(el) => InputRefs.current[index] = el} type="text" value={option.Input} onChange={(e) => updateOptionInput(index, e.target.value.toLowerCase())} onKeyDown={(e) => handleKeyDown(e, index)} className="w-full border-0 outline-0 mt-1 text-xs placeholder-neutral-400" placeholder={productType === 'service' ? 'e.g., fade, crew cut, taper or standard, deluxe, premium' : 'Add values...'} />
+                                        )}
                                         <div className="flex flex-wrap gap-2">
                                           {option.values.map((value, valIndex) => (
                                             <span key={valIndex} className="inline-flex items-center gap-1 px-2 py-1 bg-neutral-100 rounded-sm text-xs">
-                                              {value}
+                                              <OptionValueDisplay attributeName={option.name} value={value} />
                                               <button onClick={() => removeValue(index, valIndex)} className="text-neutral-500 hover:text-neutral-700"><X className="h-3 w-3" /></button>
                                             </span>
                                           ))}
@@ -709,8 +870,9 @@ const CreateProductPage = () => {
                                     </div>
                                   ))}
 
-                                  <div className="flex justify-end">
-                                    <Button className="border border-neutral-500 rounded-sm px-4 text-white h-7 bg-army text-xs hover:bg-army/85 w-fit" onClick={addOption}>Add Option</Button>
+                                  <div className="flex justify-end gap-2">
+                                    <Button variant="outline" className="border border-neutral-500 rounded-sm px-4 h-7 text-xs w-fit" onClick={() => { setAttributeToEdit(null); setAttributeSheetOpen(true); }}>Import Attribute</Button>
+                                    <Button className="border border-neutral-500 rounded-sm px-4 text-neutral-800 h-7 bg-core_light text-xs hover:bg-core_light/85 w-fit" onClick={addOption}>Add Option</Button>
                                   </div>
                                 </div>
                               </div>
@@ -773,16 +935,20 @@ const CreateProductPage = () => {
                         setCostPrice={setCostPrice}
                         standardPricing={standardPricing}
                         setStandardPricing={setStandardPricing}
+                        contextAdjustments={contextAdjustments}
+                        setContextAdjustments={setContextAdjustments}
                         quantities={quantities}
                         setQuantities={setQuantities}
                         errors={errors}
                         variants={variantCombinations}
                         branch={currentBranch.id}
+                        company={currentBranch.company}
+                        branchCurrency={currentBranch.base_currency}
                         productType={productType}
                       />
                     )}
 
-                    {activeTab === "variants" && (
+                   {activeTab === "variants" && (
                       <div className="text-neutral-700 w-full p-6 mx-auto text-xs">
                         <h2 className="font-semibold mb-4">{productType === 'service' ? 'Quality Tiers (Variants)' : 'Variants'}</h2>
                         <VariantTable
@@ -791,7 +957,6 @@ const CreateProductPage = () => {
                           standardPricing={standardPricing}
                           updateValue={updateVariantValue}
                           productType={productType}
-                          bulkThreshold={quantities.bulkThreshold}
                         />
                       </div>
                     )}
@@ -802,9 +967,9 @@ const CreateProductPage = () => {
                   <div className="flex gap-2">
                     <Button onClick={goToPreviousTab} disabled={activeTab === 'details'} variant={'outline'} className="px-3 h-7 py-2 rounded-sm border border-neutral-500 text-xs disabled:opacity-50 disabled:cursor-not-allowed">Back</Button>
                     {activeTab !== 'variants' ? (
-                      <Button onClick={goToNextTab} variant={''} className="px-3 h-7 py-2 bg-army rounded-sm hover:bg-army/90 text-white text-xs">Next</Button>
+                      <Button onClick={goToNextTab} variant={''} className="px-3 h-7 py-2 bg-core_light rounded-sm hover:bg-core_light/90 text-neutral-800 text-xs">Next</Button>
                     ) : (
-                      <Button onClick={handleSubmit} variant={''} className="px-3 h-7 py-2 bg-army rounded-sm hover:bg-army/90 text-white text-xs">Submit</Button>
+                      <Button onClick={handleSubmit} variant={''} className="px-3 h-7 py-2 bg-core_light rounded-sm hover:bg-core_light/90 text-neutral-800 text-xs">Submit</Button>
                     )}
                   </div>
                 </div>
@@ -834,6 +999,14 @@ const CreateProductPage = () => {
             )}
           </DialogContent>
         </Dialog>
+
+        <AttributeImportSheet
+          open={attributeSheetOpen}
+          onOpenChange={setAttributeSheetOpen}
+          existingOptions={options}
+          initialAttributeName={attributeToEdit}
+          onImport={importAttributes}
+        />
       </>
     </DndProvider>
   )
@@ -855,6 +1028,166 @@ function CombinationDragPreview() {
         <div className="text-sm font-medium text-green-700">Dragging combination...</div>
       </div>
     </div>
+  );
+}
+
+function AttributeImportSheet({ open, onOpenChange, existingOptions, initialAttributeName, onImport }) {
+  const [activeAttribute, setActiveAttribute] = useState(null);
+  const [selectedValues, setSelectedValues] = useState({});
+  const [countryOptions, setCountryOptions] = useState(
+    ATTRIBUTE_PRESETS.find(attribute => attribute.name === 'Country').values.map(name => ({ name }))
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    setActiveAttribute(
+      initialAttributeName
+        ? ATTRIBUTE_PRESETS.find(attribute => attribute.name.toLowerCase() === initialAttributeName.trim().toLowerCase()) || null
+        : null
+    );
+    setSelectedValues(Object.fromEntries(
+      ATTRIBUTE_PRESETS.map(attribute => {
+        const existing = existingOptions.find(option => option.name.trim().toLowerCase() === attribute.name.toLowerCase());
+        return [attribute.name, (existing?.values || []).map(value => getOptionValueLabel(value))];
+      })
+    ));
+
+    const loadCountries = async () => {
+      const { data, error } = await supabase
+        .from('countries')
+        .select('name, code, flag')
+        .order('name', { ascending: true });
+
+      if (!error && data?.length) {
+        setCountryOptions(data.map(country => ({
+          name: country.name,
+          code: country.code,
+          flag: country.flag,
+        })));
+      }
+    };
+
+    loadCountries();
+  }, [open, existingOptions, initialAttributeName]);
+
+  const toggleValue = (attributeName, value) => {
+    setSelectedValues(prev => {
+      const values = prev[attributeName] || [];
+      return {
+        ...prev,
+        [attributeName]: values.includes(value)
+          ? values.filter(selectedValue => selectedValue !== value)
+          : [...values, value],
+      };
+    });
+  };
+
+  const handleImport = () => {
+    const attributes = ATTRIBUTE_PRESETS
+      .map(attribute => ({
+        ...attribute,
+        values: attribute.name === 'Country'
+          ? (selectedValues.Country || []).map(value => {
+            const country = countryOptions.find(option => option.name === value);
+            return country?.flag ? { label: value, flag: country.flag } : value;
+          })
+          : (selectedValues[attribute.name] || []),
+      }))
+      .filter(attribute => attribute.values.length > 0)
+      .map(({ swatches, ...attribute }) => attribute);
+
+    if (attributes.length === 0) {
+      toast.error('Select at least one attribute value');
+      return;
+    }
+
+    onImport(attributes);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>{activeAttribute ? `Select ${activeAttribute.name} values` : 'Import Attributes'}</SheetTitle>
+          <SheetDescription className="text-xs">
+            {activeAttribute
+              ? 'Choose the values you want to use for this product variant.'
+              : 'Choose an attribute to select its values.'}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="space-y-4 p-4">
+          {!activeAttribute ? (
+            <div className="space-y-2">
+              <p className="text-xs font-medium">Built-in attributes</p>
+              {ATTRIBUTE_PRESETS.map(attribute => {
+                const count = selectedValues[attribute.name]?.length || 0;
+                return (
+                  <button
+                    key={attribute.name}
+                    type="button"
+                    onClick={() => setActiveAttribute(attribute)}
+                    className="flex w-full items-center justify-between rounded-sm border border-neutral-300 p-3 text-left text-xs font-medium hover:border-core hover:bg-muted/40"
+                  >
+                    <span>{attribute.name}</span>
+                    {count > 0 && <span className="text-[10px] text-core">{count} selected</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Button type="button" variant="ghost" className="h-7 px-0 text-xs" onClick={() => setActiveAttribute(null)}>
+                Back to attributes
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                {(activeAttribute.name === 'Country' ? countryOptions : activeAttribute.values).map((item, index) => {
+                  const value = typeof item === 'string' ? item : item.name;
+                  const selected = selectedValues[activeAttribute.name]?.includes(value);
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => toggleValue(activeAttribute.name, value)}
+                      className={`flex items-center gap-2 rounded-sm border p-2 text-left text-xs transition-colors ${selected ? 'border-core bg-core/10 ring-1 ring-core' : 'border-neutral-300 hover:border-core'}`}
+                    >
+                      {activeAttribute.name === 'Color' && (
+                        <span
+                          className="size-5 shrink-0 rounded-full border border-black/20"
+                          style={{ backgroundColor: activeAttribute.swatches[index] }}
+                        />
+                      )}
+                      {activeAttribute.name === 'Country' && item.flag && (
+                        <img
+                          src={item.flag}
+                          alt=""
+                          className="h-4 w-6 shrink-0 rounded-sm object-cover"
+                        />
+                      )}
+                      <span>{value}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <SheetFooter>
+          <div className="flex w-full justify-start gap-2 px-4 pb-4">
+            {activeAttribute ? (
+              <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => setActiveAttribute(null)}>Done</Button>
+            ) : (
+              <Button className="h-8 bg-core text-xs hover:bg-core/85" onClick={handleImport}>Import Attributes</Button>
+            )}
+            <SheetClose asChild>
+              <Button variant="outline" className="h-8 text-xs">Cancel</Button>
+            </SheetClose>
+          </div>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -910,7 +1243,18 @@ function DraggableCombination({ combo, index, moveCombination, draggedIndex, onD
       <div className="flex items-center justify-between h-full gap-4">
         <div className="flex h-full items-center gap-2">
           <GripVertical className={`h-4 w-4 ${isCurrentlyDragged ? 'text-core' : 'text-muted-foreground'}`} />
-          <div className="text-sm">{combo.combination.map((item, i) => (<div key={i}>{item.optionName}: {item.value}</div>))}</div>
+          <div className="text-sm">
+            {combo.combination.map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span>{item.optionName.toUpperCase()}:</span>
+                <OptionValueDisplay
+                  attributeName={item.optionName}
+                  value={item.value}
+                  visualOnly={['color', 'country'].includes(item.optionName.toLowerCase())}
+                />
+              </div>
+            ))}
+          </div>
         </div>
         <div className="flex grow justify-end gap-2 h-full items-center">
           {comboImages && comboImages.length > 0 ? (
@@ -933,7 +1277,12 @@ function DraggableCombination({ combo, index, moveCombination, draggedIndex, onD
           <SheetContent side="right" className="w-80 overflow-y-auto">
             <SheetHeader>
               <SheetTitle className="text-sm">Select Images for Variant</SheetTitle>
-              <SheetDescription className="text-xs">{combo.combination.map((item, i) => (<span key={i} className="block">{item.optionName}: {item.value}</span>))}</SheetDescription>
+              <SheetDescription className="text-xs">{combo.combination.map((item, i) => (
+                <span key={i} className="flex items-center gap-1.5">
+                  <span>{item.optionName.toUpperCase()}:</span>
+                  <OptionValueDisplay attributeName={item.optionName} value={item.value} />
+                </span>
+              ))}</SheetDescription>
             </SheetHeader>
             <div className="space-y-2 mt-4">
               {selectedImages && selectedImages.length > 0 ? (
@@ -956,7 +1305,7 @@ function DraggableCombination({ combo, index, moveCombination, draggedIndex, onD
   );
 }
 
-function CategorySheet({ branch, open, onOpenChange, onConfirm, initialSelected }) {
+function CategorySheet({ branch, company, open, onOpenChange, onConfirm, initialSelected }) {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -1009,13 +1358,13 @@ function CategorySheet({ branch, open, onOpenChange, onConfirm, initialSelected 
             if (!inlineName) return
             try {
               const r = toast.loading(`Creating category under ${n.name}...`)
-              const { error } = await supabase.from('categories').insert({ name: inlineName, parent: n.id, slug: inlineSlug || convertToSlug(inlineName), description: inlineDescription || '', branch }).select().single()
+              const { error } = await supabase.from('categories').insert({ name: inlineName, parent: n.id, slug: inlineSlug || convertToSlug(inlineName), description: inlineDescription || '', branch, company }).select().single()
               if (error) throw error
               refreshCategories()
               setInlineName(''); setInlineSlug(''); setInlineDescription(''); setAddingFor(null)
               toast.dismiss(r); toast.success('Category created')
             } catch (err) { console.error(err); toast.error('Failed to create category') }
-          }} disabled={!inlineName} className="h-7 w-7 p-0 bg-army"><Plus size={14} /></Button>
+          }} disabled={!inlineName} className="h-7 w-7 p-0 bg-core_light text-neutral-800"><Plus size={14} /></Button>
         </div>
       )}
       {n.children && render(n.children, level + 1)}
@@ -1038,12 +1387,12 @@ function CategorySheet({ branch, open, onOpenChange, onConfirm, initialSelected 
                 if (!categoryName) return
                 setUploading(true)
                 try {
-                  const { error } = await supabase.from('categories').insert({ name: categoryName, parent: null, slug: categorySlug || convertToSlug(categoryName), description: categoryDescription || '', branch: branch }).select().single()
+                  const { error } = await supabase.from('categories').insert({ name: categoryName, parent: null, slug: categorySlug || convertToSlug(categoryName), description: categoryDescription || '', branch, company }).select().single()
                   if (error) throw error
                   refreshCategories(); setCategoryName(''); setCategorySlug('')
                   toast.success('Category created')
                 } catch (err) { console.error(err); toast.error('Failed to create category') } finally { setUploading(false) }
-              }} disabled={!categoryName || uploading} className="h-7 text-xs bg-army">{uploading ? <><Spinner spinning={uploading} className="h-4 w-4" /> Creating</> : 'Create'}</Button>
+              }} disabled={!categoryName || uploading} className="h-7 text-xs bg-core_light text-neutral-800">{uploading ? <><Spinner spinning={uploading} className="h-4 w-4" /> Creating</> : 'Create'}</Button>
             </div>
           </div>
           {loading ? <div className="text-sm">Loading...</div> : render(tree)}

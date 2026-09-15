@@ -7,46 +7,30 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Info } from 'lucide-react'
-import supabase from '../config/supabaseClient';
+import supabase from '@/config/supabaseClient';
 
 /**
  * ProductConfigurations
  * ----------------------------------------------------------------------
  * Second tab of the product creation flow (rendered by CreateProductPage).
  *
- * Relationship to the parent (CreateProductPage):
- * - The parent owns all form state (it's the thing that gets submitted).
- * - This component is a "dumb" renderer over that state. To keep the
- *   handoff between the two files sane, related fields are grouped into
- *   a small number of objects instead of being passed as 20+ individual
- *   useState/setState pairs:
- *     - categorization   { category }  (+ open/close + sheet)
- *     - costPrice / setCostPrice        -> base cost, still product-level
- *     - standardPricing / setStandardPricing
- *          { marginPercentage, marginValue, sellingPrice }
- *          This is the ONLY pricing context handled at product-creation
- *          time. Wholesale / custom pricing contexts are configured in
- *          their own Pricing module (pricing_contexts + pricing_rules)
- *          and are resolved per invoice line at sale time - a product
- *          only ever needs a Standard price to be saveable.
- *     - quantities / setQuantities
- *          { totalProductUnits, totalProductUnitsType, minSaleQuantity,
- *            quantityIncrement, bulkThreshold, reorderLevel }
- *          Mirrors the new columns on product_variants.
- *
- * Removed entirely (per Sept 2026 schema discussion):
- *   - Shipping Profile picker/CRUD -> lives in the Shipping module now;
- *     Products only supplies weight/dimensions as raw facts.
- *   - Return Policy picker/CRUD -> lives in Settings; not a product-owned
- *     relationship.
- *   - "Minimum Margin Rules" sheet -> was unused dead code (nothing in
- *     handleSubmit ever read selectedMarginRule), and margin floors are a
- *     pricing_rules concern now anyway.
- *   - Per-context Bulk Pricing Reduction fields -> bulk pricing is a
- *     Wholesale/custom pricing_rules concern (condition_type =
- *     'bulk_threshold'), not something Standard needs. The *quantity*
- *     that triggers it (bulk_threshold) still lives on the variant, so
- *     it moved to the Quantities section in the parent.
+ * Pricing Contexts section (per resolution reached in this conversation):
+ * - Standard's box is unchanged: direct margin %/value input, selling
+ *   price auto-calculated from cost. Nothing about it changes.
+ * - Every other active pricing context for the branch (Wholesale, any
+ *   custom ones) gets its own box below Standard's. The input there is
+ *   NOT a price - it's an adjustment relative to Standard's selling
+ *   price: a mode (Reduction / Markup, Reduction is default), an
+ *   adjustment type (Percentage / Fixed Amount), and a plain positive
+ *   number (no minus sign shown to the user). The box shows a
+ *   live-computed read-only preview price.
+ * - Formula: Reduction+Percentage -> Standard x (1 - value/100);
+ *   Markup+Percentage -> Standard x (1 + value/100);
+ *   Reduction+Fixed -> Standard - value; Markup+Fixed -> Standard + value.
+ * - Nothing is written to standard_prices or pricing_rules from this
+ *   component directly - contextAdjustments is lifted to
+ *   CreateProductPage, which performs the actual pricing_rules insert
+ *   after the product (and its id) exists.
  */
 export const ProductConfigurations = forwardRef(({
   // Categorization
@@ -58,11 +42,15 @@ export const ProductConfigurations = forwardRef(({
   setCategorySheetOpen,
   CategorySheet,
 
-  // Pricing (Standard only - see note above)
+  // Pricing (Standard - unchanged)
   costPrice,
   setCostPrice,
   standardPricing,
   setStandardPricing,
+
+  // Pricing contexts other than Standard (Reduction/Markup adjustments)
+  contextAdjustments,
+  setContextAdjustments,
 
   // Quantities (maps to product_variants: min_sale_quantity, quantity_increment, bulk_threshold, reorder_level)
   quantities,
@@ -71,11 +59,14 @@ export const ProductConfigurations = forwardRef(({
   errors = {},
   variants = [],
   branch,
+  company,
+  branchCurrency,
   productType = 'physical',
 }, ref) => {
   const [measurementTypes, setMeasurementTypes] = useState([]);
   const [measurementUnits, setMeasurementUnits] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [activeContexts, setActiveContexts] = useState([]);
 
   // Editing buffer for the Standard pricing block - lets margin %/value/selling
   // price be edited without committing to parent state on every keystroke.
@@ -102,6 +93,21 @@ export const ProductConfigurations = forwardRef(({
     };
     fetchMeasurementData();
   }, []);
+
+  // Fetch active pricing contexts for the branch (Standard + Wholesale + any custom ones)
+  useEffect(() => {
+    if (!branch) return;
+    const fetchContexts = async () => {
+      const { data, error } = await supabase
+        .from('pricing_contexts')
+        .select('*')
+        .eq('branch', branch)
+        .eq('is_active', true);
+      if (error) console.error('Error fetching pricing contexts:', error);
+      else setActiveContexts(data || []);
+    };
+    fetchContexts();
+  }, [branch]);
 
   const calculateValueFromPercentage = (percentage, basePrice) => {
     if (!basePrice || !percentage) return '';
@@ -159,6 +165,41 @@ export const ProductConfigurations = forwardRef(({
     }
   }));
 
+  // Standard's current selling price - the base every other context's
+  // adjustment is computed against.
+  const standardSellingPrice = productType === 'service'
+    ? getStandardField('sellingPrice')
+    : calculateSellingPrice(getStandardField('marginValue') || 0);
+
+  const DEFAULT_ADJUSTMENT = { mode: 'reduction', adjustmentType: 'percentage', value: '' };
+
+  const getAdjustment = (contextId) => contextAdjustments?.[contextId] || DEFAULT_ADJUSTMENT;
+
+  const updateAdjustment = (contextId, field, value) => {
+    setContextAdjustments(prev => ({
+      ...prev,
+      [contextId]: { ...getAdjustment(contextId), [field]: value },
+    }));
+  };
+
+  const calculateContextPreview = (adjustment) => {
+    const base = parseFloat(standardSellingPrice);
+    const value = parseFloat(adjustment.value);
+    if (!base || isNaN(value)) return '';
+
+    if (adjustment.adjustmentType === 'percentage') {
+      return adjustment.mode === 'reduction'
+        ? (base * (1 - value / 100)).toFixed(2)
+        : (base * (1 + value / 100)).toFixed(2);
+    }
+    // fixed amount
+    return adjustment.mode === 'reduction'
+      ? (base - value).toFixed(2)
+      : (base + value).toFixed(2);
+  };
+
+  const otherContexts = activeContexts.filter(context => !context.is_default);
+
   return (
     <div className="text-neutral-700 font-WixMade tracking-tight max-w-5xl mx-auto text-xs">
       <h2 className="font-semibold mb-4">Configurations</h2>
@@ -173,8 +214,16 @@ export const ProductConfigurations = forwardRef(({
               <div className="flex gap-2 mt-1 items-center">
                 <input className={`flex-1 border border-neutral-500 rounded-sm p-2 text-xs ${errors.category ? 'border-red-500 border-2 bg-red-50' : ''}`} value={selectedCategoryName || ''} readOnly placeholder="Select category" />
                 <Button variant="outline" className="h-8 px-2 text-xs" onClick={() => setCategorySheetOpen(true)}>Select</Button>
-                <CategorySheet branch={branch} open={categorySheetOpen} onOpenChange={setCategorySheetOpen} onConfirm={(id, name) => { setSelectedCategoryId(id); setSelectedCategoryName(name || ''); setCategorySheetOpen(false) }} initialSelected={selectedCategoryId} />
+                <CategorySheet branch={branch} company={company} open={categorySheetOpen} onOpenChange={setCategorySheetOpen} onConfirm={(id, name) => { setSelectedCategoryId(id); setSelectedCategoryName(name || ''); setCategorySheetOpen(false) }} initialSelected={selectedCategoryId} />
               </div>
+              <label className="text-gray-600 text-xs block mt-3">Currency</label>
+              <Input
+                value={branchCurrency || ''}
+                readOnly
+                aria-readonly="true"
+                placeholder="Branch currency"
+                className="mt-1 h-8 border border-neutral-500 bg-neutral-100 cursor-not-allowed"
+              />
             </div>
           </div>
         </div>
@@ -305,22 +354,14 @@ export const ProductConfigurations = forwardRef(({
           </div>
         </div>
 
-        {/* STANDARD PRICING
-            This is the only pricing context configured at product-creation
-            time. Every variant is required to have a Standard price -
-            that's enforced in the create_product_with_variants function via
-            p_standard_prices, not just here. Wholesale / custom contexts
-            (with their own scope + condition + action pricing_rules) are
-            configured separately in the Pricing module and apply at
-            invoice time - they don't need anything from this screen beyond
-            the Bulk Threshold quantity above. */}
+        {/* STANDARD PRICING - unchanged */}
         <div className="space-y-3 p-4" data-field="standardPricing">
           <h3 className="text-xs font-semibold">
             Standard Pricing <span className="text-red-500 ml-1">*</span>
           </h3>
           <p className="text-gray-500 text-[11px]">
-            Every product needs a Standard selling price. Other pricing contexts (Wholesale, Distributor, etc.)
-            are managed in Pricing settings and apply automatically at the point of sale.
+            Every product needs a Standard selling price. Other pricing contexts (Wholesale, custom ones)
+            are shown below as a live preview relative to Standard.
           </p>
 
           <div className="border border-neutral-500 rounded-sm bg-white p-4 space-y-3">
@@ -405,6 +446,77 @@ export const ProductConfigurations = forwardRef(({
             </div>
           </div>
         </div>
+
+        {/* OTHER PRICING CONTEXTS - Reduction/Markup adjustments relative to Standard */}
+        {otherContexts.length > 0 && (
+          <div className="space-y-3 p-4" data-field="contextAdjustments">
+            <h3 className="text-xs font-semibold">Other Pricing Contexts</h3>
+            <p className="text-gray-500 text-[11px]">
+              Each context's price is computed live from Standard at invoice time. Set a Reduction or Markup
+              here to adjust that computation for this product - nothing is stored unless you set a value.
+            </p>
+
+            <div className="space-y-3">
+              {otherContexts.map(context => {
+                const adjustment = getAdjustment(context.id);
+                const preview = calculateContextPreview(adjustment);
+                return (
+                  <div key={context.id} className="border border-neutral-500 rounded-sm bg-white p-4 space-y-3">
+                    <h4 className="text-xs font-semibold">{context.name}</h4>
+                    <div className="grid grid-cols-4 gap-3 items-end">
+                      <div>
+                        <Label className="text-[10px] mb-1 block">Mode</Label>
+                        <Select value={adjustment.mode} onValueChange={(v) => updateAdjustment(context.id, 'mode', v)}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="reduction">Reduction</SelectItem>
+                            <SelectItem value="markup">Markup</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-[10px] mb-1 block">Type</Label>
+                        <Select value={adjustment.adjustmentType} onValueChange={(v) => updateAdjustment(context.id, 'adjustmentType', v)}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="percentage">Percentage</SelectItem>
+                            <SelectItem value="fixed">Fixed Amount</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-[10px] mb-1 block">Value</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={adjustment.value}
+                          onChange={(e) => updateAdjustment(context.id, 'value', e.target.value)}
+                          className="h-8 border border-neutral-500"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10px] mb-1 block">Preview</Label>
+                        <Input
+                          type="text"
+                          readOnly
+                          value={preview}
+                          placeholder="-"
+                          className="h-8 border border-neutral-500 bg-[#f0f0f0] cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

@@ -1,13 +1,10 @@
 import { redirect } from "next/navigation"
-import { headers } from "next/headers"
 import { createSupabaseServerClient } from "@/config/supabaseServer"
 import BranchLayoutClient from "./branchLayoutClient"
 
 export default async function BranchLayout({ children, params }) {
   const { u, companyId, branchId } = await params
   const supabase = await createSupabaseServerClient()
-  const pathname = (await headers()).get("x-pathname") || ""
-  const isUnauthorizedPage = pathname.endsWith("/unauthorized")
 
   const {
     data: { user },
@@ -45,7 +42,7 @@ export default async function BranchLayout({ children, params }) {
   } else {
     const { data: staffData, error: staffError } = await supabase
       .from("staff")
-      .select("access_level, branch, status")
+      .select("id, access_level, branch, status")
       .eq("user", user.id)
       .eq("company", company.id)
       .single()
@@ -61,25 +58,23 @@ export default async function BranchLayout({ children, params }) {
     accessLevelScope = accessLevelRecord?.access ?? null
     hasAllBranchAccess = accessLevelScope === "company"
 
-    if (!isUnauthorizedPage) {
-      const { data: branchAccessRows, error: branchAccessError } = await supabase
-        .rpc("get_staff_branch_access", {
-          p_staff_id: user.id,
-          p_company_id: company.id,
-        })
+    const { data: branchAccessRows, error: branchAccessError } = await supabase
+      .rpc("get_staff_branch_access", {
+        p_staff_id: staffData.id,
+        p_company_id: company.id,
+      })
 
-      if (branchAccessError) {
-        redirect(`/users/${u}/company/${companyId}`)
-      }
+    if (branchAccessError) {
+      redirect(`/users/${u}/company/${companyId}`)
+    }
 
-      const branchAccess = (branchAccessRows || []).find(
-        (row) => String(row.branch_id) === String(branchId)
-      )
-      const hasBranchAccess = branchAccess?.has_access === true
+    const branchAccess = (branchAccessRows || []).find(
+      (row) => String(row.branch_id) === String(branchId)
+    )
+    const hasBranchAccess = branchAccess?.has_access === true
 
-      if (!hasBranchAccess) {
-        redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?reason=branch-access`)
-      }
+    if (!hasBranchAccess) {
+      redirect(`/users/${u}/company/${companyId}/branches/branch-unauthorized?reason=branch-access&branchId=${branchId}`)
     }
   }
 

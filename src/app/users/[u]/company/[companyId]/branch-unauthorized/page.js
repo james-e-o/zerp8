@@ -10,7 +10,8 @@ export default function UnauthorizedPage() {
 	const searchParams = useSearchParams();
 	const module = searchParams.get('module');
 	const reason = searchParams.get('reason');
-	const { u, companyId, branchId } = params;
+	const branchId = searchParams.get('branchId');
+	const { u, companyId } = params;
 	const isBranchAccessDenied = reason === 'branch-access';
 
 	return (
@@ -34,7 +35,7 @@ export default function UnauthorizedPage() {
 						? 'Please contact your company administrator if you need access to this branch.'
 						: 'Please upgrade your subscription plan to unlock this feature.'}
 				</p>
-				<Link href={`/users/${u}/company/${companyId}/branches/${branchId}`}>
+				<Link href={branchId ? `/users/${u}/company/${companyId}/branches/${branchId}` : `/users/${u}/company/${companyId}`}>
 					<Button className="w-full bg-army hover:bg-army/90 text-white font-semibold">
 						<ArrowLeft size={16} className="mr-2" />
 						Go Back
