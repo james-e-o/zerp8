@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { createSupabaseServerClient } from "@/config/supabaseServer"
 import { Button } from "@/components/ui/button"
-import StartFreeTrialButton from "./StartFreeTrialButton"
+import StartFreeTrialButton from "@/components/subscriptions/start-free-trial-button"
 
 const getStatusBadgeColor = (status) => {
   const colors = {
@@ -159,11 +159,11 @@ export default async function SubscriptionOverviewPage({ params }) {
               <Link href={`${baseUrl}/plans`} className="block">
                 <Button className="w-full bg-core text-white hover:bg-core/90">Upgrade Plan</Button>
               </Link>
-              <Link href={`${baseUrl}/payments`} className="block">
+              <Link href={`${baseUrl}/billing`} className="block">
                 <Button variant="outline" className="w-full">Manage Payment Method</Button>
               </Link>
-              <Link href={`${baseUrl}/billing`} className="block">
-                <Button variant="outline" className="w-full">Update Billing Address</Button>
+              <Link href={`${baseUrl}/history`} className="block">
+                <Button variant="outline" className="w-full">View Billing History</Button>
               </Link>
             </div>
           </div>

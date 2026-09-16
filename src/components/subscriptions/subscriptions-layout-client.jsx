@@ -1,9 +1,9 @@
-"use client"
+'use client'
 
-import { useParams, usePathname } from "next/navigation"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { ReusableCompanySidebar } from "../companyLayoutClient"
+import { useParams, usePathname } from 'next/navigation'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { ReusableCompanySidebar } from '@/app/users/[u]/company/[companyId]/companyLayoutClient'
 
 export default function SubscriptionsLayoutClient({
   children,
@@ -15,7 +15,7 @@ export default function SubscriptionsLayoutClient({
   const { u, companySlug, companyId } = params
   const companyParam = companyId ?? companySlug
 
-  const isBranchLevel = accessLevelScope === "branch"
+  const isBranchLevel = accessLevelScope === 'branch'
 
   if (isBranchLevel) {
     return (
@@ -41,17 +41,16 @@ export default function SubscriptionsLayoutClient({
   const baseUrl = `/users/${u}/company/${companyParam}/subscriptions`
 
   const isActive = (path) => {
-    if (path === "overview") {
-      return pathname === baseUrl
-    }
+    if (path === 'overview') return pathname === baseUrl
     return pathname.includes(`/subscriptions/${path}`)
   }
 
   return (
     <ReusableCompanySidebar>
-      <div className="px-6 py-4 flex flex-col grow">
+      {/* <div className="px-4 py-0 flex flex-col grow"> */}
+            <div className="space-y-1 px-4 h-full flex-col flex overflow-hidden">
         <div className="px-2 py-4">
-          <h1 className="text-lg font-semibold text-army">Subscription management</h1>
+          <h1 className="text-lg font-semibold text-core">Subscription management</h1>
         </div>
 
         <div className="border-b border-gray-200 px-2">
@@ -59,9 +58,9 @@ export default function SubscriptionsLayoutClient({
             <Link
               href={baseUrl}
               className={`pb-3 font-medium text-sm transition-colors whitespace-nowrap ${
-                isActive("overview")
-                  ? "border-b-2 border-core text-core"
-                  : "text-gray-600 hover:text-gray-900 border-b-2 border-transparent"
+                isActive('overview')
+                  ? 'border-b-2 border-core text-core'
+                  : 'text-gray-600 hover:text-gray-900 border-b-2 border-transparent'
               }`}
             >
               Overview
@@ -69,47 +68,47 @@ export default function SubscriptionsLayoutClient({
             <Link
               href={`${baseUrl}/plans`}
               className={`pb-3 font-medium text-sm transition-colors whitespace-nowrap ${
-                isActive("plans")
-                  ? "border-b-2 border-core text-core"
-                  : "text-gray-600 hover:text-gray-900 border-b-2 border-transparent"
+                isActive('plans')
+                  ? 'border-b-2 border-core text-core'
+                  : 'text-gray-600 hover:text-gray-900 border-b-2 border-transparent'
               }`}
             >
-              Plans
+              Subscription
             </Link>
             <Link
-              href={`${baseUrl}/invoices`}
+              href={`${baseUrl}/usage`}
               className={`pb-3 font-medium text-sm transition-colors whitespace-nowrap ${
-                isActive("invoices")
-                  ? "border-b-2 border-core text-core"
-                  : "text-gray-600 hover:text-gray-900 border-b-2 border-transparent"
+                isActive('usage')
+                  ? 'border-b-2 border-core text-core'
+                  : 'text-gray-600 hover:text-gray-900 border-b-2 border-transparent'
               }`}
             >
-              Invoices
+              Usage &amp; Limits
             </Link>
             <Link
-              href={`${baseUrl}/payments`}
+              href={`${baseUrl}/history`}
               className={`pb-3 font-medium text-sm transition-colors whitespace-nowrap ${
-                isActive("payments")
-                  ? "border-b-2 border-core text-core"
-                  : "text-gray-600 hover:text-gray-900 border-b-2 border-transparent"
+                isActive('history')
+                  ? 'border-b-2 border-core text-core'
+                  : 'text-gray-600 hover:text-gray-900 border-b-2 border-transparent'
               }`}
             >
-              Payment Details
+              History
             </Link>
             <Link
               href={`${baseUrl}/billing`}
               className={`pb-3 font-medium text-sm transition-colors whitespace-nowrap ${
-                isActive("billing")
-                  ? "border-b-2 border-core text-core"
-                  : "text-gray-600 hover:text-gray-900 border-b-2 border-transparent"
+                isActive('billing')
+                  ? 'border-b-2 border-core text-core'
+                  : 'text-gray-600 hover:text-gray-900 border-b-2 border-transparent'
               }`}
             >
-              Billing Address
+              Billing
             </Link>
           </div>
         </div>
 
-        <div className="grow overflow-y-auto p-2 md:p-4">{children}</div>
+        <div className="grow overflow-y-auto p-1 mt-4 md:pb-3">{children}</div>
       </div>
     </ReusableCompanySidebar>
   )

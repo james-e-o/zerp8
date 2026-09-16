@@ -105,7 +105,7 @@ export const ReusableCompanySidebar = ({ children }) => {
           </div>
           <div className="grow overflow-y-hidden ">
             {info?.suspended ? (
-              <div className="p-4 text-center text-red-600 font-bold">
+              <div className="p-3 text-center text-red-600 font-bold">
                 Your access has been suspended. You cannot access modules or branches.
               </div>
             ) : (

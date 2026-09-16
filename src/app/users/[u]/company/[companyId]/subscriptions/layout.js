@@ -1,5 +1,5 @@
 import { createSupabaseServerClient } from "@/config/supabaseServer"
-import SubscriptionsLayoutClient from "./subscriptionsLayoutClient"
+import SubscriptionsLayoutClient from "@/components/subscriptions/subscriptions-layout-client"
 
 export default async function SubscriptionsLayout({ children, params }) {
   const { companyId } = await params
