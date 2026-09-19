@@ -1,18 +1,14 @@
 import { redirect } from "next/navigation"
-import { headers } from "next/headers"
 import { createSupabaseServerClient } from "@/config/supabaseServer"
 import { getCompanySubscriptionStatus } from "./getCompanySubscriptionStatus"
-import { CompanyInfoContext } from "./companyInfoProvider"
 import CompanyLayoutClient from "./companyLayoutClient"
 
-// Route segments reachable even without an active subscription.
 const EXEMPT_SEGMENTS = ["subscriptions", "profile"]
 
 export default async function CompanyLayout({ children, params }) {
   const { u, companyId } = await params
   const supabase = await createSupabaseServerClient()
 
-  // Step 1: Auth user
   const {
     data: { user },
     error: userError,
@@ -22,7 +18,6 @@ export default async function CompanyLayout({ children, params }) {
     redirect("/accounts/login")
   }
 
-  // Step 2: Get company
   const { data: company, error: companyError } = await supabase
     .from("companies")
     .select("id, name, slug, owner, currencies")
@@ -33,7 +28,6 @@ export default async function CompanyLayout({ children, params }) {
     redirect(`/users/${u}`)
   }
 
-  // Step 3: Access levels
   const { data: accessLevelsData, error: accessLevelsError } = await supabase
     .from("access_level")
     .select("*")
@@ -48,7 +42,6 @@ export default async function CompanyLayout({ children, params }) {
   let suspended = false
   let accessLevelScope = null
 
-  // Step 4: Owner or staff check
   if (company.owner === user.id) {
     accessLevel = "owner"
     accessLevelScope = "company"
@@ -75,76 +68,45 @@ export default async function CompanyLayout({ children, params }) {
     }
   }
 
-  // Step 5: Subscription gatekeeper — delegated to a dedicated module
-  const hasSubscription = await getCompanySubscriptionStatus(supabase, company.id)
+  // Subscription state — a string now, not a boolean. Gating decisions
+  // (redirect vs. read-only) are made in the client layout, where
+  // pathname is reliably known.
+  const subscriptionStatus = await getCompanySubscriptionStatus(supabase, company.id)
 
-  // We intentionally do not redirect here because the server-side pathname
-  // check can be unreliable in this route tree and create a loop when the user
-  // is already inside /subscriptions. The redirect guard is handled once in the
-  // client layout shell, where pathname is known and can be compared reliably.
-
-  // Step 6: Currencies
   const { data: currenciesArray } = await supabase
     .from("currencies")
     .select("name, code, flag")
     .in("code", company.currencies || [])
 
-  // Step 7: Branches
   const { data: branchesData } = await supabase
     .from("branches")
     .select("*")
     .eq("company", company.id)
-    console.log("branchesData", branchesData)
 
-  // Show all company branches in the sidebar for now.
-  // Access restrictions for branch-specific behavior should be enforced
-  // deeper in the branch pages, not here.
   const allowedBranches = branchesData || []
 
-  // Step 8: Modules - Fetch only modules that match current subscription plan
-  // Get company's current subscription plan level
-  let currentPlanLevel = null
-
-  const { data: subscription } = await supabase
-    .from("subscriptions")
-    .select("product_id")
-    .eq("company_id", company.id)
-    .in("status", ["active", "trial"])
-    .maybeSingle()
-
-  if (subscription?.product_id) {
-    const { data: planData } = await supabase
-      .from("plans")
-      .select("level")
-      .eq("bachs_product_id", subscription.product_id)
-      .maybeSingle()
-
-    if (planData) {
-      currentPlanLevel = planData.level
-    }
-  }
-
-  // Fetch modules where min_plan_level IS NULL (free) OR min_plan_level <= currentPlanLevel
+  // Modules available to the sidebar now come from subscription_modules —
+  // an explicit row per enabled module on the company's current
+  // subscription — not from comparing a plan level against
+  // modules.min_plan_level, which no longer exists.
   let modulesData = []
 
-  if (currentPlanLevel !== null) {
-    // Company has a subscription plan - fetch modules available for this level
-    const { data } = await supabase
-      .from("modules")
-      .select("*")
-      .eq("status", "active")
-      .or(`min_plan_level.is.null,min_plan_level.lte.${currentPlanLevel}`)
+  const { data: activeSubscription } = await supabase
+    .from("subscriptions")
+    .select("id")
+    .eq("company_id", company.id)
+    .in("status", ["trialing", "active", "past_due"])
+    .maybeSingle()
 
-    modulesData = data || []
-  } else {
-    // No subscription - only free modules (min_plan_level IS NULL)
-    const { data } = await supabase
-      .from("modules")
-      .select("*")
-      .eq("status", "active")
-      .is("min_plan_level", null)
+  if (activeSubscription) {
+    const { data: subModules } = await supabase
+      .from("subscription_modules")
+      .select("modules(*)")
+      .eq("subscription_id", activeSubscription.id)
 
-    modulesData = data || []
+    modulesData = (subModules || [])
+      .map((row) => row.modules)
+      .filter((m) => m && m.status === "active")
   }
 
   const info = {
@@ -166,7 +128,7 @@ export default async function CompanyLayout({ children, params }) {
       branches={allowedBranches}
       currencies={currenciesArray || []}
       accessLevels={accessLevelsData || []}
-      hasSubscription={hasSubscription}
+      subscriptionStatus={subscriptionStatus}
       exemptSegments={EXEMPT_SEGMENTS}
     >
       {children}
