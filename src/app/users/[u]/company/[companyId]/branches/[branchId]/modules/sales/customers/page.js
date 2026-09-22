@@ -1,37 +1,20 @@
-import PageHeader from "@/components/modules/sales/PageHeader";
-import DataTable from "@/components/modules/sales/DataTable";
-import { naira, customers } from "@/lib/mock-data";
+"use client"
 
-export default function CustomersPage() {
+import Link from "next/link"
+import { useParams } from "next/navigation"
+import { DUMMY_CUSTOMERS, formatNaira } from "@/components/modules/sales/dummy-data"
+
+export default function CustomersListPage() {
+  const { u, companyId, branchId } = useParams()
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/customers`
+
   return (
-    <div>
-      <PageHeader
-        title="Customers"
-        description="Profiles, contacts, and running balances for every customer on this branch."
-        action={
-          <button className="px-4 py-2 rounded-md bg-brand text-white text-sm font-medium hover:bg-brand-ink transition-colors">
-            New customer
-          </button>
-        }
-      />
-
-      <DataTable
-        columns={[
-          { key: "name", label: "Customer" },
-          { key: "type", label: "Type" },
-          { key: "phone", label: "Phone" },
-          { key: "orders", label: "Orders", align: "right" },
-          { key: "balance", label: "Balance", align: "right" },
-        ]}
-        rows={customers}
-        render={{
-          balance: (v) => (
-            <span className={v > 0 ? "text-warn" : v < 0 ? "text-ok" : "text-inkmute"}>
-              {v === 0 ? "—" : naira(Math.abs(v)) + (v < 0 ? " credit" : " owed")}
-            </span>
-          ),
-        }}
-      />
+    <div className="space-y-6">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <table className="w-full text-left text-sm"><thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-500"><tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Payment Terms</th><th className="px-4 py-3">Credit Limit</th><th className="px-4 py-3">Outstanding</th></tr></thead>
+          <tbody className="divide-y divide-gray-100">{DUMMY_CUSTOMERS.map((customer) => <tr key={customer.id} className="hover:bg-gray-50"><td className="px-4 py-3"><Link href={`${base}/${customer.id}`} className="font-semibold text-slate-900 hover:text-core">{customer.name}</Link></td><td className="px-4 py-3 text-gray-600"><div>{customer.email}</div><div className="text-xs text-gray-400">{customer.phone}</div></td><td className="px-4 py-3 text-gray-600">{customer.paymentTerms}</td><td className="px-4 py-3 text-gray-600">{formatNaira(customer.creditLimit)}</td><td className={`px-4 py-3 font-semibold ${customer.outstandingBalance > 0 ? "text-amber-700" : "text-gray-600"}`}>{formatNaira(customer.outstandingBalance)}</td></tr>)}</tbody>
+        </table>
+      </div>
     </div>
-  );
+  )
 }

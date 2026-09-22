@@ -1,7 +1,7 @@
-import PageHeader from "@/components/modules/sales/PageHeader";
+import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/modules/sales/StatCard";
 import DataTable from "@/components/modules/sales/DataTable";
-import StatusBadge from "@/components/modules/sales/StatusBadge";
+import StatusBadge from "@/components/modules/sales/status-badge";
 import { naira, orders, invoices } from "@/lib/mock-data";
 
 export default function SalesOverviewPage() {

@@ -1,4 +1,4 @@
-import PageHeader from "@/components/modules/sales/PageHeader";
+import PageHeader from "@/components/PageHeader";
 import TabNav from "@/components/modules/sales/TabNav";
 
 const TABS = [

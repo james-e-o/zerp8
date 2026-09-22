@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import DataTable from "@/components/modules/sales/DataTable";
-import StatusBadge from "@/components/modules/sales/StatusBadge";
+import StatusBadge from "@/components/modules/sales/status-badge";
 import { naira, quotations } from "@/lib/mock-data";
 
 export default function QuotationsPage() {

@@ -1,8 +1,22 @@
-// Customers doesn't have status-based sub-views the way Orders/Invoices
-// do — a customer isn't "Draft" or "Paid". Its natural sub-navigation
-// happens one level deeper, inside an individual customer's profile
-// (Profile / Transactions / Ledger), not at the list level, so that
-// tab set belongs in app/(sales)/customers/[id]/layout.js rather than here.
-export default function CustomersLayout({ children }) {
-  return <>{children}</>;
+import Link from "next/link";
+import PageHeader from "@/components/PageHeader";
+
+export default async function CustomersLayout({ children, params }) {
+  const { u, companyId, branchId } = await params;
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/customers`;
+
+  return (
+    <div>
+      <PageHeader
+        title="Customers"
+        description="Profiles, balances and transaction history."
+        action={
+          <Link href={`${basePath}/new`} className="rounded-md bg-core px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-core/90">
+            New customer
+          </Link>
+        }
+      />
+      {children}
+    </div>
+  );
 }

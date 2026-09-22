@@ -15,7 +15,7 @@ export default function TabNav({ tabs, basePath }) {
   const current = searchParams.get("status") || "all";
 
   return (
-    <nav className="flex items-center gap-1 border-b border-line -mt-2 mb-6 overflow-x-auto">
+    <nav className="flex items-center gap-1.5 border-line mt-1 mb-6 overflow-x-auto">
       {tabs.map((tab) => {
         const active = current === tab.value;
         const href = tab.value === "all" ? basePath : `${basePath}?status=${tab.value}`;
@@ -25,7 +25,7 @@ export default function TabNav({ tabs, basePath }) {
             href={href}
             className={`relative flex min-w-max cursor-pointer items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
               active
-                ? "bg-core_light text-core border-core/20"
+                ? "bg-core text-white border-core/20"
                 : "text-muted-foreground border-border hover:bg-muted"
             }`}
           >

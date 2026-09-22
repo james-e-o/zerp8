@@ -2,7 +2,7 @@
 
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import PageHeader from "@/components/modules/sales/PageHeader"
+import PageHeader from "@/components/PageHeader"
 
 export default function AttributesLayout({ children }) {
   return (

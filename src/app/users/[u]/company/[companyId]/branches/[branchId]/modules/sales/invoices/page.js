@@ -1,43 +1,31 @@
-"use client";
+"use client"
 
-import { useSearchParams } from "next/navigation";
-import DataTable from "@/components/modules/sales/DataTable";
-import StatusBadge from "@/components/modules/sales/StatusBadge";
-import { naira, invoices } from "@/lib/mock-data";
+import { useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { useParams } from "next/navigation"
+import StatusBadge from "@/components/modules/sales/status-badge"
+import { DUMMY_INVOICES, formatNaira } from "@/components/modules/sales/dummy-data"
 
-export default function InvoicesPage() {
-  const filter = useSearchParams().get("status") || "all";
-  const rows =
-    filter === "all"
-      ? invoices
-      : invoices.filter(
-          (i) => i.type.toLowerCase() === filter || i.status.toLowerCase() === filter
-        );
+export default function InvoicesListPage() {
+  const { u, companyId, branchId } = useParams()
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/invoices`
+  const filter = useSearchParams().get("status") || "all"
+  const invoices = filter === "all"
+    ? DUMMY_INVOICES
+    : ["sales_invoice", "proforma", "credit_note"].includes(filter)
+      ? DUMMY_INVOICES.filter((invoice) => invoice.type === filter)
+      : DUMMY_INVOICES.filter((invoice) => invoice.status === filter)
 
   return (
-    <DataTable
-      columns={[
-        { key: "id", label: "Document" },
-        { key: "type", label: "Type" },
-        { key: "customer", label: "Customer" },
-        { key: "total", label: "Total", align: "right" },
-        { key: "paid", label: "Paid", align: "right" },
-        { key: "balance", label: "Balance", align: "right" },
-        { key: "due", label: "Due" },
-        { key: "status", label: "Status" },
-      ]}
-      rows={rows}
-      render={{
-        type: (v) => <span className="text-xs text-inkmute">{v}</span>,
-        total: (v) => naira(v),
-        paid: (v) => naira(v),
-        balance: (v) => (
-          <span className={v > 0 ? "text-warn font-medium" : v < 0 ? "text-ok font-medium" : "text-inkmute"}>
-            {naira(v)}
-          </span>
-        ),
-        status: (v) => <StatusBadge status={v} />,
-      }}
-    />
-  );
+    <div className="space-y-6">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <table className="w-full text-left text-sm"><thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-500"><tr><th className="px-4 py-3">ID</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Paid</th><th className="px-4 py-3">Status</th></tr></thead>
+          <tbody className="divide-y divide-gray-100">
+            {invoices.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">No documents match this filter.</td></tr>}
+            {invoices.map((invoice) => <tr key={invoice.id} className="hover:bg-gray-50"><td className="px-4 py-3"><Link href={`${base}/${invoice.id}`} className="font-semibold text-slate-900 hover:text-core">{invoice.id}</Link></td><td className="px-4 py-3"><StatusBadge status={invoice.type} /></td><td className="px-4 py-3 text-gray-600">{invoice.customerName}</td><td className="px-4 py-3 text-gray-600">{formatNaira(invoice.total)}</td><td className="px-4 py-3 text-gray-600">{formatNaira(invoice.paid)}</td><td className="px-4 py-3"><StatusBadge status={invoice.status} /></td></tr>)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
