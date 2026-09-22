@@ -102,45 +102,27 @@ export default async function BranchLayout({ children, params }) {
     branch_info: undefined,
   }
 
-  let currentPlanLevel = null
-
-  const { data: subscription } = await supabase
-    .from("subscriptions")
-    .select("product_id")
-    .eq("company_id", company.id)
-    .in("status", ["active", "trial"])
-    .maybeSingle()
-
-  if (subscription?.product_id) {
-    const { data: planData } = await supabase
-      .from("plans")
-      .select("level")
-      .eq("bachs_product_id", subscription.product_id)
-      .maybeSingle()
-
-    if (planData) {
-      currentPlanLevel = planData.level
-    }
-  }
-
+  // Modules now come from subscription_modules — an explicit row per
+  // module this company's active/trialing subscription actually grants.
+  // No plan-level comparison, no modules.status filter (that column no
+  // longer exists — bundle status is what gates a module now, and it's
+  // already accounted for at the moment subscription_modules was seeded).
   let modulesData = []
 
-  if (currentPlanLevel !== null) {
-    const { data } = await supabase
-      .from("modules")
-      .select("*")
-      .eq("status", "active")
-      .or(`min_plan_level.is.null,min_plan_level.lte.${currentPlanLevel}`)
+  const { data: activeSubscription } = await supabase
+    .from("subscriptions")
+    .select("id")
+    .eq("company_id", company.id)
+    .in("status", ["trialing", "active", "past_due"])
+    .maybeSingle()
 
-    modulesData = data || []
-  } else {
-    const { data } = await supabase
-      .from("modules")
-      .select("*")
-      .eq("status", "active")
-      .is("min_plan_level", null)
+  if (activeSubscription) {
+    const { data: subModules } = await supabase
+      .from("subscription_modules")
+      .select("modules(*)")
+      .eq("subscription_id", activeSubscription.id)
 
-    modulesData = data || []
+    modulesData = (subModules || []).map((row) => row.modules).filter(Boolean)
   }
 
   const companyInfo = {

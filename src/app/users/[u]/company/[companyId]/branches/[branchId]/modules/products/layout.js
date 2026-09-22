@@ -15,7 +15,7 @@ export default async function ProductsLayout({ params, children }) {
   const isProductsEnabled = await isModuleEnabledServer(companyId, "products");
 
   if (!isProductsEnabled) {
-    redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?module=products`);
+    redirect(`/users/${u}/company/${companyId}/branches/${branchId}/module-unauthorized?module=products`);
   }
 
   const navigationItems = [

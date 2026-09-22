@@ -104,9 +104,7 @@ export default async function CompanyLayout({ children, params }) {
       .select("modules(*)")
       .eq("subscription_id", activeSubscription.id)
 
-    modulesData = (subModules || [])
-      .map((row) => row.modules)
-      .filter((m) => m && m.status === "active")
+    modulesData = (subModules || []).map((row) => row.modules).filter(Boolean)
   }
 
   const info = {

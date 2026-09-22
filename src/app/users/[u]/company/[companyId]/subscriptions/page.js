@@ -6,7 +6,7 @@ import { ArrowUpRight, Package, ShoppingCart, Users, Building2, UserRound, Wareh
 
 const STATUS_DOT = {
   active: "bg-green-500",
-  trialing: "bg-blue-500",
+  trialing: "bg-core",
   past_due: "bg-yellow-500",
   expired: "bg-gray-400",
   canceled: "bg-gray-400",
@@ -150,22 +150,22 @@ export default async function SubscriptionOverviewPage({ params }) {
   return (
     <div className="space-y-8">
       {/* Hero summary bar */}
-      <div className="rounded-2xl bg-slate-900 text-white p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="rounded-2xl bg-core_light text-slate-900 p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className={`w-2 h-2 rounded-full ${STATUS_DOT[currentSubscription.status]}`} />
-            <span className="text-xs font-semibold uppercase tracking-wide text-white/70">
+            <span className="text-[13px] font-semibold uppercase tracking-wide text-core">
               {STATUS_LABEL[currentSubscription.status]}
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {modules.map((name) => (
-              <span key={name} className="text-sm font-medium bg-white/10 px-2.5 py-1 rounded-full">
+              <span key={name} className="text-xs tracking-tight font-medium bg-white/60 px-2.5 py-1 rounded-full">
                 {name}
               </span>
             ))}
           </div>
-          <p className="text-xs text-white/50 mt-3">
+          <p className="text-xs ml-1 text-gray-500 mt-3">
             {currentSubscription.status === "trialing"
               ? `Trial ends ${formatDate(currentSubscription.trial_end)}`
               : `Next billing ${formatDate(currentSubscription.next_billing_date)}`}
@@ -177,10 +177,10 @@ export default async function SubscriptionOverviewPage({ params }) {
             <p className="text-3xl font-bold leading-none">
               ₦{Number(currentSubscription.amount || 0).toLocaleString()}
             </p>
-            <p className="text-xs text-white/50 mt-1">per month</p>
+            <p className="text-xs text-gray-500 mt-1">per month</p>
           </div>
           <Link href={`/users/${u}/company/${companyId}/modules-manager`}>
-            <Button className="bg-white text-slate-900 hover:bg-white/90">Manage</Button>
+            <Button className="bg-core text-white hover:bg-core/90">Manage</Button>
           </Link>
         </div>
       </div>

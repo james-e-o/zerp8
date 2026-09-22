@@ -118,7 +118,8 @@ export default function PlansPage() {
       setLoading(true)
 
       const [{ data: bundleRows }, { data: bundleModuleRows }, { data: bundleLimitRows }] = await Promise.all([
-        supabase.from('subscription_bundles').select('*').eq('is_active', true).order('base_price'),
+        supabase.from('subscription_bundles').select('*').order('sort_order'),
+        
         supabase.from('bundle_modules').select('bundle_id, module_key, modules(name)'),
         supabase
           .from('bundle_limits')
@@ -158,6 +159,7 @@ export default function PlansPage() {
         description: b.description,
         base_price: Number(b.base_price),
         currency: b.currency,
+        status: b.status,
         modules: modulesByBundle[b.id] || [],
         limitKeys: limitKeysByBundle[b.id] || [],
       }))
