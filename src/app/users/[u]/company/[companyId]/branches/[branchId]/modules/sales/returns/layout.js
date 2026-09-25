@@ -1,26 +1,30 @@
 import PageHeader from "@/components/PageHeader";
 import TabNav from "@/components/modules/sales/TabNav";
+import Link from "next/link";
 
 const TABS = [
   { label: "All", value: "all" },
   { label: "Requested", value: "requested" },
   { label: "Approved", value: "approved" },
   { label: "Rejected", value: "rejected" },
+  { label: "Received", value: "received" },
 ];
 
-export default function ReturnsLayout({ children }) {
+export default async function ReturnsLayout({ children, params }) {
+  const { u, companyId, branchId } = await params;
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/returns`;
   return (
     <div>
       <PageHeader
         title="Returns"
         description="Goods returned by customers, and how each one resolves — restock, reject, or credit note."
         action={
-          <button className="px-4 py-2 rounded-md bg-brand text-white text-sm font-medium hover:bg-brand-ink transition-colors">
-            New return
-          </button>
+          <Link href={`${basePath}/new`} className="px-4 py-2 rounded-md bg-core text-white text-sm font-medium hover:bg-core/80 transition-colors">
+            New Return
+          </Link>
         }
       />
-      <TabNav tabs={TABS} basePath="/returns" />
+      <TabNav tabs={TABS} basePath={basePath} />
       {children}
     </div>
   );

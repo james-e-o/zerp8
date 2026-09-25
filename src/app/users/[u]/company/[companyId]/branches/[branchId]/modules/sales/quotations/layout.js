@@ -1,5 +1,6 @@
 import PageHeader from "@/components/PageHeader";
 import TabNav from "@/components/modules/sales/TabNav";
+import Link from "next/link";
 
 const TABS = [
   { label: "All", value: "all" },
@@ -10,22 +11,24 @@ const TABS = [
   { label: "Expired", value: "expired" },
 ];
 
-// PageHeader + status tabs live here in the layout because they're shared
-// chrome across every filtered view of the quotations list. page.js below
-// only owns the part that actually changes: the filtered table.
-export default function QuotationsLayout({ children }) {
+// The status navigation is shared across quotation list pages. Each list page
+// owns its own heading so the title stays with the page content.
+export default async function QuotationsLayout({ children, params }) {
+  const { u, companyId, branchId } = await params;
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/quotations`;
+
   return (
-    <div>
+    <div className="flex overflow-hidden h-full flex-col">
       <PageHeader
         title="Quotations"
         description="Price offers sent to customers before they commit to an order."
         action={
-          <button className="px-4 py-2 rounded-md bg-brand text-white text-sm font-medium hover:bg-brand-ink transition-colors">
-            New quotation
-          </button>
+          <Link href={`${basePath}/new`} className="px-4 py-2 rounded-md bg-core text-white text-sm font-medium hover:bg-core/80 transition-colors">
+            New Quotation
+          </Link>
         }
       />
-      <TabNav tabs={TABS} basePath="/quotations" />
+      <TabNav tabs={TABS} basePath={basePath} />
       {children}
     </div>
   );

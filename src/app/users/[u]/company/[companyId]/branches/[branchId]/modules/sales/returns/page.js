@@ -1,30 +1,22 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import DataTable from "@/components/modules/sales/DataTable";
-import StatusBadge from "@/components/modules/sales/status-badge";
-import { returns } from "@/lib/mock-data";
+import { useParams, usePathname } from "next/navigation";
+import ReturnsList from "@/components/modules/sales/returns-list";
+import { DUMMY_RETURNS } from "@/components/modules/sales/dummy-data";
 
-export default function ReturnsPage() {
-  const status = useSearchParams().get("status") || "all";
-  const rows =
-    status === "all" ? returns : returns.filter((r) => r.status.toLowerCase() === status);
+const TITLES = {
+  requested: "Requested",
+  approved: "Approved",
+  rejected: "Rejected",
+  received: "Received",
+};
 
-  return (
-    <DataTable
-      columns={[
-        { key: "id", label: "Return" },
-        { key: "so", label: "Sales Order" },
-        { key: "customer", label: "Customer" },
-        { key: "items", label: "Items" },
-        { key: "reason", label: "Reason" },
-        { key: "resolution", label: "Resolution" },
-        { key: "status", label: "Status" },
-      ]}
-      rows={rows}
-      render={{
-        status: (v) => <StatusBadge status={v} />,
-      }}
-    />
-  );
+export default function ReturnsListPage() {
+  const { u, companyId, branchId } = useParams();
+  const pathname = usePathname();
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales`;
+  const status = pathname.endsWith("/returns") ? "all" : pathname.split("/").pop();
+  const returns = status === "all" ? DUMMY_RETURNS : DUMMY_RETURNS.filter((ret) => ret.status === status);
+
+  return <ReturnsList base={base} returns={returns} title={TITLES[status] || "All Returns"} />;
 }

@@ -1,31 +1,24 @@
 "use client"
 
-import { useSearchParams } from "next/navigation"
-import Link from "next/link"
-import { useParams } from "next/navigation"
-import StatusBadge from "@/components/modules/sales/status-badge"
-import { DUMMY_INVOICES, formatNaira } from "@/components/modules/sales/dummy-data"
+import { useParams, usePathname } from "next/navigation"
+import InvoicesList from "@/components/modules/sales/invoices-list"
+import { DUMMY_INVOICES } from "@/components/modules/sales/dummy-data"
+
+const TITLES = { sales_invoice: "Sales Invoices", proforma: "Proforma Invoices", credit_note: "Credit Notes", unpaid: "Unpaid", partially_paid: "Partially Paid", paid: "Paid", overdue: "Overdue" }
+const NEW_ROUTES = { sales_invoice: ["sales_invoice/new", "New Sales Invoice"], proforma: ["proforma/new", "New Proforma Invoice"], credit_note: ["credit_note/new", "New Credit Note"] }
 
 export default function InvoicesListPage() {
   const { u, companyId, branchId } = useParams()
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/invoices`
-  const filter = useSearchParams().get("status") || "all"
+  const pathname = usePathname()
+  const routeFilter = pathname === base ? "all" : pathname.slice(base.length + 1).split("/")[0]
+  const filter = routeFilter === "partially-paid" ? "partially_paid" : routeFilter
   const invoices = filter === "all"
     ? DUMMY_INVOICES
     : ["sales_invoice", "proforma", "credit_note"].includes(filter)
       ? DUMMY_INVOICES.filter((invoice) => invoice.type === filter)
       : DUMMY_INVOICES.filter((invoice) => invoice.status === filter)
 
-  return (
-    <div className="space-y-6">
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-left text-sm"><thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-500"><tr><th className="px-4 py-3">ID</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Paid</th><th className="px-4 py-3">Status</th></tr></thead>
-          <tbody className="divide-y divide-gray-100">
-            {invoices.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">No documents match this filter.</td></tr>}
-            {invoices.map((invoice) => <tr key={invoice.id} className="hover:bg-gray-50"><td className="px-4 py-3"><Link href={`${base}/${invoice.id}`} className="font-semibold text-slate-900 hover:text-core">{invoice.id}</Link></td><td className="px-4 py-3"><StatusBadge status={invoice.type} /></td><td className="px-4 py-3 text-gray-600">{invoice.customerName}</td><td className="px-4 py-3 text-gray-600">{formatNaira(invoice.total)}</td><td className="px-4 py-3 text-gray-600">{formatNaira(invoice.paid)}</td><td className="px-4 py-3"><StatusBadge status={invoice.status} /></td></tr>)}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
+  const newRoute = NEW_ROUTES[filter]
+  return <InvoicesList base={base} invoices={invoices} title={TITLES[filter] || "All Invoices"} newHref={newRoute ? `${base}/${newRoute[0]}` : undefined} newLabel={newRoute?.[1]} />
 }

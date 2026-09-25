@@ -152,13 +152,34 @@ export const ProductConfigurations = forwardRef(({
   };
 
   // Commit the standard pricing draft (and quantities are already committed live)
+  //
+  // IMPORTANT: for physical products, the Selling Price field is a
+  // *read-only, derived* display (cost + margin) - it has no onChange of
+  // its own, so `sellingPrice` never lands in standardDraft the way
+  // marginPercentage/marginValue do. If we just merge the draft in here,
+  // standardPricing.sellingPrice stays at its default ('') forever, and
+  // handleSubmit ends up sending selling_price: 0 to the DB even though
+  // margin_percentage saved correctly. So we explicitly (re)compute and
+  // write sellingPrice into what gets committed, for physical products.
   useImperativeHandle(ref, () => ({
     commitEditingState: () => {
       if (isEditingStandard) {
-        const updated = { ...standardPricing, ...standardDraft };
+        const merged = { ...standardPricing, ...standardDraft };
+        const updated = productType === 'physical'
+          ? { ...merged, sellingPrice: calculateSellingPrice(merged.marginValue || 0) }
+          : merged;
         setStandardPricing(updated);
         setIsEditingStandard(false);
         setStandardDraft({});
+        return updated;
+      }
+      // Not mid-edit, but for physical products sellingPrice is derived
+      // from costPrice (owned by the parent, can change independently of
+      // this component's own edit state) + the already-committed margin -
+      // so keep it in sync even when nothing here was just edited.
+      if (productType === 'physical') {
+        const updated = { ...standardPricing, sellingPrice: calculateSellingPrice(standardPricing.marginValue || 0) };
+        setStandardPricing(updated);
         return updated;
       }
       return standardPricing;

@@ -1,24 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 
-// Renders the horizontal status/sub-view tabs inside a route's layout.js.
-// Lives in the layout (not the page) because it wraps every filtered view
-// of the same document list. Filter state travels via ?status= so the
-// page.js underneath can read it with useSearchParams and refine the query
-// without needing a real sub-route per status.
 // tabs: [{ label: "All", value: "all" }, { label: "Unpaid", value: "unpaid" }]
 export default function TabNav({ tabs, basePath }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const current = searchParams.get("status") || "all";
+  const current = pathname === basePath ? "all" : pathname.slice(basePath.length + 1).split("/")[0];
 
   return (
-    <nav className="flex items-center gap-1.5 border-line mt-1 mb-6 overflow-x-auto">
+    <nav className="flex items-center gap-1.5 border-line pt-1 pb-3.5 overflow-y-hidden overflow-x-auto">
       {tabs.map((tab) => {
-        const active = current === tab.value;
-        const href = tab.value === "all" ? basePath : `${basePath}?status=${tab.value}`;
+        const active = current === (tab.path || tab.value);
+        const href = tab.value === "all" ? basePath : `${basePath}/${tab.path || tab.value}`;
         return (
           <Link
             key={tab.value}

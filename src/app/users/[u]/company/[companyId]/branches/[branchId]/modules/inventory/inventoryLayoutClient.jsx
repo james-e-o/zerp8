@@ -28,7 +28,7 @@ export default function InventoryLayoutClient({ params, title, items, basePath, 
               </ModuleHeader>
             </div>
 
-            <div className="grow overflow-y-auto p-2 bg-background">{children}</div>
+            <div className="grow overflow-y-auto py-2 md:px-4 px-2 bg-background">{children}</div>
           </div>
         </SidebarInset>
       </SidebarProvider>
