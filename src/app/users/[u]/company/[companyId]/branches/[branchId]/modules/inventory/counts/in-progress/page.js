@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function InProgressCountsPage() { return <InventorySectionPage title="Counts In Progress" /> }
+import CountsListPage from "@/components/modules/inventory/counts-list-page";
+
+export default function InProgressCountsPage() {
+  return <CountsListPage title="Counts In Progress" filter="in-progress" />;
+}

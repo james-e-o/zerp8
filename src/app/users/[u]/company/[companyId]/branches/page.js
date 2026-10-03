@@ -4,7 +4,7 @@ import { ReusableCompanySidebar } from '../companyLayoutClient'
 import React, { useState, useContext, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import { Plus, Settings } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CompanyInfoContext } from '../companyInfoProvider'
 import supabase from '@/config/supabaseClient'
@@ -105,7 +105,7 @@ export default function BranchesPage() {
           <div className="space-y-3">
             {localBranches.map((b) => (
               <div key={b.id} className="border rounded bg-white dark:bg-neutral-900">
-                <div className="flex items-center justify-between py-3 relative top-1  pl-3 pr-7">
+                <div className="flex items-center justify-between py-3 relative top-1 pl-3 pr-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <Link href={`/users/${params.u}/company/${companyParam}/branches/${b.id}`}>
@@ -115,6 +115,15 @@ export default function BranchesPage() {
                     </div>
                     <div className="text-[10px] text-zinc-500">{b.address}, {b.city}</div>
                   </div>
+                  <Button asChild variant="ghost" size="icon-sm">
+                    <Link
+                      href={`/users/${params.u}/company/${companyParam}/branches/${b.id}/settings`}
+                      aria-label={`Settings for ${b.name}`}
+                      title="Branch settings"
+                    >
+                      <Settings className="size-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
                 </div>
 
                 {/* Branch Info */}

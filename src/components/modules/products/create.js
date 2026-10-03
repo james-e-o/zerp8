@@ -54,6 +54,18 @@ import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[bra
 //   - Multi pricing-context selection/creation UI - a product only ever
 //     needs a Standard price at creation time; Wholesale/custom contexts
 //     are configured separately and resolved per invoice line.
+//
+// Oct 2026 update - products are now company-wide, not branch-owned:
+//   - Currency is no longer collected from this form or sent to the RPC.
+//     create_product_with_variants now derives cost currency from the
+//     company's default_currency and selling currency from the branch's
+//     base_currency itself. The `p_currency` argument is gone.
+//   - companyCurrency (fetched below, read-only, for display only) is
+//     passed down to ProductConfigurations so the Cost Price field can
+//     show which currency that number is actually in.
+//   - New optional `branchAlias` field: lets the creating branch set its
+//     own display name for this product immediately (product_branch_aliases),
+//     without affecting the canonical, company-wide title.
 // ----------------------------------------------------------------------
 
 function buildCategoryTree(categories) {
@@ -178,6 +190,17 @@ const CreateProductPage = () => {
   // Quantity rules - maps to product_variants columns
   const [quantities, setQuantities] = useState(DEFAULT_QUANTITIES);
 
+  // Company's default currency - read-only, display only. Products are
+  // company-wide now, so cost price is always in this currency regardless
+  // of which branch is creating the product. Fetched below; never sent
+  // back to the RPC (it derives this itself, server-side).
+  const [companyCurrency, setCompanyCurrency] = useState('');
+
+  // Optional: this branch's own display name for the product, separate
+  // from the canonical (company-wide) title. Written to
+  // product_branch_aliases after the product is created.
+  const [branchAlias, setBranchAlias] = useState('');
+
   // Options state
   const [options, setOptions] = useState([]);
   const [justAdded, setJustAdded] = useState(false);
@@ -284,6 +307,7 @@ const CreateProductPage = () => {
     setQuantities(DEFAULT_QUANTITIES);
     setStandardPricing(DEFAULT_STANDARD_PRICING);
     setContextAdjustments({});
+    setBranchAlias('');
     setErrors({});
   };
 
@@ -315,6 +339,27 @@ const CreateProductPage = () => {
       setJustAdded(false);
     }
   }, [justAdded]);
+
+  // Company's default currency - products are company-wide, so this is
+  // looked up once via the branch's company and never changes per-branch.
+  useEffect(() => {
+    const fetchCompanyCurrency = async () => {
+      if (!currentBranch?.company) return;
+      const { data, error } = await supabase
+        .from('companies')
+        .select('default_currency')
+        .eq('id', currentBranch.company)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching company currency:', error);
+        return;
+      }
+      setCompanyCurrency(data?.default_currency || '');
+    };
+
+    fetchCompanyCurrency();
+  }, [currentBranch?.company]);
 
   const moveCombination = (fromIndex, toIndex) => {
     const newCombos = [...variantCombinations];
@@ -541,9 +586,9 @@ const CreateProductPage = () => {
         p_title: title,
         p_handle: convertToSlug(handle),
         p_variants: variantsPayload,
-        // Mandatory - the function has no default for this and will reject
-        // the call outright without it.
-        p_currency: 'NGN',
+        // Currency is no longer sent from here - the RPC derives cost
+        // currency from the company's default_currency and selling
+        // currency from this branch's base_currency on its own.
         p_standard_prices: standardPrices,
 
         p_sub_title: subtitle || null,
@@ -561,6 +606,10 @@ const CreateProductPage = () => {
 
         p_base_images: baseImages.length > 0 ? baseImages : null,
         p_variant_images: Object.keys(variantImagesMap).length > 0 ? variantImagesMap : null,
+
+        // Optional - this branch's own name for the product, separate from
+        // the company-wide canonical title.
+        p_branch_alias: branchAlias.trim() || null,
       });
 
       if (error) throw error;
@@ -688,6 +737,27 @@ const CreateProductPage = () => {
                                 <Input required={requiredFields.handle} className={`border border-neutral-500 rounded-sm rounded-l-none px-2 py-2 text-xs w-full ${errors.handle ? 'border-red-500 border-2' : ''}`} value={handle} onChange={({ target }) => { setHandle(convertToSlug(target.value)); setErrors(prev => ({ ...prev, handle: false })); }} placeholder="winter-jacket" />
                               </div>
                             </div>
+                          </div>
+
+                          {/* Products are company-wide now - this handle must be unique
+                              per company, not per branch. The alias below is this
+                              branch's own optional display name for the product,
+                              independent of the canonical title/handle above. */}
+                          <div className="flex flex-col space-y-1" data-field="branchAlias">
+                            <label className="text-xs font-medium">
+                              Alias for this branch
+                              <span className="text-neutral-400 ml-1">(Optional)</span>
+                            </label>
+                            <Input
+                              className="border border-neutral-500 rounded-sm px-2 py-2 text-xs"
+                              placeholder="How this branch should see this product's name (defaults to the title above)"
+                              value={branchAlias}
+                              onChange={({ target }) => setBranchAlias(target.value)}
+                            />
+                            <p className="text-[10px] text-neutral-500">
+                              This product is shared across the whole company. Other branches can set
+                              their own alias for it later without affecting the title above.
+                            </p>
                           </div>
 
                           <div className="flex flex-col space-y-1" data-field="description">
@@ -944,6 +1014,7 @@ const CreateProductPage = () => {
                         branch={currentBranch.id}
                         company={currentBranch.company}
                         branchCurrency={currentBranch.base_currency}
+                        companyCurrency={companyCurrency}
                         productType={productType}
                       />
                     )}

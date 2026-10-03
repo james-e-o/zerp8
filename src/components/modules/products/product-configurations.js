@@ -31,6 +31,15 @@ import supabase from '@/config/supabaseClient';
  *   component directly - contextAdjustments is lifted to
  *   CreateProductPage, which performs the actual pricing_rules insert
  *   after the product (and its id) exists.
+ *
+ * Oct 2026 update - products are now company-wide, so this product's
+ * *cost* is in the company's currency (companyCurrency, new prop,
+ * read-only) regardless of which branch created it - while its
+ * *selling* price (Standard + every other context below it) stays in
+ * this branch's own currency (branchCurrency), because pricing_contexts
+ * and standard_prices are still branch-scoped. Two different currencies
+ * can legitimately appear on this screen at once; both are now labeled
+ * explicitly so that isn't read as a bug.
  */
 export const ProductConfigurations = forwardRef(({
   // Categorization
@@ -61,6 +70,7 @@ export const ProductConfigurations = forwardRef(({
   branch,
   company,
   branchCurrency,
+  companyCurrency,
   productType = 'physical',
 }, ref) => {
   const [measurementTypes, setMeasurementTypes] = useState([]);
@@ -237,7 +247,7 @@ export const ProductConfigurations = forwardRef(({
                 <Button variant="outline" className="h-8 px-2 text-xs" onClick={() => setCategorySheetOpen(true)}>Select</Button>
                 <CategorySheet branch={branch} company={company} open={categorySheetOpen} onOpenChange={setCategorySheetOpen} onConfirm={(id, name) => { setSelectedCategoryId(id); setSelectedCategoryName(name || ''); setCategorySheetOpen(false) }} initialSelected={selectedCategoryId} />
               </div>
-              <label className="text-gray-600 text-xs block mt-3">Currency</label>
+              <label className="text-gray-600 text-xs block mt-3">Selling Currency (this branch)</label>
               <Input
                 value={branchCurrency || ''}
                 readOnly
@@ -245,6 +255,9 @@ export const ProductConfigurations = forwardRef(({
                 placeholder="Branch currency"
                 className="mt-1 h-8 border border-neutral-500 bg-neutral-100 cursor-not-allowed"
               />
+              <p className="text-[10px] text-gray-500 mt-1">
+                Standard pricing and every other pricing context below are in this branch's currency.
+              </p>
             </div>
           </div>
         </div>
@@ -371,6 +384,13 @@ export const ProductConfigurations = forwardRef(({
                   ? 'Optional: Cost to deliver this service (helps calculate margins)'
                   : 'Base cost price for this product (used for every variant unless a variant overrides it)'}
               </p>
+              {/* Cost is company-wide now - this product (and this cost figure)
+                  is shared by every branch, so it's priced in the company's
+                  default currency, not this branch's. */}
+              <p className="text-[10px] text-gray-500 mt-1">
+                Cost currency: <span className="font-medium">{companyCurrency || '—'}</span>
+                {' '}(company default — shared across all branches)
+              </p>
             </div>
           </div>
         </div>
@@ -379,10 +399,13 @@ export const ProductConfigurations = forwardRef(({
         <div className="space-y-3 p-4" data-field="standardPricing">
           <h3 className="text-xs font-semibold">
             Standard Pricing <span className="text-red-500 ml-1">*</span>
+            {branchCurrency ? <span className="font-normal text-gray-500 ml-1">({branchCurrency})</span> : null}
           </h3>
           <p className="text-gray-500 text-[11px]">
             Every product needs a Standard selling price. Other pricing contexts (Wholesale, custom ones)
-            are shown below as a live preview relative to Standard.
+            are shown below as a live preview relative to Standard. This branch's selling prices are in{' '}
+            <span className="font-medium">{branchCurrency || 'its own currency'}</span> regardless of what
+            currency the cost price above is in.
           </p>
 
           <div className="border border-neutral-500 rounded-sm bg-white p-4 space-y-3">
@@ -430,7 +453,12 @@ export const ProductConfigurations = forwardRef(({
                   />
                 </div>
               </div>
-              <p className="text-gray-500 text-[10px] mt-2">Margin amount (both % and value sync based on cost price)</p>
+              <p className="text-gray-500 text-[10px] mt-2">
+                Margin amount (both % and value sync based on cost price). Note: cost price is in{' '}
+                {companyCurrency || 'the company currency'} while margin value and selling price below are in{' '}
+                {branchCurrency || 'this branch\'s currency'} — if the two differ, treat the margin value as a
+                plain number for now rather than a precise currency conversion.
+              </p>
             </div>
 
             {/* Selling Price - Auto-calculated for physical, Editable for service */}
@@ -475,6 +503,8 @@ export const ProductConfigurations = forwardRef(({
             <p className="text-gray-500 text-[11px]">
               Each context's price is computed live from Standard at invoice time. Set a Reduction or Markup
               here to adjust that computation for this product - nothing is stored unless you set a value.
+              These contexts belong to this branch, so every value and preview below is in{' '}
+              {branchCurrency || 'this branch\'s currency'}.
             </p>
 
             <div className="space-y-3">

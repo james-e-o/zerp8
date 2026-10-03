@@ -1,11 +1,10 @@
 "use client";
 
-import { useRouter,useParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Settings, Building2, Users, Shield, Globe, CalendarDays, DollarSign, GitBranch } from "lucide-react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { Settings, Building2, Shield, Globe, DollarSign, GitBranch } from "lucide-react";
 
 export default function CompanySettingsPage() {
-  const router = useRouter();
   const params = useParams()
   const {u, companySlug, companyId} = params
   const companyParam = companyId ?? companySlug
@@ -54,19 +53,21 @@ export default function CompanySettingsPage() {
         </div>
 
         {/* Settings Sections */}
-        <div className="flex flex-col gap-4">
-          {settingsSections.map((section, index) => (
-            <Button
-              key={index}
-              onClick={() => router.push(`/users/${u}/company/${companyParam}/settings/${section.route}`)}
-              className="flex items-start gap-4 p-5 rounded-lg h-fit border bg-white hover:bg-armylight hover:shadow-xs transition-all text-left"
+        <div className="grid gap-3 sm:grid-cols-2">
+          {settingsSections.map((section) => (
+            <Link
+              key={section.route}
+              href={`/users/${u}/company/${companyParam}/settings/${section.route}`}
+              className="group flex items-start gap-3 rounded-md border bg-white p-4 text-left transition-colors hover:bg-armylight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <div className="mt-1">{section.icon}</div>
+              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded bg-armylight">
+                {section.icon}
+              </div>
               <div>
-                <h3 className="text-base font-medium text-gray-800">{section.title}</h3>
+                <h3 className="text-sm font-medium text-gray-800 group-hover:underline">{section.title}</h3>
                 <p className="text-xs text-gray-500">{section.description}</p>
               </div>
-            </Button>
+            </Link>
           ))}
         </div>
       </div>

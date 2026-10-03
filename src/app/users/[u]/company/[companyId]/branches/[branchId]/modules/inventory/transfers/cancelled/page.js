@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function CancelledTransfersPage() { return <InventorySectionPage title="Cancelled Transfers" /> }
+import TransfersListPage from "@/components/modules/inventory/transfers-list-page";
+
+export default function CancelledTransfersPage() {
+  return <TransfersListPage title="Cancelled Transfers" filter="Cancelled" />;
+}

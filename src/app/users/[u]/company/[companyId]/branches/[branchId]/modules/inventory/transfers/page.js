@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function TransfersPage() { return <InventorySectionPage title="All Transfers" /> }
+import TransfersListPage from "@/components/modules/inventory/transfers-list-page";
+
+export default function TransfersPage() {
+  return <TransfersListPage title="All Transfers" />;
+}

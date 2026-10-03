@@ -35,14 +35,31 @@ export default function NewCompanyPage() {
             country: "",
             industry: "",
             currencies: ["USD"],
+            defaultCurrency: "USD",
             taxId: "",
             branchAddress: "",
             branchCity: "",
         });
-        const requiredFields = ["name", "email", "currencies","phone"];
+        const requiredFields = ["name", "email", "currencies", "defaultCurrency", "phone"];
 
         const handleChange = (e) => {
             setFormData({ ...formData, [e.target.name]: e.target.value });
+        };
+
+        // Toggle a currency in the supported list, and keep the default currency
+        // valid: it must always be one of the selected currencies.
+        const toggleCurrency = (code, checked) => {
+            setFormData((prev) => {
+                const nextCurrencies = checked
+                    ? (prev.currencies.includes(code) ? prev.currencies : [...prev.currencies, code])
+                    : prev.currencies.filter((c) => c !== code);
+
+                const nextDefault = nextCurrencies.includes(prev.defaultCurrency)
+                    ? prev.defaultCurrency
+                    : (nextCurrencies[0] || "");
+
+                return { ...prev, currencies: nextCurrencies, defaultCurrency: nextDefault };
+            });
         };
 
         const nextStep = () => setStep((prev) => Math.min(prev + 1, 3));
@@ -52,7 +69,9 @@ export default function NewCompanyPage() {
         const isFormValid = requiredFields.every((field) => {
             if (field === "currencies") return formData.currencies.length > 0;
             return formData[field].trim() !== "";
-        }) && !nameExists // ✅ also require unique name
+        })
+            && formData.currencies.includes(formData.defaultCurrency) // ✅ default must be one of the selected currencies
+            && !nameExists // ✅ also require unique name
 
             const handleSubmit = async () => {
             if (!isFormValid) {
@@ -71,6 +90,7 @@ export default function NewCompanyPage() {
                 p_country: formData.country,
                 p_industry: formData.industry,
                 p_currencies: formData.currencies,
+                p_default_currency: formData.defaultCurrency,
                 p_tax_id: formData.taxId || null,
                 p_head_office_address: formData.branchAddress || null,
                 p_head_office_city: formData.branchCity || null,
@@ -344,13 +364,7 @@ export default function NewCompanyPage() {
                                                     <Checkbox
                                                         id={curr.code}
                                                         checked={formData.currencies.includes(curr.code)}
-                                                        onCheckedChange={(checked) => {
-                                                            if (checked) {
-                                                                setFormData({ ...formData, currencies: [...formData.currencies, curr.code] });
-                                                            } else {
-                                                                setFormData({ ...formData, currencies: formData.currencies.filter(c => c !== curr.code) });
-                                                            }
-                                                        }}
+                                                        onCheckedChange={(checked) => toggleCurrency(curr.code, !!checked)}
                                                         className="w-4 h-4"
                                                     />
                                                     <label htmlFor={curr.code} className="text-sm cursor-pointer flex items-center space-x-2 flex-1">
@@ -367,6 +381,37 @@ export default function NewCompanyPage() {
                                         )}
                                     </div>
                                     <p className="text-xs text-slate-500 mt-2">{formData.currencies.length} currency/currencies selected</p>
+                                </Field>
+
+                                <Field>
+                                    <FieldLabel className="text-sm font-semibold text-slate-900 mb-2" htmlFor="defaultCurrency">
+                                    Default Currency{requiredFields.includes("defaultCurrency") ? (
+                                        <span className="text-red-500 ml-1">*</span>
+                                    ) : null}
+                                    </FieldLabel>
+                                    <Select
+                                        value={formData.defaultCurrency}
+                                        onValueChange={(value) => setFormData({ ...formData, defaultCurrency: value })}
+                                        disabled={formData.currencies.length === 0}
+                                    >
+                                      <SelectTrigger className="w-full text-sm border-2 border-slate-300 rounded-lg p-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all hover:border-slate-400 bg-white">
+                                        <SelectValue placeholder="Select default currency" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {currencies
+                                            .filter((curr) => formData.currencies.includes(curr.code))
+                                            .map((curr) => (
+                                                <SelectItem key={curr.code} value={curr.code}>
+                                                    <span className="flex items-center gap-2">
+                                                        <img src={curr.flag} alt={curr.code} className="w-5 h-4 rounded-sm" />
+                                                        <span className="font-medium">{curr.code}</span>
+                                                        <span className="text-slate-500 text-xs">{curr.name}</span>
+                                                    </span>
+                                                </SelectItem>
+                                            ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-slate-500 mt-1">Your head office will use this currency. It must be one of the currencies selected above.</p>
                                 </Field>
 
                                 <Field>

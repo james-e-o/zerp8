@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function ScheduledCountsPage() { return <InventorySectionPage title="Scheduled Counts" /> }
+import CountsListPage from "@/components/modules/inventory/counts-list-page";
+
+export default function ScheduledCountsPage() {
+  return <CountsListPage title="Scheduled Counts" filter="Scheduled" />;
+}

@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function PendingAdjustmentsPage() { return <InventorySectionPage title="Pending Adjustments" /> }
+import AdjustmentsListPage from "@/components/modules/inventory/adjustments-list-page";
+
+export default function PendingAdjustmentsPage() {
+  return <AdjustmentsListPage title="Pending Adjustments" filter="pending" />;
+}

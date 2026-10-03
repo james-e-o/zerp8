@@ -27,6 +27,7 @@ export default async function SalesLayout({ params, children }) {
     { key: 'invoices', label: 'Invoices', icon: 'Receipt', path: '/invoices' },
     { key: 'returns', label: 'Returns', icon: 'Undo2', path: '/returns' },
     { key: 'pos', label: 'POS', icon: 'CreditCard', path: '/pos' },
+    { key: 'channels', label: 'Channels', icon: 'Store', path: '/channels' },
     { key: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
   ];
 

@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function OutboundPage() { return <InventorySectionPage title="Outbound Movements" /> }
+import MovementsListPage from "@/components/modules/inventory/movements-list-page";
+
+export default function OutboundMovementsPage() {
+  return <MovementsListPage title="Outbound Movements" filter="outbound" />;
+}

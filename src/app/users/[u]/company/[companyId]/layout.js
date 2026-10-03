@@ -20,7 +20,7 @@ export default async function CompanyLayout({ children, params }) {
 
   const { data: company, error: companyError } = await supabase
     .from("companies")
-    .select("id, name, slug, owner, currencies")
+    .select("id, name, slug, owner, currencies, default_currency")
     .eq("id", companyId)
     .single()
 

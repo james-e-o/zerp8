@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function ReservedByOrderPage() { return <InventorySectionPage title="Reserved by Order" /> }
+import ReservedListPage from "@/components/modules/inventory/reserved-list-page";
+
+export default function ReservedByOrderPage() {
+  return <ReservedListPage title="Reserved by Order" filter="by-order" />;
+}

@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function PostedAdjustmentsPage() { return <InventorySectionPage title="Posted Adjustments" /> }
+import AdjustmentsListPage from "@/components/modules/inventory/adjustments-list-page";
+
+export default function PostedAdjustmentsPage() {
+  return <AdjustmentsListPage title="Posted Adjustments" filter="posted" />;
+}

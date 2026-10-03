@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function LowStockPage() { return <InventorySectionPage title="Low Stock" /> }
+import StockListPage from "@/components/modules/inventory/stock-list-page";
+
+export default function LowStockPage() {
+  return <StockListPage title="Low Stock" filter="low" />;
+}

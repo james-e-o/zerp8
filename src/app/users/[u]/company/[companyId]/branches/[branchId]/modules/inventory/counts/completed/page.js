@@ -1,2 +1,5 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function CompletedCountsPage() { return <InventorySectionPage title="Completed Counts" /> }
+import CountsListPage from "@/components/modules/inventory/counts-list-page";
+
+export default function CompletedCountsPage() {
+  return <CountsListPage title="Completed Counts" filter="Completed" />;
+}

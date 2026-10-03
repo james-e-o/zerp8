@@ -1,2 +1,7 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function ReservedByQuotationPage() { return <InventorySectionPage title="Reserved by Quotation" /> }
+import ReservedListPage from "@/components/modules/inventory/reserved-list-page";
+
+export default function ReservedByQuotationPage() {
+  return (
+    <ReservedListPage title="Reserved by Quotation" filter="by-quotation" />
+  );
+}

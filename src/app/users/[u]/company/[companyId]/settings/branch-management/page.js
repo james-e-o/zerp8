@@ -3,11 +3,12 @@
 import React, { useContext, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Trash2, Plus, ArrowLeft } from 'lucide-react'
+import { Trash2, Plus, ArrowLeft, ArrowRight, Building2, MapPin } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CompanyInfoContext } from '../../companyInfoProvider'
 import supabase from '@/config/supabaseClient'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +21,7 @@ import {
 export default function BranchManagementPage() {
   const router = useRouter()
   const params = useParams()
-  const { branches, accessLevelScope, currencies } = useContext(CompanyInfoContext)
+  const { branches, accessLevelScope } = useContext(CompanyInfoContext)
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [branchToDelete, setBranchToDelete] = useState(null)
@@ -61,93 +62,91 @@ export default function BranchManagementPage() {
   return (
     <div className="w-full font-WixMade min-h-screen">
       <div className="mx-auto">
-        {/* Page Header */}
-        <div className="flex items-center gap-3 mb-8">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.back()}
-            className="p-0 h-fit"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div>
-            <h1 className="text-base font-semibold text-gray-800">Branch Management</h1>
-            <p className="text-xs text-gray-500">Manage and configure all company branches</p>
-          </div>
-        </div>
+        <header className="mb-4">
+          <h1 className="text-lg font-semibold text-foreground">Branch Management</h1>
+          <p className="mt-1 text-xs text-muted-foreground">Manage and configure all company branches.</p>
+        </header>
 
-        {/* Create New Branch Button */}
-        {accessLevelScope === 'company' && (
-          <div className="mb-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href={`/users/${params.u}/company/${params.companyId}/settings`}
+            className="inline-flex h-8 items-center gap-2 rounded-md bg-core_light px-2 text-xs font-medium text-core transition-colors hover:bg-core_light/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ArrowLeft className="size-4" />
+            Company settings
+          </Link>
+          {accessLevelScope === 'company' && (
             <Button
-              className="h-8 inline-flex items-center bg-army hover:bg-army/85 gap-2"
+              className="h-8 bg-army hover:bg-army/85"
               onClick={() => router.push(`/users/${params.u}/company/${params.companyId}/branches/new`)}
             >
-              <Plus size={14} />
-              <span className="text-[10px]">Create New Branch</span>
+              <Plus className="size-4" />
+              Create branch
             </Button>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Branches List */}
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {branches && branches.length > 0 ? (
             branches.map((branch) => (
-              <div
+              <article
                 key={branch.id}
-                className="border rounded bg-white dark:bg-neutral-900 p-4"
+                className="overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-core/40"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-sm font-semibold text-gray-800">{branch.name}</h3>
-                      {branch.isheadoffice && (
-                        <span className="text-[10px] px-2 py-1 bg-blue-50 text-blue-700 rounded">
-                          Head Office
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {branch.address}
-                      {branch.city && `, ${branch.city}`}
-                    </div>
-                    {branch.base_currency && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        Base Currency: <strong>{branch.base_currency}</strong>
+                <Link
+                  href={`/users/${params.u}/company/${params.companyId}/settings/branch-management/${branch.id}`}
+                  className="group block p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <div className="mb-4 flex items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-core_light text-core">
+                      <Building2 className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <h2 className="truncate text-sm font-semibold text-foreground group-hover:text-core">{branch.name}</h2>
+                        {branch.isheadoffice && <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Head office</span>}
                       </div>
-                    )}
+                      <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">ID {branch.id}</p>
+                    </div>
+                    <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-core" />
                   </div>
-
-                  {/* Delete Button */}
-                  {accessLevelScope === 'company' && !branch.isheadoffice && (
+                  <div className="space-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
+                    <p className="flex items-start gap-2">
+                      <MapPin className="mt-0.5 size-3.5 shrink-0" />
+                      <span>{[branch.address, branch.city, branch.country].filter(Boolean).join(', ') || 'No address added'}</span>
+                    </p>
+                    <p>{branch.email || 'No contact email'}</p>
+                    <p>Base currency: <span className="font-medium text-foreground">{branch.base_currency || 'Not set'}</span></p>
+                  </div>
+                </Link>
+                {accessLevelScope === 'company' && !branch.isheadoffice && (
+                  <div className="flex justify-end border-t border-border px-3 py-2">
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
-                            className="h-8 inline-flex items-center gap-2"
-                            variant="destructive"
-                            size="sm"
+                            aria-label={`Delete ${branch.name}`}
+                            className="text-muted-foreground hover:text-destructive"
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => {
                               setBranchToDelete(branch)
                               setDeleteDialogOpen(true)
                             }}
                           >
-                            <Trash2 size={14} />
-                            <span className="text-xs">Delete</span>
+                            <Trash2 className="size-4" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Delete this branch</p>
-                        </TooltipContent>
+                        <TooltipContent><p>Delete branch</p></TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  )}
-                </div>
-              </div>
+                  </div>
+                )}
+              </article>
             ))
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="rounded-lg border border-dashed border-border py-10 text-center text-muted-foreground sm:col-span-2 xl:col-span-3">
+              <Building2 className="mx-auto mb-2 size-5" />
               <p className="text-sm">No branches found</p>
             </div>
           )}

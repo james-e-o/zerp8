@@ -14,6 +14,13 @@ import supabase from "@/config/supabaseClient"
 
 // ======================================================================
 //  Category Table Component (JSX)
+//
+//  Oct 2026 update: categories are now company-wide, not branch-wide
+//  (same reasoning as products - a taxonomy label shouldn't duplicate
+//  per branch). `branch` stays on every row as "created from" metadata
+//  only. Every place that used to scope by branch now scopes by company
+//  instead - that is the ONLY change in this file. Everything else
+//  (tree rendering, edit/delete dialogs, styling) is untouched.
 // ======================================================================
 
     function buildCategoryTree(categories) {
@@ -79,7 +86,9 @@ export default function CategoryTable() {
               const [
                   {data: categoriesRes, error: categoriesError},
               ] = await Promise.all([
-                supabase.from('categories').select('*').eq('branch', branchId),
+                // Company-wide now: every branch in the company sees the same
+                // category list, instead of only its own.
+                supabase.from('categories').select('*').eq('company', companyId),
               ])
 
               // 🔹 Categories
@@ -116,8 +125,9 @@ export default function CategoryTable() {
           const t = toast.loading('Checking for existing category...')
         try{
 
-          // check existing slug
-          const { data: existing, error: existingErr } = await supabase.from('categories').select('id').eq('slug', slug).eq('branch', branchId).limit(1)
+          // check existing slug - company-wide now, so two branches can't
+          // create the same category under different names/slugs either.
+          const { data: existing, error: existingErr } = await supabase.from('categories').select('id').eq('slug', slug).eq('company', companyId).limit(1)
             if (existingErr) {
               console.error(existingErr)
               toast.error('Failed to check existing category', { id: t })
@@ -161,7 +171,7 @@ export default function CategoryTable() {
       
       useEffect(()=>{
         fetchData()
-      },[branchId])
+      },[companyId])
 
       return (
         <div className="w-full font-WixMade h-full overflow-hidden">
@@ -276,7 +286,11 @@ export default function CategoryTable() {
           // show checking toast
           const t = toast.loading('Checking for existing category...')
           try{
-            const { data: existing, error: existingErr } = await supabase.from('categories').select('id').eq('slug', slug).limit(1)
+            const companyIdValue = params?.companyId || null
+            // This check previously had NO scoping at all (checked slug
+            // uniqueness across every company). Now scoped to company,
+            // matching the table's new company-wide unique constraint.
+            const { data: existing, error: existingErr } = await supabase.from('categories').select('id').eq('slug', slug).eq('company', companyIdValue).limit(1)
             if (existingErr) {
               console.error(existingErr)
               toast.error('Failed to check existing category', { id: t })
@@ -291,7 +305,6 @@ export default function CategoryTable() {
             // slug available
             toast.dismiss(t)
             const branchId = params?.branchId || null
-            const companyIdValue = params?.companyId || null
             const insertObj = { name: subCategoryName, slug, parent: parentId ? parentId : null, description: '', branch: branchId, company: companyIdValue }
             const { data, error } = await supabase.from('categories').insert(insertObj).select().single()
             if (error) {
@@ -518,4 +531,3 @@ function CategoryDetails({ selected,parentName, refresh,children }) {
         </div>
       )
 }
-

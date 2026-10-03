@@ -1,2 +1,10 @@
-import InventorySectionPage from '@/components/modules/inventory/inventory-section-page'
-export default function ExpiringSoonPage() { return <InventorySectionPage title="Reservations Expiring Soon" /> }
+import ReservedListPage from "@/components/modules/inventory/reserved-list-page";
+
+export default function ExpiringSoonPage() {
+  return (
+    <ReservedListPage
+      title="Reservations Expiring Soon"
+      filter="expiring-soon"
+    />
+  );
+}
