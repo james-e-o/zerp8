@@ -12,7 +12,7 @@ export default function RootLayout({ children }) {
       <body
         className={`font-Inter  h-svh w-full overflow-hidden antialiased`}
       >
-        <Toaster />
+        <Toaster richColors position="top-right"  />
         {children}
       </body>
     </html>

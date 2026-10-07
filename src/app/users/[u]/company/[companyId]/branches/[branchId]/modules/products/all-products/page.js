@@ -82,7 +82,7 @@ export default function AllProductsPage() {
       const { data: productRows, error: productError } = await supabase
         .from("products")
         .select("*")
-        .eq("branch", branchIdValue)
+        .eq("company", companyId)
         .order("created_at", { ascending: false });
 
       if (!isMounted) return;
@@ -103,7 +103,7 @@ export default function AllProductsPage() {
           .from("product_variants")
           .select("*, standard_prices(*)")
           .in("product", productIds)
-          .eq("branch", branchIdValue)
+          .eq("standard_prices.branch", branchIdValue)
           .eq("is_active", true)
           .order("created_at", { ascending: false });
 
@@ -168,21 +168,21 @@ export default function AllProductsPage() {
   }, [products, search, tab]);
 
   return (
-    <div className="space-y-5">
-          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+    <div className="space-y-6 p text-xs">
+      <div className="border border-border rounded-sm bg-card p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="relative w-full max-w-md">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search products, SKU, or handle"
-              className="h-9 pl-8 text-sm"
+              className="h-8 pl-8 text-xs"
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-600">
+            <button type="button" className="inline-flex items-center gap-1 rounded-sm border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground">
               <SlidersHorizontal className="size-3.5" /> Filters
             </button>
 
@@ -191,8 +191,8 @@ export default function AllProductsPage() {
                 key={item.key}
                 type="button"
                 onClick={() => setTab(item.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                  tab === item.key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                className={`rounded-sm px-3 py-1.5 text-[11px] font-medium transition ${
+                  tab === item.key ? "bg-core_light text-core" : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
                 {item.label}
@@ -203,17 +203,17 @@ export default function AllProductsPage() {
       </div>
 
       {isLoading ? (
-        <div className="flex h-48 items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-white text-sm text-gray-500">
+        <div className="flex h-48 items-center justify-center gap-2 border border-dashed border-border bg-card text-xs text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading products...
         </div>
       ) : errorMessage ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-600">{errorMessage}</div>
+        <div className="border border-red-200 bg-red-50 p-4 text-xs text-red-600">{errorMessage}</div>
       ) : filteredProducts.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white p-12 text-center text-sm text-gray-500">
+        <div className="border border-dashed border-border bg-card p-12 text-center text-xs text-muted-foreground">
           No products match this view.
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {filteredProducts.map((product) => {
             const imageUrl = getFirstImage(product);
             const variants = Array.isArray(product.product_variants) ? product.product_variants : [];
@@ -226,38 +226,38 @@ export default function AllProductsPage() {
               <Link
                 key={product.id}
                 href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/products/all-products/${product.id}`}
-                className="group block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                className="group block overflow-hidden rounded-sm border border-border bg-card transition hover:border-core/50"
               >
-                <div className="relative h-32 bg-gray-50">
+                <div className="relative h-32 bg-muted">
                   {imageUrl ? (
                     <img src={imageUrl} alt={product.title} className="h-full w-full object-cover" />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-gray-400">
+                    <div className="flex h-full items-center justify-center text-muted-foreground">
                       <ImageIcon className="size-8" />
                     </div>
                   )}
 
-                  <div className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-700 shadow-sm">
+                  <div className="absolute right-2 top-2 rounded-sm border border-border bg-card/90 px-2 py-1 text-[10px] font-medium text-foreground">
                     {getProductTypeLabel(product.type)}
                   </div>
                 </div>
 
-                <div className="space-y-2 p-3">
+                <div className="space-y-2 p-3 text-xs">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{product.title || "Untitled product"}</p>
-                      {product.sub_title ? <p className="truncate text-[10px] text-gray-500">{product.sub_title}</p> : null}
+                      <p className="truncate font-semibold text-foreground">{product.title || "Untitled product"}</p>
+                      {product.sub_title ? <p className="truncate text-[10px] text-muted-foreground">{product.sub_title}</p> : null}
                     </div>
-                    <span className="inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700">
+                    <span className="inline-flex rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                       {product.status || "active"}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <Package className="size-3" /> {variants.length} var
                     </span>
-                    <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+                    <span className="inline-flex items-center gap-1 font-medium text-foreground">
                       <BadgeDollarSign className="size-3" /> {primaryPrice ? formatCurrency(primaryPrice, branchCurrency) : priceRange}
                     </span>
                   </div>

@@ -41,23 +41,70 @@ const calculateSellingPrice = (costPrice, marginValue) => {
 //   ProductConfigurations (Configurations tab), which is where every
 //   non-Standard pricing context is configured as a Reduction/Markup
 //   adjustment relative to Standard's selling price.
-//
-// NEW (this update):
-// - standardPricing is now accepted as a prop. Any row that hasn't been
+// - standardPricing is accepted as a prop. Any row that hasn't been
 //   manually edited (no combo.marginPercentage / marginValue / sellingPrice
 //   set yet) defaults to showing Standard's margin %/value and selling
 //   price - mirroring the same "combo value wins, else fall back" pattern
 //   already used for costPrice. The moment a user edits a row's margin or
 //   cost price, that row's own value takes over via updateValue(), and the
 //   Standard default no longer applies to that row.
-// - Margin inputs now carry a remount `key` tied to standardPricing, same
-//   as the existing costPrice input's key, so a freshly-set Standard value
-//   actually shows up in not-yet-edited rows (uncontrolled inputs otherwise
-//   won't reflect a changed defaultValue after first render).
+//
+// NEW (this update):
+// - Reorder Level column removed entirely - that field no longer exists
+//   on the product (inventory module owns reorder thresholds now).
+// - New Bulk Threshold column (per variant). Same "combo value wins, else
+//   fall back to the product-level default" pattern as everything else
+//   here: product-level `bulkThreshold` (from Configurations' Quantity
+//   Rules) is the default shown for a row that hasn't been edited; once a
+//   row's own bulkThreshold is set via updateValue(), that row keeps its
+//   own value even if the product-level default changes later. This is
+//   what lets e.g. a Small variant default to a dozen while a Large
+//   variant is overridden to six.
+//
+// Oct 2026 update - the "Cost Price" column is labeled "Cost Price (Est.)":
+// cost is no longer stored on product_variants at all (moved server-side
+// into product_cost_estimates, one company-wide row per variant). This
+// row-level field, its key in the payload ("cost"), and the sync math
+// against margin are all unchanged - only the label changed, so it reads
+// as an estimate rather than a final number the way ProductConfigurations'
+// Cost Price field now does too.
+//
+// Oct 2026 update #2 - Margin % and Margin Value now sync LIVE as you
+// type, matching ProductConfigurations' Standard block instead of only
+// resolving on blur. Previously these two Inputs were uncontrolled
+// (defaultValue + a key that remounts only when the product-level
+// default changes) and recalculated the sibling field via updateValue()
+// on blur - which updates the lifted `combinations` state correctly, but
+// never visually touches the sibling Input, since its defaultValue only
+// re-renders on remount. Typing 20% into Margin % left Margin Value
+// showing nothing until you clicked away. Fixed by making both inputs
+// controlled against a small per-row `marginDrafts` buffer while being
+// edited (same pattern as ProductConfigurations' standardDraft) - every
+// keystroke recomputes the sibling field, updates sellingPrice, and
+// pushes all three into the lifted combinations state immediately, so
+// what's on screen and what's in parent state never drift apart. On
+// blur the per-row draft clears and the fields fall back to display
+// combo.marginPercentage/marginValue directly - which by then already
+// hold the live-synced values, so nothing visually jumps.
+// recalcFromCostPrice was also extended: if a row has its own
+// marginPercentage set, changing cost now recomputes marginValue from
+// that percentage against the NEW cost (keeping % authoritative),
+// instead of only recomputing sellingPrice off the stale marginValue.
 // ----------------------------------------------------------------------
 
-export function VariantTable({ combinations = [], costPrice, standardPricing = {}, updateValue, productType = 'physical' }) {
+export function VariantTable({ combinations = [], costPrice, standardPricing = {}, bulkThreshold, updateValue, productType = 'physical' }) {
   const [pendingEdits, setPendingEdits] = useState({})
+  // Live edit buffer for margin %/value, per row index - see comment above.
+  const [marginDrafts, setMarginDrafts] = useState({})
+  const getMarginDraft = (rowIndex, field, fallback) => (
+    marginDrafts[rowIndex]?.[field] ?? fallback
+  )
+  const clearMarginDraft = (rowIndex) => setMarginDrafts(prev => {
+    if (!(rowIndex in prev)) return prev
+    const next = { ...prev }
+    delete next[rowIndex]
+    return next
+  })
   const [trackInventorySwitch, setTrackInventorySwitch] = useState(true)
   const [trackInShopSwitch, setTrackInShopSwitch] = useState(true)
 
@@ -118,16 +165,17 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
         marginPercentage,
         marginValue,
         sellingPrice,
+        bulkThreshold: combo.bulkThreshold || bulkThreshold || '',
       };
     });
-  }, [combinations, costPrice, standardPricing]);
+  }, [combinations, costPrice, standardPricing, bulkThreshold]);
 
   const columns = [
     {
       accessorKey: 'details',
       id: 'details',
       header: () => (
-        <div className="grid grid-cols-8 gap-0 min-w-4xl bg-white h-full">
+        <div className="grid grid-cols-9 gap-0 min-w-4xl bg-white h-full">
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">{productType === 'service' ? 'Quality Tier' : 'Variant'}</p>
           </div>
@@ -141,7 +189,7 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
             <p className="text-[11px] text-center font-medium">Tracked in Shop</p>
           </div>
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
-            <p className="text-[11px] text-center font-medium">Cost Price</p>
+            <p className="text-[11px] text-center font-medium">Cost Price (Est.)</p>
           </div>
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">Margin %</p>
@@ -149,8 +197,11 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">Margin Value</p>
           </div>
-          <div className="flex items-center justify-center p-2">
+          <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">Selling Price</p>
+          </div>
+          <div className="flex items-center justify-center p-2">
+            <p className="text-[11px] text-center font-medium">Bulk Threshold</p>
           </div>
         </div>
       ),
@@ -158,8 +209,12 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
         const combo = row.original
         const rowIndex = row.index
 
+        // Live, as-you-type: updates the sibling field's draft AND pushes
+        // all three (percentage, value, sellingPrice) into lifted state on
+        // every keystroke, not just on blur.
         const recalcFromMarginPercentage = (val) => {
           const newMarginValue = calculateValueFromPercentage(val, combo.costPrice)
+          setMarginDrafts(prev => ({ ...prev, [rowIndex]: { marginPercentage: val, marginValue: newMarginValue } }))
           updateValue(rowIndex, 'marginPercentage', val)
           updateValue(rowIndex, 'marginValue', newMarginValue)
           updateValue(rowIndex, 'sellingPrice', calculateSellingPrice(combo.costPrice, newMarginValue))
@@ -167,6 +222,7 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
 
         const recalcFromMarginValue = (val) => {
           const newMarginPercentage = calculatePercentageFromValue(val, combo.costPrice)
+          setMarginDrafts(prev => ({ ...prev, [rowIndex]: { marginPercentage: newMarginPercentage, marginValue: val } }))
           updateValue(rowIndex, 'marginValue', val)
           updateValue(rowIndex, 'marginPercentage', newMarginPercentage)
           updateValue(rowIndex, 'sellingPrice', calculateSellingPrice(combo.costPrice, val))
@@ -174,13 +230,19 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
 
         const recalcFromCostPrice = (val) => {
           updateValue(rowIndex, 'costPrice', val)
-          if (combo.marginValue) {
+          if (combo.marginPercentage) {
+            // % is authoritative when set - recompute the value against
+            // the new cost, don't let it go stale.
+            const newMarginValue = calculateValueFromPercentage(combo.marginPercentage, val)
+            updateValue(rowIndex, 'marginValue', newMarginValue)
+            updateValue(rowIndex, 'sellingPrice', calculateSellingPrice(val, newMarginValue))
+          } else if (combo.marginValue) {
             updateValue(rowIndex, 'sellingPrice', calculateSellingPrice(val, combo.marginValue))
           }
         }
 
         return (
-          <div className="grid grid-cols-8 gap-0 min-w-4xl bg-white h-full">
+          <div className="grid grid-cols-9 gap-0 min-w-4xl bg-white h-full">
             <div className="flex items-center justify-center border-r border-gray-100 p-2">
               <div className="text-sm">{combo.variant}</div>
             </div>
@@ -224,35 +286,45 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
             <div className="flex items-center justify-center border-r border-gray-100 p-2">
               <Input
                 type="text"
-                defaultValue={(pendingEdits[rowIndex]?.marginPercentage) ?? combo.marginPercentage}
-                onBlur={(e) => {
-                  const val = e.target.value
-                  recalcFromMarginPercentage(val)
-                  setPendingEdits(prev => ({ ...prev, [rowIndex]: { ...(prev[rowIndex] || {}), marginPercentage: val } }))
-                }}
+                value={getMarginDraft(rowIndex, 'marginPercentage', combo.marginPercentage)}
+                onChange={(e) => recalcFromMarginPercentage(e.target.value)}
+                onBlur={() => clearMarginDraft(rowIndex)}
                 className="h-7 w-16 text-[11px]"
                 placeholder="0.00"
-                key={`margin-pct-${standardPricing.marginPercentage}-${rowIndex}`}
               />
             </div>
             <div className="flex items-center justify-center border-r border-gray-100 p-2">
               <Input
                 type="text"
-                defaultValue={(pendingEdits[rowIndex]?.marginValue) ?? combo.marginValue}
-                onBlur={(e) => {
-                  const val = e.target.value
-                  recalcFromMarginValue(val)
-                  setPendingEdits(prev => ({ ...prev, [rowIndex]: { ...(prev[rowIndex] || {}), marginValue: val } }))
-                }}
+                value={getMarginDraft(rowIndex, 'marginValue', combo.marginValue)}
+                onChange={(e) => recalcFromMarginValue(e.target.value)}
+                onBlur={() => clearMarginDraft(rowIndex)}
                 className="h-7 w-20 text-[11px]"
                 placeholder="0.00"
-                key={`margin-val-${standardPricing.marginValue}-${rowIndex}`}
               />
             </div>
-            <div className="flex items-center justify-center p-2">
+            <div className="flex items-center justify-center border-r border-gray-100 p-2">
               <div className="w-full h-7 px-1 text-center rounded-sm bg-gray-100 flex items-center justify-center border text-xs border-gray-300">
                 {combo.sellingPrice || '-'}
               </div>
+            </div>
+            <div className="flex items-center justify-center p-2">
+              <Input
+                type="number"
+                defaultValue={(pendingEdits[rowIndex]?.bulkThreshold) ?? combo.bulkThreshold}
+                onBlur={(e) => {
+                  const val = e.target.value
+                  updateValue(rowIndex, 'bulkThreshold', val)
+                  setPendingEdits(prev => ({ ...prev, [rowIndex]: { ...(prev[rowIndex] || {}), bulkThreshold: val } }))
+                }}
+                className="h-7 w-20 text-[11px]"
+                placeholder="e.g. 12"
+                // Remounts when the product-level default changes, same
+                // pattern as the cost/margin inputs above - so a row that
+                // hasn't been individually edited actually reflects a
+                // freshly-changed default instead of keeping a stale one.
+                key={`bulk-${bulkThreshold}-${rowIndex}`}
+              />
             </div>
           </div>
         )

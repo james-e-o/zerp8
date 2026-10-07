@@ -72,6 +72,7 @@ export default function StartFreeTrialDialog({ label = 'Start free trial' }) {
             .from('bundle_modules')
             .select('module_key, subscription_bundles(id, key, name, status)')
             .in('module_key', moduleKeys)
+          .eq('subscription_bundles.status', 'active')
         : { data: [] }
 
       // Group modules up to their owning bundle — a bundle with several
@@ -97,6 +98,7 @@ export default function StartFreeTrialDialog({ label = 'Start free trial' }) {
         .from('bundle_limits')
         .select('limit_key_id, subscription_bundles!inner(key, name)')
         .eq('subscription_bundles.key', COMPANY_CORE_KEY)
+        .eq('subscription_bundles.status', 'active')
 
       const trialLimitKeyIds = new Set((limitRows || []).map((r) => r.limit_key_id))
       const coreIsIncluded = (coreLimitKeyIds || []).some((r) => trialLimitKeyIds.has(r.limit_key_id))

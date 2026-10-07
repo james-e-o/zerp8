@@ -6,7 +6,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 import { Info } from 'lucide-react'
+import { toast } from 'sonner'
 import supabase from '@/config/supabaseClient';
 
 /**
@@ -77,6 +80,7 @@ export const ProductConfigurations = forwardRef(({
   const [measurementUnits, setMeasurementUnits] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeContexts, setActiveContexts] = useState([]);
+  const [contextSheetOpen, setContextSheetOpen] = useState(false);
 
   // Editing buffer for the Standard pricing block - lets margin %/value/selling
   // price be edited without committing to parent state on every keystroke.
@@ -104,18 +108,21 @@ export const ProductConfigurations = forwardRef(({
     fetchMeasurementData();
   }, []);
 
-  // Fetch active pricing contexts for the branch (Standard + Wholesale + any custom ones)
-  useEffect(() => {
+  // Fetch active pricing contexts for the branch (Standard + Wholesale + any custom ones).
+  // Pulled out of the effect so the "create pricing context" sheet can call
+  // it directly after a successful insert, instead of duplicating the query.
+  const fetchContexts = async () => {
     if (!branch) return;
-    const fetchContexts = async () => {
-      const { data, error } = await supabase
-        .from('pricing_contexts')
-        .select('*')
-        .eq('branch', branch)
-        .eq('is_active', true);
-      if (error) console.error('Error fetching pricing contexts:', error);
-      else setActiveContexts(data || []);
-    };
+    const { data, error } = await supabase
+      .from('pricing_contexts')
+      .select('*')
+      .eq('branch', branch)
+      .eq('is_active', true);
+    if (error) console.error('Error fetching pricing contexts:', error);
+    else setActiveContexts(data || []);
+  };
+
+  useEffect(() => {
     fetchContexts();
   }, [branch]);
 
@@ -232,8 +239,8 @@ export const ProductConfigurations = forwardRef(({
   const otherContexts = activeContexts.filter(context => !context.is_default);
 
   return (
-    <div className="text-neutral-700 font-WixMade tracking-tight max-w-5xl mx-auto text-xs">
-      <h2 className="font-semibold mb-4">Configurations</h2>
+    <div className="text-neutral-700 p-3 font-WixMade tracking-tight max-w-5xl mx-auto text-xs">
+      <h2 className="font-semibold mx-1 mb-3">Configurations</h2>
 
       <div className="space-y-4 text-xs text-gray-700">
 
@@ -342,18 +349,10 @@ export const ProductConfigurations = forwardRef(({
                         </Tooltip>
                       </div>
                       <Input type="number" placeholder="e.g. 12" value={quantities.bulkThreshold} onChange={(e) => updateQuantity('bulkThreshold', e.target.value)} className="h-8 border border-neutral-500" />
-                    </div>
-
-                    {/* Reorder Level */}
-                    <div>
-                      <div className="flex items-center gap-1 mb-2">
-                        <label className="text-gray-600 text-xs font-medium block">Reorder Level</label>
-                        <Tooltip>
-                          <TooltipTrigger asChild><Info className="h-4 w-4 text-cyan-600 cursor-help" /></TooltipTrigger>
-                          <TooltipContent>The minimum stock level at which you should reorder this product.</TooltipContent>
-                        </Tooltip>
-                      </div>
-                      <Input type="number" placeholder="0" value={quantities.reorderLevel} onChange={(e) => updateQuantity('reorderLevel', e.target.value)} className="h-8 border border-neutral-500" />
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        Default for every variant - editable per variant in the Variants tab (e.g. a dozen for
+                        small sizes, six for large).
+                      </p>
                     </div>
                   </div>
                 )}
@@ -362,13 +361,13 @@ export const ProductConfigurations = forwardRef(({
           </div>
         )}
 
-        {/* COST PRICE */}
+        {/* COST PRICE ESTIMATE */}
         <div className="space-y-3 p-4" data-field="costPrice">
           <div className={`rounded-sm bg-white border border-neutral-500 p-4 ${errors.costPrice ? 'border-red-500 border-2 bg-red-50' : ''}`}>
             <h3 className="text-xs font-semibold mb-4">Pricing</h3>
             <div>
               <Label className={`text-xs font-medium mb-1 block ${errors.costPrice ? 'text-red-600' : ''}`}>
-                {productType === 'service' ? 'Cost of Service' : 'Cost Price'}
+                {productType === 'service' ? 'Estimated Cost of Service' : 'Cost Price Estimate'}
                 {productType === 'service' ? <span className="text-neutral-400 ml-1">(Optional)</span> : null}
               </Label>
               <Input
@@ -381,14 +380,20 @@ export const ProductConfigurations = forwardRef(({
               />
               <p className={`text-[11px] mt-1 ${errors.costPrice ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                 {productType === 'service'
-                  ? 'Optional: Cost to deliver this service (helps calculate margins)'
-                  : 'Base cost price for this product (used for every variant unless a variant overrides it)'}
+                  ? 'Optional: estimated cost to deliver this service (helps calculate margins)'
+                  : 'A starting estimate, used to bootstrap margin math below — not the final cost. The real cost gets set from what you actually pay when a purchase is received, and you\'ll get the option to update this estimate at that point.'}
               </p>
               {/* Cost is company-wide now - this product (and this cost figure)
                   is shared by every branch, so it's priced in the company's
-                  default currency, not this branch's. */}
+                  default currency, not this branch's. It's also no longer
+                  stored on the variant itself - create_product_with_variants
+                  routes it into product_cost_estimates server-side, one row
+                  per variant, company-wide. Nothing about this form's payload
+                  shape changes because of that; this is a label/copy update
+                  only, so the "estimate" framing is honest about where the
+                  real cost will eventually come from (Purchases). */}
               <p className="text-[10px] text-gray-500 mt-1">
-                Cost currency: <span className="font-medium">{companyCurrency || '—'}</span>
+                Estimate currency: <span className="font-medium">{companyCurrency || '—'}</span>
                 {' '}(company default — shared across all branches)
               </p>
             </div>
@@ -454,10 +459,10 @@ export const ProductConfigurations = forwardRef(({
                 </div>
               </div>
               <p className="text-gray-500 text-[10px] mt-2">
-                Margin amount (both % and value sync based on cost price). Note: cost price is in{' '}
-                {companyCurrency || 'the company currency'} while margin value and selling price below are in{' '}
-                {branchCurrency || 'this branch\'s currency'} — if the two differ, treat the margin value as a
-                plain number for now rather than a precise currency conversion.
+                Margin amount (both % and value sync based on the cost price estimate above). Note: the cost
+                estimate is in {companyCurrency || 'the company currency'} while margin value and selling price
+                below are in {branchCurrency || 'this branch\'s currency'} — if the two differ, treat the margin
+                value as a plain number for now rather than a precise currency conversion.
               </p>
             </div>
 
@@ -497,16 +502,21 @@ export const ProductConfigurations = forwardRef(({
         </div>
 
         {/* OTHER PRICING CONTEXTS - Reduction/Markup adjustments relative to Standard */}
-        {otherContexts.length > 0 && (
-          <div className="space-y-3 p-4" data-field="contextAdjustments">
+        <div className="space-y-3 p-4" data-field="contextAdjustments">
+          <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold">Other Pricing Contexts</h3>
-            <p className="text-gray-500 text-[11px]">
-              Each context's price is computed live from Standard at invoice time. Set a Reduction or Markup
-              here to adjust that computation for this product - nothing is stored unless you set a value.
-              These contexts belong to this branch, so every value and preview below is in{' '}
-              {branchCurrency || 'this branch\'s currency'}.
-            </p>
+            <Button type="button" variant="outline" className="h-7 px-2 text-xs" onClick={() => setContextSheetOpen(true)}>
+              + New pricing context
+            </Button>
+          </div>
+          <p className="text-gray-500 text-[11px]">
+            Each context's price is computed live from Standard at invoice time. Set a Reduction or Markup
+            here to adjust that computation for this product - nothing is stored unless you set a value.
+            These contexts belong to this branch, so every value and preview below is in{' '}
+            {branchCurrency || 'this branch\'s currency'}.
+          </p>
 
+          {otherContexts.length > 0 && (
             <div className="space-y-3">
               {otherContexts.map(context => {
                 const adjustment = getAdjustment(context.id);
@@ -566,8 +576,16 @@ export const ProductConfigurations = forwardRef(({
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        <PricingContextSheet
+          open={contextSheetOpen}
+          onOpenChange={setContextSheetOpen}
+          branch={branch}
+          company={company}
+          onCreated={fetchContexts}
+        />
 
       </div>
     </div>
@@ -575,3 +593,103 @@ export const ProductConfigurations = forwardRef(({
 });
 
 ProductConfigurations.displayName = 'ProductConfigurations';
+
+// ----------------------------------------------------------------------
+// PricingContextSheet
+// ----------------------------------------------------------------------
+// Lets a user create a new pricing context (e.g. "Wholesale", "VIP") for
+// this branch without leaving the product form - same pattern as
+// CategorySheet. On success it calls onCreated() so the parent re-fetches
+// activeContexts and the new context immediately shows up as an
+// adjustable row, exactly as if it had existed when the page loaded.
+function PricingContextSheet({ open, onOpenChange, branch, company, onCreated }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const reset = () => {
+    setName('');
+    setDescription('');
+  };
+
+  const handleCreate = async () => {
+    if (!name.trim()) {
+      toast.error('Give the pricing context a name');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('pricing_contexts').insert({
+        branch,
+        company,
+        name: name.trim(),
+        description: description || null,
+        is_system: false,
+        is_default: false,
+        is_active: true,
+      });
+
+      if (error) throw error;
+
+      toast.success('Pricing context created');
+      reset();
+      onOpenChange(false);
+      onCreated?.();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to create pricing context');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(next) => { onOpenChange(next); if (!next) reset(); }}>
+      <SheetContent side="right" className="w-full sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>New pricing context</SheetTitle>
+          <SheetDescription className="text-xs">
+            Creates a pricing context for this branch (e.g. Wholesale, VIP). You can set a
+            Reduction/Markup for this product against it right after creating it.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="space-y-4 p-4">
+          <div>
+            <Label className="text-xs font-medium mb-1 block">Name</Label>
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Wholesale"
+              className="h-8 border border-neutral-500 text-sm"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs font-medium mb-1 block">Description (optional)</Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="When this pricing context applies..."
+              className="text-sm"
+              rows={3}
+            />
+          </div>
+        </div>
+
+        <SheetFooter>
+          <div className="flex w-full justify-start gap-2 px-4 pb-4">
+            <Button className="h-8 bg-core text-xs hover:bg-core/85" disabled={saving || !name.trim()} onClick={handleCreate}>
+              {saving ? 'Creating...' : 'Create pricing context'}
+            </Button>
+            <SheetClose asChild>
+              <Button variant="outline" className="h-8 text-xs">Cancel</Button>
+            </SheetClose>
+          </div>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}

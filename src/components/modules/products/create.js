@@ -17,7 +17,7 @@ import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHe
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { X, Plus, GripVertical, Upload, Pencil } from "lucide-react"
+import { X, Plus, GripVertical, Upload, Pencil, FileText, Settings2, Layers3, ChevronDown } from "lucide-react"
 import { toast } from 'sonner'
 import { useRouter, useParams } from 'next/navigation'
 
@@ -38,7 +38,8 @@ import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[bra
 //   - standardPricing / setStandardPricing  { marginPercentage, marginValue, sellingPrice }
 //   - quantities / setQuantities             { measurementType, totalProductUnits,
 //                                               totalProductUnitsType, minSaleQuantity,
-//                                               quantityIncrement, bulkThreshold, reorderLevel }
+//                                               quantityIncrement, bulkThreshold }
+//        (reorderLevel removed - inventory module owns reorder thresholds now)
 //   - contextAdjustments / setContextAdjustments
 //        { [contextId]: { mode: 'reduction'|'markup', adjustmentType: 'percentage'|'fixed', value } }
 //        One entry per non-Standard active pricing context (Wholesale,
@@ -92,8 +93,7 @@ const DEFAULT_QUANTITIES = {
   totalProductUnitsType: 'count',
   minSaleQuantity: '1',
   quantityIncrement: '1',
-  bulkThreshold: '',
-  reorderLevel: '',
+  bulkThreshold: '', // default; each variant can override its own in the Variants tab
 };
 
 const DEFAULT_STANDARD_PRICING = {
@@ -179,7 +179,15 @@ const CreateProductPage = () => {
   const [ean, setEan] = useState('');
   const [isbn, setIsbn] = useState('');
 
-  // Pricing state - base cost + the single required Standard pricing context
+  // Pricing state - base cost + the single required Standard pricing context.
+  // "costPrice" here is a cost ESTIMATE, not the final cost - it bootstraps
+  // margin math at creation time. The RPC now routes it into
+  // product_cost_estimates server-side (one company-wide row per variant)
+  // instead of storing it on the variant itself; nothing about this state
+  // variable, the payload key ("cost"), or this form's shape changes because
+  // of that - this is reflected only in the UI copy (see ProductConfigurations
+  // and VariantTable), so the real cost confirmed later via Purchases is
+  // understood as updating this estimate, not contradicting a "final" number.
   const [costPrice, setCostPrice] = useState('');
   const [standardPricing, setStandardPricing] = useState(DEFAULT_STANDARD_PRICING);
 
@@ -548,10 +556,14 @@ const CreateProductPage = () => {
           is_tracked_inventory: variant.managed !== false,
           is_tracked_shop: variant.trackedInShop !== false,
           reserve: 0,
-          reorder_level: parseFloat(quantities.reorderLevel) || 0,
+          // reorder_level removed - no longer collected on this form
           min_sale_quantity: parseInt(quantities.minSaleQuantity, 10) || 1,
           quantity_increment: parseInt(quantities.quantityIncrement, 10) || 1,
-          bulk_threshold: quantities.bulkThreshold ? parseInt(quantities.bulkThreshold, 10) : null,
+          // Per-variant override wins (set via the Variants tab); otherwise
+          // fall back to the product-level default from Configurations.
+          bulk_threshold: variant.bulkThreshold
+            ? parseInt(variant.bulkThreshold, 10)
+            : (quantities.bulkThreshold ? parseInt(quantities.bulkThreshold, 10) : null),
           mpn: variant.mpn || null,
           upc: variant.upc || null,
           ean: variant.ean || null,
@@ -671,35 +683,44 @@ const CreateProductPage = () => {
           <div className='flex font-WixMade inset-0 bg-neutral-500 shadow-md absolute z-40'>
             <div className='bg-white flex flex-col border border-neutral-300 absolute inset-2 shadow-0 overflow-clip rounded-lg'>
               <div className="relative w-full h-full flex flex-col">
-                <div className="flex items-center justify-between border-b border-neutral-300 px-6 py-3 bg-white z-10">
-                  <div className="flex items-center gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-neutral-300 px-3 py-2 bg-white z-10 sm:px-6 sm:py-3">
+                  <div className="flex min-w-0 items-center justify-self-start gap-1.5 sm:gap-2">
                     <Link href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/products`}><Button variant={'ghost'} className="text-white bg-red-500 h-7 hover:text-black text-xs">✕</Button></Link>
                     <Button onClick={resetAllInputs} variant={'outline'} className="px-2 py-1 h-7 text-[10px] rounded-sm text-neutral-600 border border-neutral-300">Reset</Button>
+                  </div>
 
-                    <div className="flex items-center gap-3 ml-16 text-xs font-medium">
-                      <Button variant={'outline'} onClick={() => setActiveTab("details")} className={`px-2 py-1 h-6 text-[11px] rounded-sm ${activeTab === "details" ? "bg-neutral-800 text-neutral-50" : "text-neutral-600"}`}>
-                        <span className="top-px relative">Details</span>
+                    <div className="flex shrink-0 items-center justify-self-center gap-0.5 text-xs font-medium sm:gap-3">
+                      <Button type="button" variant={'outline'} title="Details" aria-label="Details" onClick={() => setActiveTab("details")} className={`h-7 w-7 rounded-sm p-0 text-[11px] sm:h-6 sm:w-auto sm:px-2 sm:py-1 ${activeTab === "details" ? "bg-neutral-800 text-neutral-50" : "text-neutral-600"}`}>
+                        <FileText className="size-4 sm:hidden" />
+                        <span className="relative top-px hidden sm:inline">Details</span>
                       </Button>
-                      <span className="text-neutral-300">|</span>
-                      <Button variant={'outline'} onClick={() => setActiveTab("configure")} className={`px-2 py-1 h-6 text-[11px] rounded-sm ${activeTab === "configure" ? "bg-neutral-800 text-neutral-50" : "text-neutral-600"}`}>
-                        <span className="top-px relative">Configurations</span>
+                      <span aria-hidden="true" className="px-1 text-neutral-300 sm:px-0">|</span>
+                      <Button type="button" variant={'outline'} title="Configurations" aria-label="Configurations" onClick={() => setActiveTab("configure")} className={`h-7 w-7 rounded-sm p-0 text-[11px] sm:h-6 sm:w-auto sm:px-2 sm:py-1 ${activeTab === "configure" ? "bg-neutral-800 text-neutral-50" : "text-neutral-600"}`}>
+                        <Settings2 className="size-4 sm:hidden" />
+                        <span className="relative top-px hidden sm:inline">Configurations</span>
                       </Button>
-                      <span className="text-neutral-300">|</span>
-                      <Button variant={'outline'} onClick={() => setActiveTab("variants")} className={`px-2 py-1 h-6 text-[11px] rounded-sm ${activeTab === "variants" ? "bg-neutral-800 text-neutral-50" : "text-neutral-600"}`}>
-                        <span className="top-px relative">{productType === 'service' ? 'Quality Tiers' : 'Variants'}</span>
+                      <span aria-hidden="true" className="px-1 text-neutral-300 sm:px-0">|</span>
+                      <Button type="button" variant={'outline'} title={productType === 'service' ? 'Quality Tiers' : 'Variants'} aria-label={productType === 'service' ? 'Quality Tiers' : 'Variants'} onClick={() => setActiveTab("variants")} className={`h-7 w-7 rounded-sm p-0 text-[11px] sm:h-6 sm:w-auto sm:px-2 sm:py-1 ${activeTab === "variants" ? "bg-neutral-800 text-neutral-50" : "text-neutral-600"}`}>
+                        <Layers3 className="size-4 sm:hidden" />
+                        <span className="relative top-px hidden sm:inline">{productType === 'service' ? 'Quality Tiers' : 'Variants'}</span>
                       </Button>
                     </div>
+                  <div className="relative shrink-0 justify-self-end">
+                    <select aria-label="Select draft" defaultValue="" className="h-7 w-[104px] appearance-none rounded-sm border border-neutral-300 bg-white py-1 pl-2 pr-7 text-[10px] text-neutral-600 sm:w-32 sm:text-[11px]">
+                      <option value="" disabled>Select draft</option>
+                      <option value="draft-list-placeholder" disabled>Drafts will appear here</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-neutral-500" />
                   </div>
-                  <Button variant={''} className="px-3 h-7 py-2 bg-core rounded-sm border hover:bg-core/90 text-xs text-white">Save as draft</Button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto pt-4">
                   <div className="space-y-10 text-xs text-neutral-900 pb-10">
 
                     {activeTab === "details" && (
-                      <div className="space-y-10 max-w-5xl mx-auto py-9">
-                        <div className="space-y-5 mx-8">
-                          <h2 className="font-semibold text-sm">General</h2>
+                      <div className="space-y-10 max-w-5xl text-xs mx-auto p-3">
+                        <div className="space-y-5">
+                          <h2 className="font-semibold mx-1 mb-3">General</h2>
 
                           <div className="border border-neutral-500 rounded-sm p-4 bg-white">
                             <label className="text-xs font-medium block mb-3">Product Type</label>
@@ -812,7 +833,7 @@ const CreateProductPage = () => {
                                   </div>
                                   <div className="w-fit">
                                     <AlertDialogTrigger asChild>
-                                      <Button variant={'ghost'} className="flex flex-col h-fit items-center justify-center gap-0.5 px-3 py-2">
+                                      <Button variant={'ghost'} className="flex flex-col h-fit items-center justify-center gap-0.5 rounded-sm bg-neutral-100 px-3 py-2 hover:bg-neutral-200">
                                         <span className="text-[11px] text-core_light">Add / Edit Images</span>
                                       </Button>
                                     </AlertDialogTrigger>
@@ -821,9 +842,9 @@ const CreateProductPage = () => {
                               ) : (
                                 <div className="w-full h-24 flex flex-col items-center justify-center text-neutral-500">
                                   <AlertDialogTrigger asChild>
-                                    <Button variant={'ghost'} className="flex flex-col h-fit items-center justify-center gap-0.5">
+                                    <Button variant={'ghost'} className="flex flex-col h-fit items-center justify-center gap-0.5 rounded-sm bg-neutral-100 hover:bg-neutral-200">
                                       <span className="text-lg mb-1"><Upload className="text-core size-4" /></span>
-                                      <span className="text-[11px] text-core_light">Click to Upload images</span>
+                                      <span className="text-[11px] text-core">Click to Upload images</span>
                                     </Button>
                                   </AlertDialogTrigger>
                                 </div>
@@ -1020,12 +1041,13 @@ const CreateProductPage = () => {
                     )}
 
                    {activeTab === "variants" && (
-                      <div className="text-neutral-700 w-full p-6 mx-auto text-xs">
-                        <h2 className="font-semibold mb-4">{productType === 'service' ? 'Quality Tiers (Variants)' : 'Variants'}</h2>
+                      <div className="text-neutral-700 w-full p-3 mx-auto text-xs">
+                        <h2 className="font-semibold mx-1 mb-3">{productType === 'service' ? 'Quality Tiers (Variants)' : 'Variants'}</h2>
                         <VariantTable
                           combinations={variantCombinations}
                           costPrice={costPrice}
                           standardPricing={standardPricing}
+                          bulkThreshold={quantities.bulkThreshold}
                           updateValue={updateVariantValue}
                           productType={productType}
                         />
@@ -1034,11 +1056,12 @@ const CreateProductPage = () => {
                   </div>
                 </div>
 
-                <div className="flex justify-end mr-14 gap-2 border-t border-neutral-500 px-7 py-3 bg-white">
+                <div className="flex justify-end gap-2 border-t border-neutral-500 bg-white px-3 py-3 sm:px-7">
                   <div className="flex gap-2">
+                    <Button type="button" variant={''} className="px-3 h-7 py-2 rounded-sm border border-blue-500 bg-blue-500 text-xs text-white hover:bg-blue-600">Save as draft</Button>
                     <Button onClick={goToPreviousTab} disabled={activeTab === 'details'} variant={'outline'} className="px-3 h-7 py-2 rounded-sm border border-neutral-500 text-xs disabled:opacity-50 disabled:cursor-not-allowed">Back</Button>
                     {activeTab !== 'variants' ? (
-                      <Button onClick={goToNextTab} variant={''} className="px-3 h-7 py-2 bg-core_light rounded-sm hover:bg-core_light/90 text-neutral-800 text-xs">Next</Button>
+                      <Button onClick={goToNextTab} variant={''} className="px-3 h-7 py-2 bg-core rounded-sm hover:bg-core/90 text-white text-xs">Next</Button>
                     ) : (
                       <Button onClick={handleSubmit} variant={''} className="px-3 h-7 py-2 bg-core_light rounded-sm hover:bg-core_light/90 text-neutral-800 text-xs">Submit</Button>
                     )}

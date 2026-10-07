@@ -1,15 +1,19 @@
 'use client'
 
-import { getTiers, isButtonLimit, getTierPrice } from './tiers'
+const BUTTON_LIMIT_KEYS = new Set(['branches.max_count', 'staff.max_count', 'warehouses.max_count'])
 
-export default function CapacityControls({ limits, values, onChange }) {
+export default function CapacityControls({ limits, values, tiers, onChange }) {
   return (
     <div className="space-y-5">
       {Object.entries(limits).map(([key, limit]) => {
-        const tiers = getTiers(key)
+        const ladder = tiers[key] || []
         const value = values[key] ?? limit.value
-        const tierPrice = getTierPrice(key, value)
-        if (!tiers.length) return null
+        const currentTier = ladder.find((t) => t.value === value)
+        const tierPrice = currentTier?.priceDelta || 0
+        if (!ladder.length) return null
+
+        const isButtons = BUTTON_LIMIT_KEYS.has(key)
+
         return (
           <div key={key}>
             <div className="mb-2 flex items-center justify-between">
@@ -18,9 +22,6 @@ export default function CapacityControls({ limits, values, onChange }) {
                 <span className="text-sm font-bold text-core font-mono">
                   {Number(value).toLocaleString()} <span className="text-xs font-normal text-muted-foreground font-sans">{limit.unit}</span>
                 </span>
-                {/* Only shown once the user has moved past the included
-                    first tier — makes it clear the base price alone
-                    already covers the starting level. */}
                 {tierPrice > 0 && (
                   <span className="text-xs font-medium text-core bg-core_light px-1.5 py-0.5 rounded">
                     +₦{tierPrice.toLocaleString()}/mo
@@ -28,42 +29,40 @@ export default function CapacityControls({ limits, values, onChange }) {
                 )}
               </div>
             </div>
-            {isButtonLimit(key) ? (
+
+            {isButtons ? (
               <div className="flex flex-wrap gap-2">
-                {tiers.map((tier) => {
-                  const price = getTierPrice(key, tier)
-                  return (
-                    <button
-                      key={tier}
-                      type="button"
-                      onClick={() => onChange(key, tier)}
-                      className={`rounded border px-3 py-2 text-xs font-semibold transition-colors flex flex-col items-center gap-0.5 ${
-                        value === tier
-                          ? 'border-core bg-core text-white'
-                          : 'border-border bg-card text-foreground hover:border-core/50'
-                      }`}
-                    >
-                      <span>{tier.toLocaleString()}</span>
-                      <span className={`text-[10px] font-normal ${value === tier ? 'text-white/80' : 'text-muted-foreground'}`}>
-                        {price > 0 ? `+₦${price.toLocaleString()}` : 'included'}
-                      </span>
-                    </button>
-                  )
-                })}
+                {ladder.map((tier) => (
+                  <button
+                    key={tier.tierIndex}
+                    type="button"
+                    onClick={() => onChange(key, tier.value)}
+                    className={`rounded border px-3 py-2 text-xs font-semibold transition-colors flex flex-col items-center gap-0.5 ${
+                      value === tier.value
+                        ? 'border-core bg-core text-white'
+                        : 'border-border bg-card text-foreground hover:border-core/50'
+                    }`}
+                  >
+                    <span>{tier.value.toLocaleString()}</span>
+                    <span className={`text-[10px] font-normal ${value === tier.value ? 'text-white/80' : 'text-muted-foreground'}`}>
+                      {tier.priceDelta > 0 ? `+₦${tier.priceDelta.toLocaleString()}` : 'included'}
+                    </span>
+                  </button>
+                ))}
               </div>
             ) : (
               <>
                 <input
                   type="range"
                   min="0"
-                  max={tiers.length - 1}
+                  max={ladder.length - 1}
                   step="1"
-                  value={Math.max(0, tiers.indexOf(value))}
-                  onChange={(event) => onChange(key, tiers[Number(event.target.value)])}
+                  value={Math.max(0, ladder.findIndex((t) => t.value === value))}
+                  onChange={(event) => onChange(key, ladder[Number(event.target.value)].value)}
                   className="h-2 w-full accent-core"
                 />
                 <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-                  {tiers.map((tier) => <span key={tier}>{tier.toLocaleString()}</span>)}
+                  {ladder.map((t) => <span key={t.tierIndex}>{t.value.toLocaleString()}</span>)}
                 </div>
               </>
             )}

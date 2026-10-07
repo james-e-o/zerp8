@@ -82,16 +82,15 @@ export default function StaffDetailLayout({ children }) {
   const navItems = NAV_ITEMS.map((item) => ({ ...item, href: `${basePath}${item.path}` }))
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 border-t border-border pt-4">
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-start gap-4">
-          <Link
+          {/* <Link
             href={`/users/${params.u}/company/${params.companyId}/staff/directory`}
-            className="flex italic items-center gap-1.5 text-[13px] text-core hover:text-foreground transition-colors"
-          >
+            className="flex italic items-center gap-1.5 text-[13px] text-core hover:text-foreground transition-colors">
             <ChevronLeft className="size-4" />
             Back to Directory
-          </Link>
+          </Link> */}
 
           <nav className="flex flex-wrap items-center gap-2 py-1">
             {navItems.map((item) => {

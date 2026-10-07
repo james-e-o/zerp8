@@ -43,9 +43,9 @@ function StaffLayoutContent({ children }) {
 
   return (
     <ReusableCompanySidebar>
-      <div className="space-y-4 px-4 h-full flex-col flex overflow-hidden">
+      <div className="space-y-4 h-full flex-col flex overflow-hidden">
         {/* Header */}
-        <div className="my-1 flex items-center justify-start gap-2 flex-wrap">
+        <div className="my-1 flex items-center border-b border-border px-3 justify-start gap-2 flex-wrap">
           <div>
             <h1 className="text-lg m-1 font-semibold text-core">Staff Management</h1>
           </div>
@@ -55,7 +55,7 @@ function StaffLayoutContent({ children }) {
             state, icon size) reused by StaffDetailLayout's sub-nav, so
             both nav bars in this route tree read as one consistent
             system rather than two different UI treatments. */}
-        <div className="flex items-center gap-2  py-1">
+        <div className="flex items-center gap-2 flex-wrap py-2">
           {visibleTabs.map((tab) => {
             const active = isActive(tab.path);
             const href = `/users/${u}/company/${info.id}/staff${tab.path}`;
@@ -64,7 +64,7 @@ function StaffLayoutContent({ children }) {
             return (
               <Link key={tab.key} href={href} className="shrink-0 relative">
                 <button
-                  className={`flex shrink-0 min-w-max cursor-pointer items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+                  className={`flex shrink-0 min-w-max cursor-pointer items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
                     active
                       ? 'bg-core_light text-core border-core/20'
                       : 'text-muted-foreground border-border hover:bg-muted'
@@ -89,7 +89,7 @@ function StaffLayoutContent({ children }) {
         </div>
 
         {/* Page content */}
-        <div className="grow overflow-y-auto ">{children}</div>
+        <div className="grow overflow-y-auto px-2">{children}</div>
       </div>
     </ReusableCompanySidebar>
   );
