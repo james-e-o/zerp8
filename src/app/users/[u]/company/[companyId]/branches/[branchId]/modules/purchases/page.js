@@ -1,11 +1,11 @@
 'use client'
 
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useMemo, useState } from 'react'
 import Link from 'next/link'
 import PageHeader from '@/components/PageHeader'
-import supabase from '@/config/supabaseClient'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 import { useParams } from 'next/navigation'
+import { usePurchasesContext } from './purchases-context'
 
 // ----------------------------------------------------------------------
 // Purchases Overview
@@ -16,6 +16,11 @@ import { useParams } from 'next/navigation'
 //   - Receipts
 //   - Supplier bills
 //   - Purchase returns
+//
+// Data fetching no longer happens here - it lives in PurchasesProvider
+// (mounted in PurchasesLayoutClient) and is read via usePurchasesContext().
+// This page only derives its own stats/activity presentation from that
+// shared data.
 // ----------------------------------------------------------------------
 
 function StatCard({ label, value, loading }) {
@@ -39,167 +44,96 @@ const ACTIVITY_TABS = [
 export default function PurchasesOverviewPage() {
   const { u, companyId, branchId } = useParams()
   const { currentBranch } = useContext(BranchContext)
-
-  const [loading, setLoading] = useState(true)
-
-  const [stats, setStats] = useState({
-    purchaseSpend: 0,
-    openOrders: 0,
-    outstandingBills: 0,
-    pendingRequests: 0,
-    awaitingReceipt: 0,
-    partialOrders: 0,
-    unpaidBills: 0,
-    overdueBills: 0,
-  })
+  const { loading, requests, orders, receipts, bills } = usePurchasesContext()
 
   const [activeTab, setActiveTab] = useState('requests')
 
-  const [activity, setActivity] = useState({
-    requests: [],
-    orders: [],
-    receipts: [],
-    bills: [],
-  })
-
   const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases`
 
-  useEffect(() => {
-    if (!companyId || !branchId) return
+  const startOfMonth = useMemo(() => {
+    const d = new Date()
+    d.setDate(1)
+    d.setHours(0, 0, 0, 0)
+    return d
+  }, [])
 
-    const fetchOverview = async () => {
-      setLoading(true)
+  const stats = useMemo(() => {
+    const purchaseSpend = bills
+      .filter((row) => new Date(row.created_at) >= startOfMonth)
+      .reduce((sum, row) => sum + Number(row.total || 0), 0)
 
-      try {
-        const startOfMonth = new Date()
-        startOfMonth.setDate(1)
-        startOfMonth.setHours(0, 0, 0, 0)
+    const outstandingBills = bills.reduce(
+      (sum, row) => sum + Number(row.balance || 0),
+      0
+    )
 
-        const [
-          { data: requests },
-          { data: orders },
-          { data: receipts },
-          { data: bills },
-        ] = await Promise.all([
-          supabase
-            .from('purchase_requests')
-            .select('id, status, created_at')
-            .eq('branch', branchId)
-            .order('created_at', { ascending: false })
-            .limit(100),
+    const pendingRequests = requests.filter((row) =>
+      ['pending', 'pending_approval'].includes(row.status)
+    ).length
 
-          supabase
-            .from('purchase_orders')
-            .select('id, total, status, created_at')
-            .eq('branch', branchId)
-            .order('created_at', { ascending: false })
-            .limit(100),
+    const openOrders = orders.filter((row) =>
+      ['draft', 'pending', 'approved', 'partially_received'].includes(row.status)
+    ).length
 
-          supabase
-            .from('purchase_receipts')
-            .select('id, status, created_at')
-            .eq('branch', branchId)
-            .order('created_at', { ascending: false })
-            .limit(100),
+    const awaitingReceipt = orders.filter((row) =>
+      ['approved', 'confirmed', 'partially_received'].includes(row.status)
+    ).length
 
-          supabase
-            .from('purchase_bills')
-            .select('id, total, paid_amount, balance, status, due_date, created_at')
-            .eq('branch', branchId)
-            .order('created_at', { ascending: false })
-            .limit(100),
-        ])
+    const partialOrders = orders.filter(
+      (row) => row.status === 'partially_received'
+    ).length
 
-        const requestRows = requests || []
-        const orderRows = orders || []
-        const receiptRows = receipts || []
-        const billRows = bills || []
+    const unpaidBills = bills.filter((row) => row.status === 'unpaid').length
 
-        const purchaseSpend = billRows
-          .filter((row) => new Date(row.created_at) >= startOfMonth)
-          .reduce((sum, row) => sum + Number(row.total || 0), 0)
+    const overdueBills = bills.filter((row) => {
+      if (!row.due_date) return false
+      return new Date(row.due_date) < new Date() && Number(row.balance || 0) > 0
+    }).length
 
-        const outstandingBills = billRows
-          .reduce((sum, row) => sum + Number(row.balance || 0), 0)
-
-        const pendingRequests = requestRows.filter((row) =>
-          ['pending', 'pending_approval'].includes(row.status)
-        ).length
-
-        const openOrders = orderRows.filter((row) =>
-          ['draft', 'pending', 'approved', 'partially_received'].includes(row.status)
-        ).length
-
-        const awaitingReceipt = orderRows.filter((row) =>
-          ['approved', 'confirmed', 'partially_received'].includes(row.status)
-        ).length
-
-        const partialOrders = orderRows.filter(
-          (row) => row.status === 'partially_received'
-        ).length
-
-        const unpaidBills = billRows.filter(
-          (row) => row.status === 'unpaid'
-        ).length
-
-        const overdueBills = billRows.filter((row) => {
-          if (!row.due_date) return false
-
-          return (
-            new Date(row.due_date) < new Date() &&
-            Number(row.balance || 0) > 0
-          )
-        }).length
-
-        setStats({
-          purchaseSpend,
-          openOrders,
-          outstandingBills,
-          pendingRequests,
-          awaitingReceipt,
-          partialOrders,
-          unpaidBills,
-          overdueBills,
-        })
-
-        setActivity({
-          requests: requestRows.slice(0, 10).map((row) => ({
-            id: row.id,
-            primary: `Request ${row.id}`,
-            secondary: row.status || 'Unknown',
-            timestamp: row.created_at,
-          })),
-
-          orders: orderRows.slice(0, 10).map((row) => ({
-            id: row.id,
-            primary: `Purchase Order ${row.id}`,
-            secondary: `${row.status || 'Unknown'} · ${Number(row.total || 0).toLocaleString()}`,
-            timestamp: row.created_at,
-          })),
-
-          receipts: receiptRows.slice(0, 10).map((row) => ({
-            id: row.id,
-            primary: `Receipt ${row.id}`,
-            secondary: row.status || 'Unknown',
-            timestamp: row.created_at,
-          })),
-
-          bills: billRows.slice(0, 10).map((row) => ({
-            id: row.id,
-            primary: `Bill ${row.id}`,
-            secondary: `${row.status || 'Unknown'} · Balance ${Number(row.balance || 0).toLocaleString()}`,
-            timestamp: row.created_at,
-          })),
-        })
-      } catch (err) {
-        console.error('Error loading purchases overview:', err)
-      } finally {
-        setLoading(false)
-      }
+    return {
+      purchaseSpend,
+      openOrders,
+      outstandingBills,
+      pendingRequests,
+      awaitingReceipt,
+      partialOrders,
+      unpaidBills,
+      overdueBills,
     }
+  }, [requests, orders, bills, startOfMonth])
 
-    fetchOverview()
-  }, [companyId, branchId])
+  const activity = useMemo(
+    () => ({
+      requests: requests.slice(0, 10).map((row) => ({
+        id: row.id,
+        primary: `Request ${row.id}`,
+        secondary: row.status || 'Unknown',
+        timestamp: row.created_at,
+      })),
+
+      orders: orders.slice(0, 10).map((row) => ({
+        id: row.id,
+        primary: `Purchase Order ${row.id}`,
+        secondary: `${row.status || 'Unknown'} · ${Number(row.total || 0).toLocaleString()}`,
+        timestamp: row.created_at,
+      })),
+
+      receipts: receipts.slice(0, 10).map((row) => ({
+        id: row.id,
+        primary: `Receipt ${row.id}`,
+        secondary: row.status || 'Unknown',
+        timestamp: row.created_at,
+      })),
+
+      bills: bills.slice(0, 10).map((row) => ({
+        id: row.id,
+        primary: `Bill ${row.id}`,
+        secondary: `${row.status || 'Unknown'} · Balance ${Number(row.balance || 0).toLocaleString()}`,
+        timestamp: row.created_at,
+      })),
+    }),
+    [requests, orders, receipts, bills]
+  )
 
   const currentActivity = activity[activeTab] || []
 

@@ -22,7 +22,7 @@ export default function BillsListPage({ title, description, status }) {
     async function load() {
       setLoading(true)
       let query = supabase
-        .from('bills')
+        .from('purchase_bills')
         .select(
           `id, bill_number, status, due_date, total,
            supplier:suppliers(name),
@@ -53,7 +53,7 @@ export default function BillsListPage({ title, description, status }) {
       {(title || description) && (
         <div>
           {title && (
-            <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
+            <h2 className="text-base font-semibold text-gray-800">{title}</h2>
           )}
           {description && (
             <p className="text-xs text-gray-500">{description}</p>

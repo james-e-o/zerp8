@@ -40,6 +40,16 @@ const flattenProducts = (products, variants, currencies) => {
   })
 }
 
+// NOTE: products and product_variants are both company-wide now, not
+// branch-scoped (see products-company-wide-migration.sql +
+// product-access-and-cost-migration.sql). products.branch was renamed to
+// created_by_branch and is no longer part of any access rule;
+// product_variants.branch was dropped entirely. Which products/variants
+// a branch can see is enforced entirely by RLS (products_select /
+// product_variants_select, via access_scope + product_branch_access +
+// can_access_product_resource) — so this hook does NOT filter by branch
+// client-side. RLS already narrows the result to whatever this branch is
+// allowed to view; there's no branch column left to filter on anyway.
 export function useRequestCatalog(branchId) {
   const [catalog, setCatalog] = useState([])
   const [currencies, setCurrencies] = useState([])
@@ -68,22 +78,20 @@ export function useRequestCatalog(branchId) {
           supabase
             .from('products')
             .select('id, title')
-            .eq('branch', branchId)
             .eq('status', 'active')
             .order('created_at', { ascending: false }),
           supabase
             .from('product_variants')
             .select('*')
-            .eq('branch', branchId)
             .eq('is_active', true),
-            supabase
+          supabase
             .from('currencies')
-              .select('code, symbol'),
+            .select('code, symbol'),
         ])
 
         if (productError) throw productError
         if (variantError) throw variantError
-          if (currencyError) throw currencyError
+        if (currencyError) throw currencyError
         if (!mounted) return
 
         setCurrencies(currencies || [])

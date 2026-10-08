@@ -65,7 +65,7 @@ export function useConvertibleRequests(branchId) {
       const { data, error } = await supabase
         .from('purchase_requests')
         .select(
-          'id, request_number, requester, needed_by, notes, purchase_request_line_items(id, variant, qty)'
+          'id, request_number, requested_by, needed_by, notes, purchase_request_line_items(id, variant, quantity_requested)'
         )
         .eq('branch', branchId)
         .eq('status', 'approved')
@@ -107,9 +107,9 @@ export function useReceivablePurchaseOrders(branchId) {
     const { data, error } = await supabase
       .from('purchase_orders')
       .select(
-        `id, order_number, supplier, status, expected_date,
+        `id, order_number, supplier, status, expected_delivery_date,
          purchase_order_line_items (
-           id, variant, quantity_ordered, quantity_received, unit_cost
+           id, variant, quantity_ordered, quantity_received, unit_cost_snapshot
          )`
       )
       .eq('branch', branchId)
@@ -154,7 +154,7 @@ export function useBillableReceipts(branchId) {
         .select(
           `id, receipt_number, status, created_at,
            purchase_order (id, order_number, supplier),
-           purchase_receipt_line_items ( id, variant, quantity_received, unit_cost )`
+           purchase_receipt_line_items ( id, variant, quantity, unit_cost_snapshot )`
         )
         .eq('branch', branchId)
         .eq('status', 'posted')

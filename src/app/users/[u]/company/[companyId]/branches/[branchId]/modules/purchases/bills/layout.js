@@ -24,7 +24,7 @@ export default async function BillsLayout({ children, params }) {
         action={
           <Link
             href={`${basePath}/new`}
-            className="rounded-md bg-core px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-core/90"
+            className="rounded-md bg-core px-4 py-1.5 h-7 text-sm font-medium text-white transition-colors hover:bg-core/90"
           >
             New bill
           </Link>

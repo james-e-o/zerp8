@@ -28,13 +28,33 @@ const generateReceiptNumber = () => {
 // Receipts can only be created against an existing Purchase Order — there is
 // no path to a blank receipt. Step 1 picks the PO; step 2 receives against
 // whatever quantity is still outstanding on each of its lines.
+//
+// Backend wiring notes:
+//   - purchase_receipts is ALWAYS inserted as status='draft' first, same
+//     whichever button was clicked - post_purchase_receipt() itself
+//     requires a draft row to post (it raises if status isn't 'draft'),
+//     so "Post Receipt" means insert-as-draft then immediately call the
+//     RPC, not insert-as-posted directly.
+//   - purchase_order_line_items.unit_cost_snapshot is the real column
+//     name (the original scaffold read line.unit_cost, which doesn't
+//     exist - fixed here).
+//   - shelf is persisted on purchase_receipt_line_items.shelf (added in
+//     purchases-schema-patch-1.sql). It is NOT yet propagated into
+//     stock_movements - post_purchase_receipt() doesn't write a shelf
+//     column there until that table's actual shape is confirmed.
 
 export default function ReceiptForm() {
   const router = useRouter()
   const { u, companyId, branchId } = useParams()
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/receipts`
 
-  const [receiptNumber] = useState(generateReceiptNumber)
+  // Generated client-side only, after mount - same pattern as
+  // generateRequestNumber()/generateOrderNumber() in the other two
+  // forms. Calling generateReceiptNumber() directly inside useState's
+  // initializer ran it once during SSR and again during client
+  // hydration, producing two different Math.random() suffixes and a
+  // hydration mismatch (the exact case React's error message names).
+  const [receiptNumber, setReceiptNumber] = useState('')
   const [selectedOrderId, setSelectedOrderId] = useState('')
   const [warehouseId, setWarehouseId] = useState('')
   const [shelves, setShelves] = useState([])
@@ -42,6 +62,8 @@ export default function ReceiptForm() {
   const [lines, setLines] = useState([])
   const [saving, setSaving] = useState(false)
   const [warehouses, setWarehouses] = useState([])
+  const [currentUser, setCurrentUser] = useState(null)
+  const [submitError, setSubmitError] = useState('')
 
   const { orders, loading: ordersLoading } = useReceivablePurchaseOrders(
     branchId
@@ -49,9 +71,30 @@ export default function ReceiptForm() {
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId)
 
-  // Resolve this branch's warehouse(s). If your resolve_branch_warehouse()
-  // is single-valued, this collapses to one option and the Select becomes
-  // effectively read-only — that's fine and expected.
+  useEffect(() => {
+    setReceiptNumber(generateReceiptNumber())
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadUser() {
+      const { data, error } = await supabase.auth.getUser()
+      if (cancelled || error || !data?.user) return
+      setCurrentUser(data.user)
+    }
+
+    loadUser()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Resolve this branch's warehouse. resolve_branch_warehouse() returns a
+  // single uuid (every branch has exactly one default warehouse), so this
+  // always collapses to one option - the Select stays for the rare case
+  // a branch somehow resolves to none, but there is no real multi-choice
+  // happening here.
   useEffect(() => {
     let cancelled = false
 
@@ -62,7 +105,6 @@ export default function ReceiptForm() {
       })
       if (cancelled) return
       if (!error && data) {
-        // Normalize to an array whether the function returns a scalar or a set.
         const list = Array.isArray(data) ? data : [data]
         setWarehouses(list)
         if (list.length === 1) setWarehouseId(list[0])
@@ -117,7 +159,7 @@ export default function ReceiptForm() {
           quantityAlreadyReceived: line.quantity_received || 0,
           outstanding,
           quantityReceivingNow: outstanding,
-          unitCost: line.unit_cost,
+          unitCost: line.unit_cost_snapshot,
           shelfId: '',
         }
       }
@@ -140,44 +182,103 @@ export default function ReceiptForm() {
 
   const handleSubmit = async (event, submitStatus) => {
     event.preventDefault()
+    setSubmitError('')
 
     if (!selectedOrderId) {
-      alert('A Purchase Order is required to create a Receipt.')
+      setSubmitError('A Purchase Order is required to create a Receipt.')
       return
     }
     if (!warehouseId) {
-      alert('A warehouse is required — this is where stock will land.')
+      setSubmitError('A warehouse is required — this is where stock will land.')
       return
     }
     if (hasInvalidQty) {
-      alert('Quantity received cannot exceed what is still outstanding.')
+      setSubmitError('Quantity received cannot exceed what is still outstanding.')
+      return
+    }
+    if (!currentUser?.id) {
+      setSubmitError('Could not identify the current user - try reloading the page.')
+      return
+    }
+
+    const receivingLines = lines.filter(
+      (line) => Number(line.quantityReceivingNow) > 0
+    )
+    if (receivingLines.length === 0) {
+      setSubmitError('Enter a quantity greater than zero for at least one line.')
       return
     }
 
     setSaving(true)
 
-    // TODO: wire to Supabase insert into purchase_receipts + purchase_receipt_line_items.
-    // Stock movement (reference_type='purchase_receipt') should only be written
-    // when submitStatus === 'posted' — Draft receipts don't move stock yet,
-    // mirroring the delivery.status='completed' rule on the Sales side.
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    try {
+      // Always inserted as 'draft' - post_purchase_receipt() requires that
+      // status to post, even when the user clicked "Post Receipt".
+      const { data: receipt, error: receiptError } = await supabase
+        .from('purchase_receipts')
+        .insert({
+          branch: branchId,
+          purchase_order: selectedOrderId,
+          receipt_number: receiptNumber,
+          status: 'draft',
+          notes: notes || null,
+          received_by: currentUser.id,
+        })
+        .select('id')
+        .single()
 
-    setSaving(false)
-    router.push(base)
+      if (receiptError) throw receiptError
+
+      const lineItems = receivingLines.map((line) => ({
+        purchase_receipt: receipt.id,
+        purchase_order_line_item: line.orderLineId,
+        variant: line.variantId,
+        quantity: line.quantityReceivingNow,
+        unit_cost_snapshot: line.unitCost,
+        shelf: line.shelfId || null,
+      }))
+
+      const { error: lineItemsError } = await supabase
+        .from('purchase_receipt_line_items')
+        .insert(lineItems)
+
+      if (lineItemsError) throw lineItemsError
+
+      if (submitStatus === 'posted') {
+        const { data: postResult, error: postError } = await supabase.rpc(
+          'post_purchase_receipt',
+          { p_receipt: receipt.id }
+        )
+
+        if (postError) throw postError
+        if (!postResult?.success) {
+          throw new Error(
+            postResult?.error || 'Posting the receipt failed. It was saved as a draft instead.'
+          )
+        }
+      }
+
+      router.push(base)
+    } catch (err) {
+      console.error('Error creating purchase receipt:', err)
+      setSubmitError(err.message || 'Something went wrong saving this receipt.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold tracking-tight text-slate-900">
+          <h1 className="text-base font-bold tracking-tight text-slate-900">
             New Receipt
           </h1>
           <p className="text-xs text-gray-500">{receiptNumber}</p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" className="h-7 text-xs hover:bg-red-300" variant="outline" onClick={() => router.back()}>
             Cancel
           </Button>
 
@@ -185,6 +286,7 @@ export default function ReceiptForm() {
             type="button"
             variant="outline"
             disabled={saving || !selectedOrderId}
+            className="h-7 text-xs bg-core_light text-black"
             onClick={(event) => handleSubmit(event, 'draft')}
           >
             Save as Draft
@@ -192,7 +294,7 @@ export default function ReceiptForm() {
 
           <Button
             type="button"
-            className="bg-core text-white"
+            className="bg-core hover:bg-core/80 h-7 text-white text-xs"
             disabled={saving || !selectedOrderId}
             onClick={(event) => handleSubmit(event, 'posted')}
           >
@@ -200,6 +302,10 @@ export default function ReceiptForm() {
           </Button>
         </div>
       </div>
+
+      {submitError && (
+        <p className="text-xs text-red-600">{submitError}</p>
+      )}
 
       <form className="flex min-h-0 grow flex-col gap-4 overflow-auto">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

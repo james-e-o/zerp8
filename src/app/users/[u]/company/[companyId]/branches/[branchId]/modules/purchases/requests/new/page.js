@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import supabase from '@/config/supabaseClient'
 import { formatCurrency } from '@/components/modules/purchases/dummy-data'
 import PurchaseRequestLineItemsTable from '@/components/modules/purchases/purchase-request-line-items-table'
 import { useRequestCatalog } from '@/components/modules/purchases/request-catalog'
@@ -29,13 +30,17 @@ export default function PurchaseRequestForm() {
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
 
   const [requestNumber, setRequestNumber] = useState('')
-  const [requester, setRequester] = useState('')
+  // "Requested by" is no longer a free-text field - requested_by is a
+  // uuid referencing the real user, so it's auto-filled from the
+  // logged-in session and shown read-only instead of typed.
+  const [currentUser, setCurrentUser] = useState(null)
   const [neededBy, setNeededBy] = useState('')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState([
     { variantId: '', qty: 1, estimatedCostPrice: 0 },
   ])
   const [saving, setSaving] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const {
     catalog,
@@ -51,15 +56,13 @@ export default function PurchaseRequestForm() {
   const total = useMemo(
     () =>
       items.reduce((sum, item) => {
-        const variant = catalog.find((entry) => entry.id === item.variantId)
-
         return (
           sum +
           Number(item.qty || 0) *
             Number(item.estimatedCostPrice || 0)
         )
       }, 0),
-    [catalog, items]
+    [items]
   )
 
   const currencyMismatches = useMemo(
@@ -67,22 +70,84 @@ export default function PurchaseRequestForm() {
       items
         .map((item) => catalog.find((entry) => entry.id === item.variantId))
         .filter((variant) => variant?.cost_currency && variant.cost_currency !== branchCurrencyCode),
-    [catalog, items]
+    [catalog, items, branchCurrencyCode]
   )
 
   useEffect(() => {
     setRequestNumber(generateRequestNumber())
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadUser() {
+      const { data, error } = await supabase.auth.getUser()
+      if (cancelled || error || !data?.user) return
+      setCurrentUser(data.user)
+    }
+
+    loadUser()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const requesterLabel =
+    currentUser?.user_metadata?.full_name || currentUser?.email || 'You'
+
   const handleSubmit = async (event) => {
     event.preventDefault()
+    setSubmitError('')
+
+    if (!currentUser?.id) {
+      setSubmitError('Could not identify the current user - try reloading the page.')
+      return
+    }
+
+    const validItems = items.filter((item) => item.variantId)
+    if (validItems.length === 0) {
+      setSubmitError('Add at least one product to the request.')
+      return
+    }
 
     setSaving(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    try {
+      const { data: request, error: requestError } = await supabase
+        .from('purchase_requests')
+        .insert({
+          branch: branchId,
+          request_number: requestNumber,
+          status: 'draft',
+          notes: notes || null,
+          requested_by: currentUser.id,
+          needed_by: neededBy || null,
+        })
+        .select('id')
+        .single()
 
-    setSaving(false)
-    router.push(base)
+      if (requestError) throw requestError
+
+      const lineItems = validItems.map((item) => ({
+        purchase_request: request.id,
+        variant: item.variantId,
+        quantity_requested: item.qty,
+        estimated_unit_cost: item.estimatedCostPrice,
+      }))
+
+      const { error: lineItemsError } = await supabase
+        .from('purchase_request_line_items')
+        .insert(lineItems)
+
+      if (lineItemsError) throw lineItemsError
+
+      router.push(base)
+    } catch (err) {
+      console.error('Error creating purchase request:', err)
+      setSubmitError(err.message || 'Something went wrong saving this request.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -117,23 +182,23 @@ export default function PurchaseRequestForm() {
         </div>
       </div>
 
+      {submitError && (
+        <p className="text-xs text-red-600">{submitError}</p>
+      )}
+
       <form
         id="purchase-request-form"
         onSubmit={handleSubmit}
         className="flex min-h-0 justify-between grow flex-col gap-4 overflow-hidden"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className="text-xs font-medium text-gray-800">
+          <div className="text-xs font-medium text-gray-800">
             Requested by
 
-            <Input
-              required
-              value={requester}
-              onChange={(event) => setRequester(event.target.value)}
-              placeholder="Name or team"
-              className="mt-1 h-auto w-full text-sm"
-            />
-          </label>
+            <p className="mt-1 h-auto w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+              {requesterLabel}
+            </p>
+          </div>
 
           <label className="text-xs font-medium text-gray-800">
             Needed by
@@ -148,19 +213,6 @@ export default function PurchaseRequestForm() {
         </div>
 
         <div className="flex flex-col grow overflow-hidden">
-          {/* <div className="mb-2 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-800">
-                Requested items
-              </h2>
-
-              <p className="text-xs text-gray-500">
-                Select existing products. Cost price and available stock are
-                read from the product record.
-              </p>
-            </div>
-          </div> */}
-
           {catalogError && (
             <p className="mb-2 text-xs text-red-600">{catalogError}</p>
           )}

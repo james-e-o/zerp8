@@ -67,6 +67,25 @@ import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[bra
 //   - New optional `branchAlias` field: lets the creating branch set its
 //     own display name for this product immediately (product_branch_aliases),
 //     without affecting the canonical, company-wide title.
+//
+// Oct 2026 update #2 - Save to Draft / Select Draft, wired to the new
+// product_drafts table (one JSONB `payload` column per draft, scoped to
+// this branch). The payload is a direct snapshot of this page's OWN
+// state variables - not a reshaped/RPC-shaped version of them - so
+// saving is "gather these state values into an object" and loading is
+// the same thing backwards ("call each setter with this object's
+// values"). Nothing is transformed in either direction, which is also
+// how the variant<->image mapping survives a save/load round trip for
+// free: it already lives inside variantCombinations[].images (per
+// combination), and that whole array is stored as-is.
+//
+// One real trap this ran into: there's a pre-existing effect below that
+// calls resetAllInputs() whenever productType changes (so toggling
+// Physical/Service clears stale fields for a NEW product). Loading a
+// draft also sets productType, which would trigger that same reset and
+// wipe out every other field this load just restored, in the same
+// render pass. isLoadingDraftRef below is a one-shot flag that effect
+// checks so it skips itself exactly once, only during a draft load.
 // ----------------------------------------------------------------------
 
 function buildCategoryTree(categories) {
@@ -146,6 +165,14 @@ function OptionValueDisplay({ attributeName, value, visualOnly = false }) {
       {!visualOnly && <span>{label}</span>}
     </span>
   );
+}
+
+// Label shown in the "Select draft" dropdown for one draft row.
+function formatDraftLabel(draft) {
+  const title = (draft?.title || '').trim();
+  if (title) return title;
+  const when = draft?.updated_at ? new Date(draft.updated_at) : null;
+  return when ? `Untitled - ${when.toLocaleDateString()}` : 'Untitled draft';
 }
 
 const CreateProductPage = () => {
@@ -230,6 +257,18 @@ const CreateProductPage = () => {
   const [subtitle, setSubtitle] = useState('');
   const [handle, setHandle] = useState('');
   const [description, setDescription] = useState('');
+
+  // --- Save to Draft / Select Draft -------------------------------------
+  // draftId: the product_drafts row currently being edited, if any - once
+  // set, "Save as draft" updates that row instead of inserting a new one
+  // each time. drafts: the list for the "Select draft" dropdown, fetched
+  // on load and refreshed after every save. isLoadingDraftRef: see the
+  // file-level comment above - prevents the productType-change effect
+  // from wiping out a draft the moment it's loaded.
+  const [draftId, setDraftId] = useState(null);
+  const [drafts, setDrafts] = useState([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const isLoadingDraftRef = useRef(false);
 
   const requiredFields = {
     title: true,
@@ -317,9 +356,21 @@ const CreateProductPage = () => {
     setContextAdjustments({});
     setBranchAlias('');
     setErrors({});
+    // A manual reset (the Reset button, or a real productType toggle) means
+    // "start over" - any draft that was loaded is no longer what's on screen,
+    // so stop treating further saves as updates to it.
+    setDraftId(null);
   };
 
-  useEffect(() => { resetAllInputs(); }, [productType]);
+  // Skips the reset exactly once when a draft load is what changed
+  // productType - see the file-level comment above.
+  useEffect(() => {
+    if (isLoadingDraftRef.current) {
+      isLoadingDraftRef.current = false;
+      return;
+    }
+    resetAllInputs();
+  }, [productType]);
 
   useEffect(() => {
       const handler = (e) => {
@@ -368,6 +419,27 @@ const CreateProductPage = () => {
 
     fetchCompanyCurrency();
   }, [currentBranch?.company]);
+
+  // Drafts list for the "Select draft" dropdown - all drafts belonging to
+  // this branch, newest first. Re-fetched after every save so a freshly
+  // saved draft shows up immediately, and after a successful product
+  // submit (whose draft row gets deleted) so it drops out of the list.
+  const fetchDrafts = useCallback(async () => {
+    if (!currentBranch?.id) return;
+    const { data, error } = await supabase
+      .from('product_drafts')
+      .select('id, title, updated_at')
+      .eq('branch', currentBranch.id)
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching drafts:', error);
+      return;
+    }
+    setDrafts(data || []);
+  }, [currentBranch?.id]);
+
+  useEffect(() => { fetchDrafts(); }, [fetchDrafts]);
 
   const moveCombination = (fromIndex, toIndex) => {
     const newCombos = [...variantCombinations];
@@ -520,6 +592,124 @@ const CreateProductPage = () => {
     }
   };
 
+  // Direct snapshot of this page's own state - see the file-level comment
+  // above for why nothing here is reshaped before saving.
+  const buildDraftPayload = () => ({
+    title, subtitle, handle, description, brand, upc, mpn, ean, isbn,
+    productType,
+    dimensions, dimensionUnit, weight, weightUnit,
+    branchAlias,
+    selectedCategoryId, selectedCategoryName,
+    hasVariants, options, variantCombinations, selectedImages,
+    costPrice, standardPricing, contextAdjustments, quantities,
+    serviceDuration, requiresStaff, selectedStaff,
+  });
+
+  const handleSaveDraft = async () => {
+    if (!currentBranch?.id || !currentBranch?.company) {
+      toast.error('Branch not ready yet - try again in a moment');
+      return;
+    }
+
+    setSavingDraft(true);
+    try {
+      productConfigRef.current?.commitEditingState?.();
+      const { data: { user } } = await supabase.auth.getUser();
+      const payload = buildDraftPayload();
+      const row = {
+        company: currentBranch.company,
+        branch: currentBranch.id,
+        title: title.trim() || null,
+        payload,
+        updated_by: user?.id || null,
+      };
+
+      if (draftId) {
+        const { error } = await supabase.from('product_drafts').update(row).eq('id', draftId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from('product_drafts')
+          .insert({ ...row, created_by: user?.id || null })
+          .select('id')
+          .single();
+        if (error) throw error;
+        setDraftId(data.id);
+      }
+
+      toast.success('Draft saved');
+      fetchDrafts();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to save draft');
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handleSelectDraft = async (id) => {
+    if (!id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('product_drafts')
+        .select('id, payload')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+
+      const p = data?.payload || {};
+
+      // See the file-level comment above - this flag stops the
+      // productType-change effect from firing resetAllInputs() right
+      // after we restore everything below.
+      isLoadingDraftRef.current = true;
+
+      setDraftId(data.id);
+      setTitle(p.title || '');
+      setSubtitle(p.subtitle || '');
+      setHandle(p.handle || '');
+      setDescription(p.description || '');
+      setBrand(p.brand || '');
+      setUpc(p.upc || '');
+      setMpn(p.mpn || '');
+      setEan(p.ean || '');
+      setIsbn(p.isbn || '');
+      setProductType(p.productType || 'physical');
+      setDimensions(p.dimensions || { length: '', width: '', height: '' });
+      setDimensionUnit(p.dimensionUnit || 'cm');
+      setWeight(p.weight || '');
+      setWeightUnit(p.weightUnit || 'kg');
+      setBranchAlias(p.branchAlias || '');
+      setSelectedCategoryId(p.selectedCategoryId || '');
+      setSelectedCategoryName(p.selectedCategoryName || '');
+      setHasVariants(!!p.hasVariants);
+      setOptions(p.options || []);
+      setVariantCombinations(p.variantCombinations || []);
+      setSelectedImages(p.selectedImages || []);
+      setCostPrice(p.costPrice || '');
+      setStandardPricing(p.standardPricing || DEFAULT_STANDARD_PRICING);
+      setContextAdjustments(p.contextAdjustments || {});
+      setQuantities(p.quantities || DEFAULT_QUANTITIES);
+      setServiceDuration(p.serviceDuration || '');
+      setRequiresStaff(p.requiresStaff ?? true);
+      setSelectedStaff(p.selectedStaff || '');
+      setErrors({});
+      setActiveTab('details');
+
+      // Belt-and-suspenders: if productType didn't actually change, the
+      // effect above never fires at all, so the flag would otherwise sit
+      // "true" until the next unrelated toggle and swallow that reset by
+      // mistake. Clearing it on a microtask covers that case too.
+      setTimeout(() => { isLoadingDraftRef.current = false; }, 0);
+
+      toast.success('Draft loaded');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load draft');
+    }
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) {
       toast.error('Please fill in all required fields');
@@ -667,6 +857,16 @@ const CreateProductPage = () => {
         }
       }
 
+      // Best-effort: the draft this product came from (if any) is now
+      // redundant - clean it up so it doesn't linger in the drafts list
+      // as a duplicate of a product that now actually exists. Never lets
+      // a failure here look like the product creation itself failed.
+      if (draftId) {
+        supabase.from('product_drafts').delete().eq('id', draftId).then(({ error: deleteError }) => {
+          if (deleteError) console.error('Failed to clean up draft after submit:', deleteError);
+        });
+      }
+
       toast.success('🎉 Product created successfully!');
       router.push(`/users/${u}/company/${companyId}/branches/${branchId}/modules/products`);
 
@@ -706,9 +906,19 @@ const CreateProductPage = () => {
                       </Button>
                     </div>
                   <div className="relative shrink-0 justify-self-end">
-                    <select aria-label="Select draft" defaultValue="" className="h-7 w-[104px] appearance-none rounded-sm border border-neutral-300 bg-white py-1 pl-2 pr-7 text-[10px] text-neutral-600 sm:w-32 sm:text-[11px]">
+                    <select
+                      aria-label="Select draft"
+                      value={draftId || ''}
+                      onChange={(e) => handleSelectDraft(e.target.value)}
+                      className="h-7 w-[104px] appearance-none rounded-sm border border-neutral-300 bg-white py-1 pl-2 pr-7 text-[10px] text-neutral-600 sm:w-32 sm:text-[11px]"
+                    >
                       <option value="" disabled>Select draft</option>
-                      <option value="draft-list-placeholder" disabled>Drafts will appear here</option>
+                      {drafts.length === 0 && (
+                        <option value="" disabled>No drafts yet</option>
+                      )}
+                      {drafts.map((d) => (
+                        <option key={d.id} value={d.id}>{formatDraftLabel(d)}</option>
+                      ))}
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-neutral-500" />
                   </div>
@@ -1058,7 +1268,15 @@ const CreateProductPage = () => {
 
                 <div className="flex justify-end gap-2 border-t border-neutral-500 bg-white px-3 py-3 sm:px-7">
                   <div className="flex gap-2">
-                    <Button type="button" variant={''} className="px-3 h-7 py-2 rounded-sm border border-blue-500 bg-blue-500 text-xs text-white hover:bg-blue-600">Save as draft</Button>
+                    <Button
+                      type="button"
+                      variant={''}
+                      onClick={handleSaveDraft}
+                      disabled={savingDraft}
+                      className="px-3 h-7 py-2 rounded-sm border border-blue-500 bg-blue-500 text-xs text-white hover:bg-blue-600 disabled:opacity-60"
+                    >
+                      {savingDraft ? 'Saving...' : 'Save as draft'}
+                    </Button>
                     <Button onClick={goToPreviousTab} disabled={activeTab === 'details'} variant={'outline'} className="px-3 h-7 py-2 rounded-sm border border-neutral-500 text-xs disabled:opacity-50 disabled:cursor-not-allowed">Back</Button>
                     {activeTab !== 'variants' ? (
                       <Button onClick={goToNextTab} variant={''} className="px-3 h-7 py-2 bg-core rounded-sm hover:bg-core/90 text-white text-xs">Next</Button>

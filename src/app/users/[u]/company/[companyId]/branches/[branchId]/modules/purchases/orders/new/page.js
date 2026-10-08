@@ -12,10 +12,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import supabase from '@/config/supabaseClient'
 import { formatCurrency } from '@/components/modules/purchases/dummy-data'
 import { useRequestCatalog } from '@/components/modules/purchases/request-catalog'
 import { useSuppliers } from '@/components/modules/purchases/purchase-catalog'
-import PurchaseRequestLineItemsTable from '@/components/modules/purchases/purchase-request-line-items-table'
+import PurchaseOrderLineItemsTable from '@/components/modules/purchases/purchase-order-line-items-table'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 
 const generateOrderNumber = () => {
@@ -35,13 +36,17 @@ export default function NewPurchaseOrderPage() {
 
   const [orderNumber, setOrderNumber] = useState('')
   const [supplierId, setSupplierId] = useState('')
-  const [requester, setRequester] = useState('')
+  // No separate "requested by" concept here - purchase_orders.created_by
+  // already records who made the order, auto-filled from the session,
+  // same as the request form's requested_by.
+  const [currentUser, setCurrentUser] = useState(null)
   const [neededBy, setNeededBy] = useState('')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState([
-    { variantId: '', qty: 1, estimatedCostPrice: 0 },
+    { variantId: '', qty: 1, standardCostPrice: 0, unitCost: 0 },
   ])
   const [saving, setSaving] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const { suppliers, loading: suppliersLoading } = useSuppliers(companyId)
   const { catalog, currencies, loading: catalogLoading, error: catalogError } =
@@ -54,11 +59,31 @@ export default function NewPurchaseOrderPage() {
     setOrderNumber(generateOrderNumber())
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadUser() {
+      const { data, error } = await supabase.auth.getUser()
+      if (cancelled || error || !data?.user) return
+      setCurrentUser(data.user)
+    }
+
+    loadUser()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const createdByLabel =
+    currentUser?.user_metadata?.full_name || currentUser?.email || 'You'
+
   const total = useMemo(
-    () => items.reduce((sum, item) => {
-      return sum + Number(item.qty || 0) * Number(item.estimatedCostPrice || 0)
-    }, 0),
-    [catalog, items]
+    () =>
+      items.reduce(
+        (sum, item) => sum + Number(item.qty || 0) * Number(item.unitCost || 0),
+        0
+      ),
+    [items]
   )
 
   const currencyMismatches = useMemo(
@@ -70,15 +95,63 @@ export default function NewPurchaseOrderPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
+    setSubmitError('')
+
     if (!supplierId) {
-      alert('A supplier is required to create a Purchase Order.')
+      setSubmitError('A supplier is required to create a Purchase Order.')
+      return
+    }
+    if (!currentUser?.id) {
+      setSubmitError('Could not identify the current user - try reloading the page.')
+      return
+    }
+
+    const validItems = items.filter((item) => item.variantId)
+    if (validItems.length === 0) {
+      setSubmitError('Add at least one product to the order.')
       return
     }
 
     setSaving(true)
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    setSaving(false)
-    router.push(base)
+
+    try {
+      const { data: order, error: orderError } = await supabase
+        .from('purchase_orders')
+        .insert({
+          branch: branchId,
+          supplier: supplierId,
+          order_number: orderNumber,
+          status: 'draft',
+          notes: notes || null,
+          expected_delivery_date: neededBy || null,
+          created_by: currentUser.id,
+        })
+        .select('id')
+        .single()
+
+      if (orderError) throw orderError
+
+      const lineItems = validItems.map((item) => ({
+        purchase_order: order.id,
+        variant: item.variantId,
+        quantity_ordered: item.qty,
+        unit_cost_snapshot: item.unitCost,
+        line_total: Number(item.qty || 0) * Number(item.unitCost || 0),
+      }))
+
+      const { error: lineItemsError } = await supabase
+        .from('purchase_order_line_items')
+        .insert(lineItems)
+
+      if (lineItemsError) throw lineItemsError
+
+      router.push(base)
+    } catch (err) {
+      console.error('Error creating purchase order:', err)
+      setSubmitError(err.message || 'Something went wrong saving this order.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -113,6 +186,10 @@ export default function NewPurchaseOrderPage() {
         </div>
       </div>
 
+      {submitError && (
+        <p className="text-xs text-red-600">{submitError}</p>
+      )}
+
       <form
         id="purchase-order-form"
         onSubmit={handleSubmit}
@@ -133,17 +210,13 @@ export default function NewPurchaseOrderPage() {
             </Select>
           </label>
 
-          <label className="text-xs font-medium text-gray-800">
-            Requested by
+          <div className="text-xs font-medium text-gray-800">
+            Created by
 
-            <Input
-              required
-              value={requester}
-              onChange={(event) => setRequester(event.target.value)}
-              placeholder="Name or team"
-              className="mt-1 h-auto w-full text-sm"
-            />
-          </label>
+            <p className="mt-1 h-auto w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+              {createdByLabel}
+            </p>
+          </div>
 
           <label className="text-xs font-medium text-gray-800">
             Needed by
@@ -164,7 +237,7 @@ export default function NewPurchaseOrderPage() {
           {catalogLoading ? (
             <p className="text-xs text-gray-500">Loading products...</p>
           ) : (
-            <PurchaseRequestLineItemsTable
+            <PurchaseOrderLineItemsTable
               items={items}
               setItems={setItems}
               catalog={catalog}

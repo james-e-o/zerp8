@@ -19,7 +19,7 @@ export default function PurchaseRequestsListPage({ title, description, status = 
       setLoading(true)
       let query = supabase
         .from('purchase_requests')
-        .select('id, request_number, requester, needed_by, status, created_at')
+        .select('id, request_number, requested_by, needed_by, status, created_at')
         .eq('branch', branchId)
         .order('created_at', { ascending: false })
 
@@ -44,8 +44,8 @@ export default function PurchaseRequestsListPage({ title, description, status = 
     <div className="flex flex-col gap-4">
       {(title || description) && (
         <div>
-          {title && <h2 className="text-lg font-semibold text-gray-800">{title}</h2>}
-          {description && <p className="text-xs text-gray-500">{description}</p>}
+          {title && <h2 className="text-base font-semibold text-gray-800">{title}</h2>}
+          {/* {description && <p className="text-xs text-gray-500">{description}</p>} */}
         </div>
       )}
 
@@ -75,7 +75,7 @@ export default function PurchaseRequestsListPage({ title, description, status = 
                       {request.request_number}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-gray-700">{request.requester || '—'}</td>
+                  <td className="px-3 py-2 text-gray-700">{request.requested_by || '—'}</td>
                   <td className="px-3 py-2 text-gray-700">{request.needed_by || '—'}</td>
                   <td className="px-3 py-2 text-gray-700">
                     {request.created_at ? new Date(request.created_at).toLocaleDateString() : '—'}
