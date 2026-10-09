@@ -13,16 +13,40 @@ import { RefreshCw, Edit2, Save, AlertCircle } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { StaffContext } from '@/components/contexts/staff-context'
 
-// Sub-tabs shown inside the "Modules" tab. UI only for now - every entry
-// other than 'products' renders an empty placeholder; nothing here filters
-// which permission groups belong to which module yet. Add entries here
-// when that's ready, no other changes needed.
+// Sub-tabs shown inside the "Modules" tab. Permission definitions carry a
+// category but no module column, so their group/resource identifiers are used
+// to assign each module permission group to its matching sub-tab.
 const MODULE_SUB_TABS = [
   { key: 'products', label: 'Products' },
   { key: 'sales', label: 'Sales' },
   { key: 'purchases', label: 'Purchases' },
   { key: 'inventory', label: 'Inventory' },
 ]
+
+const MODULE_GROUP_PATTERNS = {
+  products: /\b(products?|catalog|variants?|categories|brands|attributes|pricing|promotions)\b/,
+  sales: /\b(sales|customers?|quotations?|discounts?|deliveries|pos|sales[_ -]?invoices?)\b/,
+  purchases: /\b(purchases?|procurement|suppliers?|vendors?|receipts?|purchase[_ -]?(requests?|orders?|bills?|returns?))\b/,
+  inventory: /\b(inventory|stock|warehouses?|movements?|transfers?|adjustments?|counts?)\b/,
+}
+
+const belongsToModule = (moduleKey, groupKey, groupData) => {
+  const searchableText = [
+    groupKey,
+    groupData.label,
+    ...groupData.permissions.flatMap((permission) => [
+      permission.resource_key,
+      permission.permission_key,
+      permission.label,
+    ]),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+
+  return MODULE_GROUP_PATTERNS[moduleKey]?.test(searchableText) || false
+}
 
 export default function PermissionsTab() {
   const { id, companyId } = useParams()
@@ -476,11 +500,8 @@ export default function PermissionsTab() {
     )
   }
 
-  // Shared renderer for the Core / Products module-tab permission list — the
-  // exact same grouping/filtering logic as before, just factored out so it
-  // can be called from either the Core tab or the Modules -> Products
-  // sub-tab without duplicating the JSX.
-  const renderPermissionGroups = (categoryKey, emptyLabel, restrictToGroupKey = null) => {
+  // Shared renderer for Core groups and module-specific permission groups.
+  const renderPermissionGroups = (categoryKey, emptyLabel, groupFilter = null) => {
     const visibleGroups = Object.entries(permissions)
       .map(([groupKey, groupData]) => [
         groupKey,
@@ -489,7 +510,12 @@ export default function PermissionsTab() {
           permissions: groupData.permissions.filter((perm) => (perm.category || 'core') === categoryKey),
         },
       ])
-      .filter(([groupKey, groupData]) => groupData.permissions.length > 0 && (!restrictToGroupKey || groupKey === restrictToGroupKey))
+      .filter(([groupKey, groupData]) => (
+        groupData.permissions.length > 0 &&
+        (!groupFilter || (typeof groupFilter === 'function'
+          ? groupFilter(groupKey, groupData)
+          : groupKey === groupFilter))
+      ))
 
     if (visibleGroups.length === 0) {
       return (
@@ -672,10 +698,7 @@ export default function PermissionsTab() {
         </TabsList>
       </Tabs>
 
-      {/* Modules -> Products / Sales / Purchases / Inventory sub-tabs.
-          Same TabsList/TabsTrigger styling as the row above. Only shown
-          while the "Modules" tab is active. UI only - Sales/Purchases/
-          Inventory are empty placeholders for now. */}
+        {/* Modules -> Products / Sales / Purchases / Inventory sub-tabs. */}
       {activeTab === 'module' && (
         <Tabs value={activeModuleTab} onValueChange={setActiveModuleTab} className="mb-3 shrink-0">
           <TabsList className="h-8 w-fit gap-1 rounded-sm bg-muted px-1 ">
@@ -757,12 +780,10 @@ export default function PermissionsTab() {
             </Card>
           )
         ) : activeTab === 'module' ? (
-          activeModuleTab === 'products' ? (
-            renderPermissionGroups('module', 'module')
-          ) : (
-            <Card className="rounded-sm border-border bg-card p-6 text-center text-xs text-muted-foreground shadow-none">
-              No {MODULE_SUB_TABS.find((tab) => tab.key === activeModuleTab)?.label} permissions configured yet
-            </Card>
+          renderPermissionGroups(
+            'module',
+            MODULE_SUB_TABS.find((tab) => tab.key === activeModuleTab)?.label.toLowerCase() || 'module',
+            (groupKey, groupData) => belongsToModule(activeModuleTab, groupKey, groupData)
           )
         ) : (
           renderPermissionGroups('core', 'core', activeCoreTab)

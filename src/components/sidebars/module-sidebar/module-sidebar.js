@@ -21,17 +21,24 @@ import ModuleSidebarFooter from "./module-sidebar-footer"
 import { DataContext } from "@/app/users/[u]/pageLayoutProvider"
 import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext"
 import { CompanyInfoContext } from "@/app/users/[u]/company/[companyId]/companyInfoProvider"
+import { useBranchAssistant } from "@/components/ai/branch-assistant-context"
 
 export default function ModuleSidebar({ title, items = [], basePath = "" }) {
   const { data } = useContext(DataContext)
   const { currentBranch } = useContext(BranchContext)
   const { info: company } = useContext(CompanyInfoContext)
+  const branchAssistant = useBranchAssistant()
 
   return (
     <Sidebar className="bg-white" collapsible="icon">
       <AppSidebarHeader />
       <ModuleSidebarContent title={title} items={items} basePath={basePath} company={company} branch={currentBranch} />
-      <ModuleSidebarFooter profile={data.profile} company={company} branch={currentBranch} />
+      <ModuleSidebarFooter
+        profile={data.profile}
+        company={company}
+        branch={currentBranch}
+        onAssistantClick={branchAssistant?.onToggle}
+      />
       <SidebarRail />
     </Sidebar>
   )

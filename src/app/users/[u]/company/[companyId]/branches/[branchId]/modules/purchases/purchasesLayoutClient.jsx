@@ -8,6 +8,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import ModuleSidebar from "@/components/sidebars/module-sidebar/module-sidebar"
 import ModuleHeader from "@/components/headers/module-header"
 import { PurchasesProvider } from "./purchases-context"
+import { BranchAssistantOverlay } from "@/components/ai/branch-assistant-context"
 
 export default function PurchasesLayoutClient({ params, title, items, basePath, profile, company, branch, children }) {
   // branchId comes straight from the URL, same way PurchasesOverviewPage
@@ -35,7 +36,10 @@ export default function PurchasesLayoutClient({ params, title, items, basePath, 
                 </ModuleHeader>
               </div>
 
-              <div className="grow overflow-hidden py-2 md:px-4 px-2 bg-background">{children}</div>
+              <div className="relative min-h-0 grow overflow-hidden bg-background">
+                <div className="h-full overflow-hidden py-2 md:px-4 px-2">{children}</div>
+                <BranchAssistantOverlay />
+              </div>
             </div>
           </SidebarInset>
         </SidebarProvider>

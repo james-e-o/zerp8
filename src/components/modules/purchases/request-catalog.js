@@ -3,12 +3,17 @@
 import { useEffect, useState } from 'react'
 import supabase from '@/config/supabaseClient'
 
-const flattenProducts = (products, variants, currencies) => {
+const flattenProducts = (products, variants, currencies, costEstimates) => {
   const variantsByProduct = (variants || []).reduce((map, variant) => {
     const productId = variant.product_id || variant.productId || variant.product
     if (!productId) return map
 
     map[productId] = [...(map[productId] || []), variant]
+    return map
+  }, {})
+
+  const costByVariant = (costEstimates || []).reduce((map, estimate) => {
+    map[estimate.variant_id] = estimate
     return map
   }, {})
 
@@ -23,8 +28,11 @@ const flattenProducts = (products, variants, currencies) => {
       const variantLabel =
         variant.variant_label || variant.variantLabel || 'Default'
       const productTitle = product.title || product.name || 'Untitled product'
+      const costEstimate = costByVariant[variant.id]
+      const costPrice = costEstimate?.cost_price ?? 0
+      const costCurrencyCode = costEstimate?.cost_currency
       const currency = (currencies || []).find(
-        (entry) => entry.code === variant.cost_currency
+        (entry) => entry.code === costCurrencyCode
       )
 
       return {
@@ -33,6 +41,12 @@ const flattenProducts = (products, variants, currencies) => {
         productTitle,
         variantLabel,
         sku: variant.sku || '',
+        // cost_price now lives in product_cost_estimates (one row per
+        // variant), not on product_variants itself - merged in here so
+        // every existing consumer that reads variant.cost_price keeps
+        // working without changes.
+        cost_price: costPrice,
+        cost_currency: costCurrencyCode || '',
         costCurrencySymbol: currency?.symbol || '',
         displayName: `${productTitle} - ${variantLabel}`,
       }
@@ -50,6 +64,11 @@ const flattenProducts = (products, variants, currencies) => {
 // can_access_product_resource) — so this hook does NOT filter by branch
 // client-side. RLS already narrows the result to whatever this branch is
 // allowed to view; there's no branch column left to filter on anyway.
+//
+// cost_price/cost_currency were also dropped from product_variants in
+// that same migration and now live in product_cost_estimates (keyed by
+// variant_id) - fetched separately below and merged into each flattened
+// variant.
 export function useRequestCatalog(branchId) {
   const [catalog, setCatalog] = useState([])
   const [currencies, setCurrencies] = useState([])
@@ -74,6 +93,7 @@ export function useRequestCatalog(branchId) {
           { data: products, error: productError },
           { data: variants, error: variantError },
           { data: currencies, error: currencyError },
+          { data: costEstimates, error: costError },
         ] = await Promise.all([
           supabase
             .from('products')
@@ -87,15 +107,19 @@ export function useRequestCatalog(branchId) {
           supabase
             .from('currencies')
             .select('code, symbol'),
+          supabase
+            .from('product_cost_estimates')
+            .select('variant_id, cost_price, cost_currency'),
         ])
 
         if (productError) throw productError
         if (variantError) throw variantError
         if (currencyError) throw currencyError
+        if (costError) throw costError
         if (!mounted) return
 
         setCurrencies(currencies || [])
-        setCatalog(flattenProducts(products, variants, currencies))
+        setCatalog(flattenProducts(products, variants, currencies, costEstimates))
       } catch (loadError) {
         console.error('Failed to load purchase request catalog:', loadError)
         if (mounted) {

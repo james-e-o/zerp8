@@ -72,11 +72,11 @@ export default function PurchasesOverviewPage() {
     ).length
 
     const openOrders = orders.filter((row) =>
-      ['draft', 'pending', 'approved', 'partially_received'].includes(row.status)
+      ['sent', 'partially_received'].includes(row.status)
     ).length
 
     const awaitingReceipt = orders.filter((row) =>
-      ['approved', 'confirmed', 'partially_received'].includes(row.status)
+      ['sent', 'partially_received'].includes(row.status)
     ).length
 
     const partialOrders = orders.filter(

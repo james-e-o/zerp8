@@ -93,7 +93,7 @@ export function useConvertibleRequests(branchId) {
 /**
  * Purchase Orders for a branch that still have an outstanding balance to
  * receive or bill against. `purpose` narrows which POs are eligible:
- *  - 'receive': status in (approved, partially_received) — still has qty left to receive
+ *  - 'receive': status in (sent, partially_received) — still has qty left to receive
  *  - 'bill':    any PO/receipt that has been received (has at least one posted receipt)
  */
 export function useReceivablePurchaseOrders(branchId) {
@@ -113,7 +113,7 @@ export function useReceivablePurchaseOrders(branchId) {
          )`
       )
       .eq('branch', branchId)
-      .in('status', ['approved', 'partially_received'])
+      .in('status', ['sent', 'partially_received'])
       .order('created_at', { ascending: false })
 
     if (error) {

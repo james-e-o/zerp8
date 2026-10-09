@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -21,15 +21,25 @@ const generateRequestNumber = () => {
   return `PR-${stamp}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
 }
 
+// A draft is not a half-formed purchase_requests row - it's a snapshot of
+// in-progress form state, stored as one JSONB blob in
+// purchase_request_drafts (same pattern as product_drafts). This form
+// opens an existing draft via ?draft=<id> in the URL; with no draft param
+// it starts blank, same as before.
 export default function PurchaseRequestForm() {
   const router = useRouter()
   const { u, companyId, branchId } = useParams()
+  const searchParams = useSearchParams()
+  const draftParam = searchParams.get('draft')
+
   const { currentBranch } = useContext(BranchContext) || {}
   const branchCurrencyCode = currentBranch?.base_currency || ''
 
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
 
   const [requestNumber, setRequestNumber] = useState('')
+  const [draftId, setDraftId] = useState(draftParam || null)
+  const [draftLoading, setDraftLoading] = useState(Boolean(draftParam))
   // "Requested by" is no longer a free-text field - requested_by is a
   // uuid referencing the real user, so it's auto-filled from the
   // logged-in session and shown read-only instead of typed.
@@ -73,9 +83,14 @@ export default function PurchaseRequestForm() {
     [catalog, items, branchCurrencyCode]
   )
 
+  // Only generate a fresh request number when NOT opening an existing
+  // draft - a reopened draft keeps the number it was first saved under,
+  // read back from the draft row itself (see loadDraft below).
   useEffect(() => {
-    setRequestNumber(generateRequestNumber())
-  }, [])
+    if (!draftParam) {
+      setRequestNumber(generateRequestNumber())
+    }
+  }, [draftParam])
 
   useEffect(() => {
     let cancelled = false
@@ -92,9 +107,101 @@ export default function PurchaseRequestForm() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadDraft() {
+      if (!draftParam) return
+      setDraftLoading(true)
+
+      const { data, error } = await supabase
+        .from('purchase_request_drafts')
+        .select('id, title, payload')
+        .eq('id', draftParam)
+        .single()
+
+      if (cancelled) return
+
+      if (error || !data) {
+        setSubmitError('Could not load this draft - it may have been deleted.')
+        setDraftLoading(false)
+        return
+      }
+
+      const payload = data.payload || {}
+      setRequestNumber(data.title || generateRequestNumber())
+      setNeededBy(payload.neededBy || '')
+      setNotes(payload.notes || '')
+      setItems(
+        Array.isArray(payload.items) && payload.items.length > 0
+          ? payload.items
+          : [{ variantId: '', qty: 1, estimatedCostPrice: 0 }]
+      )
+      setDraftId(data.id)
+      setDraftLoading(false)
+    }
+
+    loadDraft()
+    return () => {
+      cancelled = true
+    }
+  }, [draftParam])
+
   const requesterLabel =
     currentUser?.user_metadata?.full_name || currentUser?.email || 'You'
 
+  const handleSaveDraft = async (event) => {
+    event.preventDefault()
+    setSubmitError('')
+
+    if (!currentUser?.id) {
+      setSubmitError('Could not identify the current user - try reloading the page.')
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const payload = { neededBy, notes, items }
+
+      if (draftId) {
+        const { error } = await supabase
+          .from('purchase_request_drafts')
+          .update({
+            title: requestNumber,
+            payload,
+            updated_by: currentUser.id,
+          })
+          .eq('id', draftId)
+
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('purchase_request_drafts').insert({
+          company: companyId,
+          branch: branchId,
+          title: requestNumber,
+          payload,
+          created_by: currentUser.id,
+          updated_by: currentUser.id,
+        })
+
+        if (error) throw error
+      }
+
+      router.push(base)
+    } catch (err) {
+      console.error('Error saving purchase request draft:', err)
+      setSubmitError(err.message || 'Something went wrong saving this draft.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // The real, final submit - creates the actual purchase_requests row,
+  // starting at 'pending_approval' (there is no 'draft' state for a real
+  // row anymore - that lives only in purchase_request_drafts). If this
+  // form was opened from a draft, the draft row is deleted once the real
+  // request exists, so it doesn't linger as a duplicate.
   const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitError('')
@@ -118,7 +225,7 @@ export default function PurchaseRequestForm() {
         .insert({
           branch: branchId,
           request_number: requestNumber,
-          status: 'draft',
+          status: 'pending_approval',
           notes: notes || null,
           requested_by: currentUser.id,
           needed_by: neededBy || null,
@@ -141,6 +248,10 @@ export default function PurchaseRequestForm() {
 
       if (lineItemsError) throw lineItemsError
 
+      if (draftId) {
+        await supabase.from('purchase_request_drafts').delete().eq('id', draftId)
+      }
+
       router.push(base)
     } catch (err) {
       console.error('Error creating purchase request:', err)
@@ -154,7 +265,7 @@ export default function PurchaseRequestForm() {
     <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold tracking-tight text-slate-900">
+          <h1 className="text-base font-bold tracking-tight text-slate-900">
             New Purchase Request
           </h1>
 
@@ -172,12 +283,22 @@ export default function PurchaseRequestForm() {
           </Button>
 
           <Button
-            type="submit"
-            form="purchase-request-form"
-            className="bg-core text-white h-7 text-xs"
-            disabled={saving}
+            type="button"
+            variant="outline"
+            className={'h-7 text-xs'}
+            disabled={saving || draftLoading}
+            onClick={handleSaveDraft}
           >
             {saving ? 'Saving...' : 'Save as Draft'}
+          </Button>
+
+          <Button
+            type="button"
+            className="bg-core text-white h-7 text-xs"
+            disabled={saving || draftLoading}
+            onClick={handleSubmit}
+          >
+            {saving ? 'Saving...' : 'Save'}
           </Button>
         </div>
       </div>
@@ -188,7 +309,6 @@ export default function PurchaseRequestForm() {
 
       <form
         id="purchase-request-form"
-        onSubmit={handleSubmit}
         className="flex min-h-0 justify-between grow flex-col gap-4 overflow-hidden"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -217,8 +337,10 @@ export default function PurchaseRequestForm() {
             <p className="mb-2 text-xs text-red-600">{catalogError}</p>
           )}
 
-          {catalogLoading ? (
-            <p className="text-xs text-gray-500">Loading products...</p>
+          {catalogLoading || draftLoading ? (
+            <p className="text-xs text-gray-500">
+              {draftLoading ? 'Loading draft...' : 'Loading products...'}
+            </p>
           ) : (
             <PurchaseRequestLineItemsTable
               items={items}

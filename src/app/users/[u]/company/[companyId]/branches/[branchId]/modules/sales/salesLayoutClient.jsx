@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import ModuleSidebar from "@/components/sidebars/module-sidebar/module-sidebar"
 import ModuleHeader from "@/components/headers/module-header"
+import { BranchAssistantOverlay } from "@/components/ai/branch-assistant-context"
 
 export default function SalesLayoutClient({ params, title, items, basePath, profile, company, branch, children }) {
   return (
@@ -27,7 +28,10 @@ export default function SalesLayoutClient({ params, title, items, basePath, prof
                 </div>
               </ModuleHeader>
             </div>
-            <div className="grow overflow-hidden md:px-4 px-2 py-2 bg-background">{children}</div>
+            <div className="relative min-h-0 grow overflow-hidden bg-background">
+              <div className="h-full overflow-hidden md:px-4 px-2 py-2">{children}</div>
+              <BranchAssistantOverlay />
+            </div>
           </div>
         </SidebarInset>
       </SidebarProvider>

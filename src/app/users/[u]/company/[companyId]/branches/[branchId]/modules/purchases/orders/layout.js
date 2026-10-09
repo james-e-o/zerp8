@@ -5,8 +5,7 @@ import Link from 'next/link'
 const TABS = [
   { label: 'All', value: 'all' },
   { label: 'Draft', value: 'draft' },
-  { label: 'Pending Approval', value: 'pending-approval' },
-  { label: 'Approved', value: 'approved' },
+  { label: 'Sent', value: 'sent' },
   { label: 'Partially Received', value: 'partially-received' },
   { label: 'Fully Received', value: 'fully-received' },
   { label: 'Cancelled', value: 'cancelled' },
@@ -24,7 +23,7 @@ export default async function OrdersLayout({ children, params }) {
         action={
           <Link
             href={`${basePath}/new`}
-            className="rounded-md bg-core px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-core/90"
+            className="rounded-md bg-core px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-core/90"
           >
             New order
           </Link>
