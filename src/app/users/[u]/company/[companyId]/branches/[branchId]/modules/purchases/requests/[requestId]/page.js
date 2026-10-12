@@ -2,7 +2,7 @@
 
 import { useContext, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Pencil } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -23,8 +23,20 @@ const STATUS_ROUTE = {
 }
 const EDITABLE_STATUSES = ['pending_approval', 'rejected']
 
+// Cancelling replaces deleting for real rows - a cancelled request is
+// never removed outright, it's moved whole (row + line items, folded
+// into one JSONB snapshot) into cancelled_purchase_requests by the
+// cancel_purchase_request() database function. Eligible only from
+// 'pending_approval' and 'approved' - 'rejected' and 'converted' are
+// already closed-out states with nothing left to cancel. Gated on the
+// same 'approve' permission as Approve/Reject (no separate 'cancel'
+// permission key was introduced - reusing approve was the explicit
+// decision here).
+const CANCEL_ELIGIBLE_STATUSES = ['pending_approval', 'approved']
+
 export default function PurchaseRequestDetailPage() {
   const { u, companyId, branchId, requestId } = useParams()
+  const router = useRouter()
   const { currentBranch } = useContext(BranchContext) || {}
   const [request, setRequest] = useState(null)
   const [items, setItems] = useState([])
@@ -37,6 +49,14 @@ export default function PurchaseRequestDetailPage() {
   const [decisionError, setDecisionError] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+
+  const [isConverting, setIsConverting] = useState(false)
+  const [convertError, setConvertError] = useState('')
+
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
 
   const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
 
@@ -51,7 +71,7 @@ export default function PurchaseRequestDetailPage() {
         const { data: requestRow, error: requestError } = await supabase
           .from('purchase_requests')
           .select(
-            'id, request_number, requested_by, needed_by, notes, status, created_at, branch, approved_by, approved_at, rejected_by, rejected_at, rejection_reason'
+            'id, title, request_number, requested_by, needed_by, notes, status, created_at, branch, approved_by, approved_at, rejected_by, rejected_at, rejection_reason'
           )
           .eq('id', requestId)
           .eq('branch', branchId)
@@ -174,7 +194,7 @@ export default function PurchaseRequestDetailPage() {
         .eq('branch', branchId)
         .eq('status', 'pending_approval')
         .select(
-          'id, request_number, requested_by, needed_by, notes, status, created_at, branch, approved_by, approved_at, rejected_by, rejected_at, rejection_reason'
+          'id, title, request_number, requested_by, needed_by, notes, status, created_at, branch, approved_by, approved_at, rejected_by, rejected_at, rejection_reason'
         )
         .maybeSingle()
 
@@ -208,7 +228,7 @@ export default function PurchaseRequestDetailPage() {
         .eq('branch', branchId)
         .eq('status', 'pending_approval')
         .select(
-          'id, request_number, requested_by, needed_by, notes, status, created_at, branch, approved_by, approved_at, rejected_by, rejected_at, rejection_reason'
+          'id, title, request_number, requested_by, needed_by, notes, status, created_at, branch, approved_by, approved_at, rejected_by, rejected_at, rejection_reason'
         )
         .maybeSingle()
 
@@ -225,6 +245,94 @@ export default function PurchaseRequestDetailPage() {
       setDecisionError(rejectError.message || 'Could not reject this request.')
     } finally {
       setIsDeciding(false)
+    }
+  }
+
+  // "Convert to Purchase Order" used to be a plain navigate+prefill link
+  // (?fromRequest=<id>), which meant any progress filling out the New PO
+  // form was lost if the person navigated away before submitting. This
+  // now creates a real, persisted purchase_order_drafts row up front -
+  // same draft table the New PO page already saves to - and sends the
+  // person straight into it via ?draft=<id>, so nothing is lost.
+  //
+  // Importantly, this does NOT flip the request's status to 'converted'.
+  // A draft isn't a real commitment - abandoning it would permanently
+  // strand this request at 'converted' with no purchase order ever
+  // created, and there's no "unconvert" path. The request stays
+  // 'approved' until a real order is actually sent (unchanged - that
+  // still happens on the New PO form's "Mark as Sent" submit).
+  const handleConvertToOrder = async () => {
+    if (!request) return
+    setConvertError('')
+    setIsConverting(true)
+
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      const currentUserId = userData?.user?.id
+      if (!currentUserId) throw new Error('Could not determine the current user.')
+
+      const payload = {
+        // The order carries the SAME reference code as the request it
+        // was converted from - it is not given its own independently
+        // generated number. A brand-new order with no source request
+        // still gets a fresh generated code (see generateOrderNumber()
+        // on the New Purchase Order page); this one is a straight
+        // carry-over so the two documents stay traceable as one thread.
+        orderNumber: request.request_number,
+        supplierId: '',
+        neededBy: request.needed_by || '',
+        notes: '',
+        items: items.map((item) => ({
+          variantId: item.variant,
+          quantity: Number(item.quantity_requested || 0),
+          unitCost: Number(item.estimated_unit_cost || 0),
+        })),
+        sourceRequestId: request.id,
+        sourceRequestNumber: request.request_number,
+      }
+
+      const { data: draft, error: draftError } = await supabase
+        .from('purchase_order_drafts')
+        .insert({
+          company: companyId,
+          branch: branchId,
+          title: request.title ? request.title : null,
+          payload,
+          created_by: currentUserId,
+          updated_by: currentUserId,
+        })
+        .select('id')
+        .single()
+
+      if (draftError) throw draftError
+
+      router.push(`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders/new?draft=${draft.id}`)
+    } catch (err) {
+      console.error('Failed to start purchase order from request:', err)
+      setConvertError(err.message || 'Could not start a purchase order from this request.')
+      setIsConverting(false)
+    }
+  }
+
+  const handleCancelRequest = async () => {
+    if (!request) return
+    setCancelError('')
+    setIsCancelling(true)
+
+    try {
+      const { error: cancelRpcError } = await supabase.rpc('cancel_purchase_request', {
+        p_request_id: request.id,
+        p_reason: cancelReason.trim() || null,
+      })
+
+      if (cancelRpcError) throw cancelRpcError
+
+      router.push(basePath)
+    } catch (err) {
+      console.error('Failed to cancel purchase request:', err)
+      setCancelError(err.message || 'Could not cancel this request.')
+      setIsCancelling(false)
     }
   }
 
@@ -265,9 +373,14 @@ export default function PurchaseRequestDetailPage() {
               <ArrowLeft className="mr-1.5 size-3.5" /> Back
             </Button>
           </Link>
-          <h1 className="text-sm font-semibold text-foreground">
-            {request.request_number || `Request ${request.id}`}
-          </h1>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground">
+              {request.title || request.request_number || `Request ${request.id}`}
+            </h1>
+            {request.title && (
+              <p className="text-[10px] text-muted-foreground">{request.request_number}</p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <RequestStatusBadge status={request.status} />
@@ -302,19 +415,82 @@ export default function PurchaseRequestDetailPage() {
             </>
           )}
           {request.status === 'approved' && canCreateOrder && (
-            <Link
-              href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders/new?fromRequest=${request.id}`}
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 bg-core rounded-sm text-xs text-white"
+              disabled={isConverting}
+              onClick={handleConvertToOrder}
             >
-              <Button type="button" size="sm" className="h-7 bg-core rounded-sm text-xs text-white">
-                Convert to Purchase Order
-              </Button>
-            </Link>
+              {isConverting ? 'Starting order...' : 'Convert to Purchase Order'}
+            </Button>
+          )}
+          {canApprove && CANCEL_ELIGIBLE_STATUSES.includes(request.status) && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-sm text-xs border-red-200 text-red-700 hover:bg-red-50"
+              disabled={isCancelling}
+              onClick={() => setShowCancelConfirm((shown) => !shown)}
+            >
+              Cancel request
+            </Button>
           )}
         </div>
       </div>
 
       {decisionError && (
         <p role="alert" className="text-xs text-red-600">{decisionError}</p>
+      )}
+
+      {convertError && (
+        <p role="alert" className="text-xs text-red-600">{convertError}</p>
+      )}
+
+      {showCancelConfirm && (
+        <div className="border border-red-200 bg-red-50/60 rounded-sm p-3 space-y-2">
+          <p className="text-[10px] font-medium text-red-800">
+            Cancel this purchase request? It will be removed from the active list and archived - this can't be undone from here.
+          </p>
+          <label className="block text-[10px] font-medium text-red-800">
+            Reason (optional)
+            <Textarea
+              value={cancelReason}
+              onChange={(event) => setCancelReason(event.target.value)}
+              placeholder="e.g. No longer needed, duplicate request, budget pulled..."
+              className="mt-1 min-h-16 bg-white text-xs"
+            />
+          </label>
+          {cancelError && (
+            <p role="alert" className="text-xs text-red-600">{cancelError}</p>
+          )}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 bg-red-600 rounded-sm text-xs text-white hover:bg-red-700"
+              disabled={isCancelling}
+              onClick={handleCancelRequest}
+            >
+              {isCancelling ? 'Cancelling...' : 'Confirm cancellation'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-sm text-xs"
+              disabled={isCancelling}
+              onClick={() => {
+                setShowCancelConfirm(false)
+                setCancelError('')
+                setCancelReason('')
+              }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
       )}
 
       {showApprovalActions && showRejectForm && (
@@ -349,7 +525,7 @@ export default function PurchaseRequestDetailPage() {
                 setRejectReason('')
               }}
             >
-              Cancel
+              Dismiss
             </Button>
           </div>
         </div>

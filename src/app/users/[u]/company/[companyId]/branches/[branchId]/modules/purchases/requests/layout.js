@@ -9,6 +9,7 @@ const TABS = [
   { label: 'Approved', value: 'approved' },
   { label: 'Rejected', value: 'rejected' },
   { label: 'Converted', value: 'converted' },
+  { label: 'Cancelled', value: 'cancelled' },
 ]
 
 export default async function RequestsLayout({ children, params }) {

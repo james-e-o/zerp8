@@ -39,6 +39,7 @@ export default function EditPurchaseRequestPage() {
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
 
   const [request, setRequest] = useState(null)
+  const [title, setTitle] = useState('')
   const [neededBy, setNeededBy] = useState('')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState([{ variantId: '', qty: 1, estimatedCostPrice: 0 }])
@@ -83,7 +84,7 @@ export default function EditPurchaseRequestPage() {
       try {
         const { data: requestRow, error: requestError } = await supabase
           .from('purchase_requests')
-          .select('id, request_number, requested_by, needed_by, notes, status, created_at, branch')
+          .select('id, title, request_number, requested_by, needed_by, notes, status, created_at, branch')
           .eq('id', requestId)
           .eq('branch', branchId)
           .maybeSingle()
@@ -103,6 +104,7 @@ export default function EditPurchaseRequestPage() {
         if (cancelled) return
 
         setRequest(requestRow)
+        setTitle(requestRow.title || '')
         setNeededBy(requestRow.needed_by || '')
         setNotes(requestRow.notes || '')
         setOriginalLineIds((lineRows || []).map((row) => row.id))
@@ -141,6 +143,10 @@ export default function EditPurchaseRequestPage() {
       setErrorMessage('Add at least one product to the request.')
       return
     }
+    if (!title.trim()) {
+      setErrorMessage('Give this request a title before saving.')
+      return
+    }
 
     setIsSaving(true)
 
@@ -154,6 +160,7 @@ export default function EditPurchaseRequestPage() {
       const { data: updatedRequest, error: requestUpdateError } = await supabase
         .from('purchase_requests')
         .update({
+          title: title.trim(),
           needed_by: neededBy || null,
           notes: notes || null,
           status: 'pending_approval',
@@ -240,7 +247,9 @@ export default function EditPurchaseRequestPage() {
     <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-base font-bold tracking-tight text-slate-900">Edit Purchase Request</h1>
+          <h1 className="text-base font-bold tracking-tight text-slate-900">
+            {request.title || 'Edit Purchase Request'}
+          </h1>
           <p className="text-xs text-gray-500">{request.request_number || request.id}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -275,6 +284,16 @@ export default function EditPurchaseRequestPage() {
         className="flex min-h-0 grow flex-col justify-between gap-4 overflow-hidden"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="text-xs font-medium text-gray-800 sm:col-span-2">
+            Title <span className="text-red-500">*</span>
+            <Input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g. Q4 packaging restock"
+              className="mt-1 h-auto w-full text-sm"
+            />
+          </label>
+
           <div className="text-xs font-medium text-gray-800">
             Requested by
             <p className="mt-1 h-auto w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">

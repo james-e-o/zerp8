@@ -2,20 +2,24 @@
 
 import { useContext, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 
 import supabase from '@/config/supabaseClient'
 import { formatCurrency } from '@/components/modules/purchases/dummy-data'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 
 const ORDER_STATUS_STYLES = {
-  sent: 'bg-blue-100 text-blue-800',
+  // 'open' = created internally, nothing sent yet.
+  open: 'bg-blue-100 text-blue-800',
+  // 'sent' = actually transmitted/exported to the supplier, set from
+  // the order detail page's Send/Export flow - kept visually distinct
+  // from 'open' now that the two are different events.
+  sent: 'bg-indigo-100 text-indigo-800',
   partially_received: 'bg-amber-100 text-amber-800',
   fully_received: 'bg-emerald-100 text-emerald-800',
   cancelled: 'bg-red-100 text-red-800',
 }
 
-function OrderStatusBadge({ status }) {
+export function OrderStatusBadge({ status }) {
   const normalizedStatus = String(status || 'unknown').toLowerCase()
   const label = normalizedStatus
     .replace(/[_-]/g, ' ')
@@ -69,7 +73,7 @@ export default function PurchaseOrdersListPage({
       let query = supabase
         .from('purchase_orders')
         .select(
-          'id, order_number, supplier:suppliers(name), status, expected_delivery_date, created_at, purchase_order_line_items(line_total)'
+          'id, title, order_number, supplier:suppliers(name), status, expected_delivery_date, created_at, purchase_order_line_items(line_total)'
         )
         .eq('branch', branchId)
         .order('created_at', { ascending: false })
@@ -127,7 +131,7 @@ export default function PurchaseOrdersListPage({
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs font-medium text-gray-600">
               <tr>
-                <th className="px-3 py-2 text-left">Order #</th>
+                <th className="px-3 py-2 text-left">Title</th>
                 <th className="px-3 py-2 text-left">Last saved</th>
               </tr>
             </thead>
@@ -162,6 +166,7 @@ export default function PurchaseOrdersListPage({
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs font-medium text-gray-600">
               <tr>
+                <th className="px-3 py-2 text-left">Title</th>
                 <th className="px-3 py-2 text-left">Order #</th>
                 <th className="px-3 py-2 text-left">Supplier</th>
                 <th className="px-3 py-2 text-left">Expected date</th>
@@ -171,14 +176,25 @@ export default function PurchaseOrdersListPage({
             </thead>
             <tbody className="divide-y divide-gray-100">
               {orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`${base}/${order.id}`}
-                      className="font-medium text-core hover:underline"
-                    >
-                      {order.order_number}
-                    </Link>
+                <tr
+                  key={order.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => router.push(`${base}/${order.id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      router.push(`${base}/${order.id}`)
+                    }
+                  }}
+                  aria-label={`Open purchase order ${order.title || order.order_number}`}
+                  className="cursor-pointer hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-core"
+                >
+                  <td className="px-3 py-2 font-medium text-gray-800">
+                    {order.title || order.order_number}
+                  </td>
+                  <td className="px-3 py-2 text-gray-700">
+                    {order.order_number}
                   </td>
                   <td className="px-3 py-2 text-gray-700">
                     {order.supplier?.name || '—'}

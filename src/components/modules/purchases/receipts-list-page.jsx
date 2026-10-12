@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
 
 import supabase from '@/config/supabaseClient'
 import StatusBadge from '@/components/modules/sales/status-badge'
 
 export default function ReceiptsListPage({ title, description, status }) {
   const { u, companyId, branchId } = useParams()
+  const router = useRouter()
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/receipts`
 
   const [receipts, setReceipts] = useState([])
@@ -23,7 +23,8 @@ export default function ReceiptsListPage({ title, description, status }) {
         .from('purchase_receipts')
         .select(
           `id, receipt_number, status, created_at,
-           purchase_order:purchase_orders ( order_number, supplier:suppliers(name) )`
+           purchase_order:purchase_orders ( order_number, supplier:suppliers(name) ),
+           purchase_receipt_line_items ( excess_status )`
         )
         .eq('branch', branchId)
         .order('created_at', { ascending: false })
@@ -35,7 +36,17 @@ export default function ReceiptsListPage({ title, description, status }) {
       const { data, error } = await query
       if (cancelled) return
 
-      if (!error) setReceipts(data || [])
+      if (!error) {
+        setReceipts((data || []).map((receipt) => ({
+          ...receipt,
+          // A receipt "needs approval" if ANY of its lines are still
+          // sitting at pending_approval - approved/rejected lines (or
+          // lines with no discrepancy at all) don't count.
+          needsApproval: (receipt.purchase_receipt_line_items || []).some(
+            (line) => line.excess_status === 'pending_approval'
+          ),
+        })))
+      }
       setLoading(false)
     }
 
@@ -77,14 +88,24 @@ export default function ReceiptsListPage({ title, description, status }) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {receipts.map((receipt) => (
-                <tr key={receipt.id} className="hover:bg-gray-50">
+                <tr
+                  key={receipt.id}
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`Open receipt ${receipt.receipt_number}`}
+                  onClick={() => router.push(`${base}/${receipt.id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      router.push(`${base}/${receipt.id}`)
+                    }
+                  }}
+                  className="cursor-pointer hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-core"
+                >
                   <td className="px-3 py-2">
-                    <Link
-                      href={`${base}/${receipt.id}`}
-                      className="font-medium text-core hover:underline"
-                    >
+                    <span className="font-medium text-core">
                       {receipt.receipt_number}
-                    </Link>
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-gray-700">
                     {receipt.purchase_order?.order_number || '—'}
@@ -93,7 +114,14 @@ export default function ReceiptsListPage({ title, description, status }) {
                     {receipt.purchase_order?.supplier?.name || '—'}
                   </td>
                   <td className="px-3 py-2">
-                    <StatusBadge status={receipt.status} />
+                    <div className="flex items-center gap-1.5">
+                      <StatusBadge status={receipt.status} />
+                      {receipt.needsApproval && (
+                        <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          Needs approval
+                        </span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

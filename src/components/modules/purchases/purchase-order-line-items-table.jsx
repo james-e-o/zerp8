@@ -140,8 +140,8 @@ export default function PurchaseOrderLineItemsTable({
       {
         id: 'standardCostPrice',
         header: (
-          <span className="block leading-tight">
-            Standard
+          <span className="block text-[11px] leading-tight">
+            Standard estimated
             <br />
             cost price
           </span>
@@ -167,10 +167,10 @@ export default function PurchaseOrderLineItemsTable({
       {
         id: 'unitCost',
         header: (
-          <span className="block leading-tight">
-            Unit cost
+          <span className="block text-[11px] leading-tight">
+            Current estimated
             <br />
-            (supplier)
+            cost price
           </span>
         ),
         cell: ({ row }) => (

@@ -26,6 +26,14 @@ const generateRequestNumber = () => {
 // purchase_request_drafts (same pattern as product_drafts). This form
 // opens an existing draft via ?draft=<id> in the URL; with no draft param
 // it starts blank, same as before.
+//
+// Title vs request number: 'title' is a person-entered name ("Q4
+// packaging restock") and is what the planned "Copy" feature will
+// prefix with "Copy of ...". request_number is the auto-generated,
+// immutable identifier (PR-xxxxxx-XXXX) - the two used to be conflated
+// (the draft row's own 'title' column held the generated number), now
+// they're genuinely separate: the draft row's title column holds this
+// real title, and the generated number travels inside the payload.
 export default function PurchaseRequestForm() {
   const router = useRouter()
   const { u, companyId, branchId } = useParams()
@@ -37,6 +45,7 @@ export default function PurchaseRequestForm() {
 
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
 
+  const [title, setTitle] = useState('')
   const [requestNumber, setRequestNumber] = useState('')
   const [draftId, setDraftId] = useState(draftParam || null)
   const [draftLoading, setDraftLoading] = useState(Boolean(draftParam))
@@ -85,7 +94,7 @@ export default function PurchaseRequestForm() {
 
   // Only generate a fresh request number when NOT opening an existing
   // draft - a reopened draft keeps the number it was first saved under,
-  // read back from the draft row itself (see loadDraft below).
+  // read back from the draft's payload (see loadDraft below).
   useEffect(() => {
     if (!draftParam) {
       setRequestNumber(generateRequestNumber())
@@ -129,7 +138,8 @@ export default function PurchaseRequestForm() {
       }
 
       const payload = data.payload || {}
-      setRequestNumber(data.title || generateRequestNumber())
+      setTitle(data.title || '')
+      setRequestNumber(payload.requestNumber || generateRequestNumber())
       setNeededBy(payload.neededBy || '')
       setNotes(payload.notes || '')
       setItems(
@@ -158,17 +168,21 @@ export default function PurchaseRequestForm() {
       setSubmitError('Could not identify the current user - try reloading the page.')
       return
     }
+    if (!title.trim()) {
+      setSubmitError('Give this request a title before saving.')
+      return
+    }
 
     setSaving(true)
 
     try {
-      const payload = { neededBy, notes, items }
+      const payload = { requestNumber, neededBy, notes, items }
 
       if (draftId) {
         const { error } = await supabase
           .from('purchase_request_drafts')
           .update({
-            title: requestNumber,
+            title: title.trim(),
             payload,
             updated_by: currentUser.id,
           })
@@ -179,7 +193,7 @@ export default function PurchaseRequestForm() {
         const { error } = await supabase.from('purchase_request_drafts').insert({
           company: companyId,
           branch: branchId,
-          title: requestNumber,
+          title: title.trim(),
           payload,
           created_by: currentUser.id,
           updated_by: currentUser.id,
@@ -210,6 +224,10 @@ export default function PurchaseRequestForm() {
       setSubmitError('Could not identify the current user - try reloading the page.')
       return
     }
+    if (!title.trim()) {
+      setSubmitError('Give this request a title before submitting.')
+      return
+    }
 
     const validItems = items.filter((item) => item.variantId)
     if (validItems.length === 0) {
@@ -224,6 +242,7 @@ export default function PurchaseRequestForm() {
         .from('purchase_requests')
         .insert({
           branch: branchId,
+          title: title.trim(),
           request_number: requestNumber,
           status: 'pending_approval',
           notes: notes || null,
@@ -265,7 +284,7 @@ export default function PurchaseRequestForm() {
     <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-base font-bold tracking-tight text-slate-900">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900">
             New Purchase Request
           </h1>
 
@@ -312,6 +331,17 @@ export default function PurchaseRequestForm() {
         className="flex min-h-0 justify-between grow flex-col gap-4 overflow-hidden"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="text-xs font-medium text-gray-800 sm:col-span-2">
+            Title <span className="text-red-500">*</span>
+
+            <Input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g. Q4 packaging restock"
+              className="mt-1 h-auto w-full text-sm"
+            />
+          </label>
+
           <div className="text-xs font-medium text-gray-800">
             Requested by
 

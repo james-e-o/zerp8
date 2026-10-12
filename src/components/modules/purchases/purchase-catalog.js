@@ -93,7 +93,14 @@ export function useConvertibleRequests(branchId) {
 /**
  * Purchase Orders for a branch that still have an outstanding balance to
  * receive or bill against. `purpose` narrows which POs are eligible:
- *  - 'receive': status in (sent, partially_received) — still has qty left to receive
+ *  - 'receive': status in (open, sent, partially_received) — still has qty left to receive.
+ *    'open' is included because an order is receivable the moment it's
+ *    raised internally - nothing about receiving depends on whether it's
+ *    been formally sent/exported to the supplier yet (that's a separate,
+ *    later action from the order detail page's own Send sheet). This was
+ *    previously just (sent, partially_received), written before the
+ *    open/sent status split existed - it silently hid every order raised
+ *    since then, since none of them had ever been marked 'sent'.
  *  - 'bill':    any PO/receipt that has been received (has at least one posted receipt)
  */
 export function useReceivablePurchaseOrders(branchId) {
@@ -113,7 +120,7 @@ export function useReceivablePurchaseOrders(branchId) {
          )`
       )
       .eq('branch', branchId)
-      .in('status', ['sent', 'partially_received'])
+      .in('status', ['open', 'sent', 'partially_received'])
       .order('created_at', { ascending: false })
 
     if (error) {

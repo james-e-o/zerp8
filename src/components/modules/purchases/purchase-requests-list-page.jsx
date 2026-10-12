@@ -37,17 +37,30 @@ export default function PurchaseRequestsListPage({ title, description, status = 
   const { u, companyId, branchId } = useParams()
   const router = useRouter()
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
+  const ordersBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders`
   const isDraftTab = status === 'draft'
+  // Merging (combining several approved requests into one purchase
+  // order) only ever makes sense on the Approved tab - a request has to
+  // be approved before it can be converted at all, single or merged.
+  const isApprovedTab = status === 'approved'
 
   const [requests, setRequests] = useState([])
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedIds, setSelectedIds] = useState([])
+
+  const toggleSelected = (id) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((selectedId) => selectedId !== id) : [...current, id]
+    )
+  }
 
   useEffect(() => {
     let cancelled = false
 
     async function load() {
       setLoading(true)
+      setSelectedIds([])
 
       if (isDraftTab) {
         const { data, error } = await supabase
@@ -65,7 +78,7 @@ export default function PurchaseRequestsListPage({ title, description, status = 
 
       let query = supabase
         .from('purchase_requests')
-        .select('id, request_number, requested_by, needed_by, status, created_at')
+        .select('id, title, request_number, requested_by, needed_by, status, created_at')
         .eq('branch', branchId)
         .order('created_at', { ascending: false })
 
@@ -88,10 +101,23 @@ export default function PurchaseRequestsListPage({ title, description, status = 
 
   return (
     <div className="flex flex-col gap-4">
-      {(title || description) && (
-        <div>
-          {title && <h2 className="text-base tracking-tight font-semibold text-gray-800">{title}</h2>}
-          {/* {description && <p className="text-xs text-gray-500">{description}</p>} */}
+      {(title || description || (isApprovedTab && selectedIds.length > 0)) && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            {title && <h2 className="text-base font-semibold text-gray-800">{title}</h2>}
+            {/* {description && <p className="text-xs text-gray-500">{description}</p>} */}
+          </div>
+          {isApprovedTab && selectedIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => router.push(`${ordersBase}/new?fromRequests=${selectedIds.join(',')}`)}
+              disabled={selectedIds.length < 2}
+              title={selectedIds.length < 2 ? 'Select at least 2 requests to merge' : undefined}
+              className="h-7 rounded-sm bg-core px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Merge {selectedIds.length} into Purchase Order
+            </button>
+          )}
         </div>
       )}
 
@@ -107,7 +133,7 @@ export default function PurchaseRequestsListPage({ title, description, status = 
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs font-medium text-gray-600">
                 <tr>
-                  <th className="px-3 py-2 text-left">Request #</th>
+                  <th className="px-3 py-2 text-left">Title</th>
                   <th className="px-3 py-2 text-left">Last saved</th>
                 </tr>
               </thead>
@@ -152,6 +178,8 @@ export default function PurchaseRequestsListPage({ title, description, status = 
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs font-medium text-gray-600">
               <tr>
+                {isApprovedTab && <th className="w-8 px-3 py-2 text-left" />}
+                <th className="px-3 py-2 text-left">Title</th>
                 <th className="px-3 py-2 text-left">Request #</th>
                 <th className="px-3 py-2 text-left">Requested by</th>
                 <th className="px-3 py-2 text-left">Needed by</th>
@@ -165,7 +193,7 @@ export default function PurchaseRequestsListPage({ title, description, status = 
                   key={request.id}
                   role="link"
                   tabIndex={0}
-                  aria-label={`Open purchase request ${request.request_number || request.id}`}
+                  aria-label={`Open purchase request ${request.title || request.request_number || request.id}`}
                   onClick={() => router.push(`${base}/${request.id}`)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -175,11 +203,23 @@ export default function PurchaseRequestsListPage({ title, description, status = 
                   }}
                   className="cursor-pointer hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-core"
                 >
+                  {isApprovedTab && (
+                    <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(request.id)}
+                        onChange={() => toggleSelected(request.id)}
+                        aria-label={`Select ${request.title || request.request_number || 'request'} for merging`}
+                        className="size-3.5"
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-2">
                     <span className="font-medium text-gray-800">
-                      {request.request_number}
+                      {request.title || '—'}
                     </span>
                   </td>
+                  <td className="px-3 py-2 text-gray-700">{request.request_number}</td>
                   <td className="px-3 py-2 text-gray-700">{request.requested_by || '—'}</td>
                   <td className="px-3 py-2 text-gray-700">{request.needed_by || '—'}</td>
                   <td className="px-3 py-2 text-gray-700">
