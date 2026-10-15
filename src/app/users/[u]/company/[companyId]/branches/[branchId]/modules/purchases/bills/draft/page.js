@@ -1,11 +1,10 @@
-import BillsListPage from '@/components/modules/purchases/bills-list-page'
+import BillDraftsListPage from '@/components/modules/purchases/bill-drafts-list-page'
 
-export default function BillsStatusPage() {
+export default function BillsDraftsPage() {
   return (
-    <BillsListPage
+    <BillDraftsListPage
       title="Draft Bills"
-      description="Review draft supplier bills for this branch."
-      status="draft"
+      description="Unfinished supplier bills for this branch. Open one to continue, or delete it."
     />
   )
 }

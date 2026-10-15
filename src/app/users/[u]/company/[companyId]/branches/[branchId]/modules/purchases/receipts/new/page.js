@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,7 +15,10 @@ import {
 } from '@/components/ui/select'
 
 import supabase from '@/config/supabaseClient'
-import { useReceivablePurchaseOrders } from '@/components/modules/purchases/purchase-catalog'
+import {
+  useReceivablePurchaseOrders,
+  useVariantNames,
+} from '@/components/modules/purchases/purchase-catalog'
 
 const generateReceiptNumber = () => {
   const date = new Date()
@@ -50,6 +53,13 @@ const generateReceiptNumber = () => {
 //     approval') the moment the row is inserted. This page doesn't
 //     compute that split itself - it just stops blocking the quantity
 //     and shows the person what's about to happen.
+//   - Save as Draft no longer creates a purchase_receipts row. The form is
+//     saved into purchase_receipt_drafts (payload jsonb) - nothing is
+//     computed or posted, so a draft left overnight can't go stale (the
+//     excess/accepted split is only worked out when the real receipt rows
+//     are inserted at post time). Continue a draft with ?draft=<id>.
+//     Post Receipt creates the real receipt as before, then removes the
+//     draft it came from.
 //   - loadWarehouses() used to silently discard any error from
 //     resolve_branch_warehouse() - `if (!error && data) {...}` with no
 //     else branch at all. That's why the dropdown could get stuck on
@@ -63,6 +73,8 @@ const generateReceiptNumber = () => {
 export default function NewReceiptPage() {
   const router = useRouter()
   const { u, companyId, branchId } = useParams()
+  const searchParams = useSearchParams()
+  const draftParam = searchParams.get('draft')
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/receipts`
 
   // Generated client-side only, after mount - same pattern as
@@ -83,16 +95,56 @@ export default function NewReceiptPage() {
   const [submitError, setSubmitError] = useState('')
   const [warehouseError, setWarehouseError] = useState('')
   const [warehouseLoading, setWarehouseLoading] = useState(true)
+  const [draftId, setDraftId] = useState(draftParam || '')
+  const [draftLoading, setDraftLoading] = useState(Boolean(draftParam))
+  const restoreRef = useRef(null) // saved draft values waiting for the PO's lines to load
 
   const { orders, loading: ordersLoading } = useReceivablePurchaseOrders(
     branchId
   )
 
   const selectedOrder = orders.find((order) => order.id === selectedOrderId)
+  const { names: variantNames } = useVariantNames(lines.map((line) => line.variantId))
 
   useEffect(() => {
-    setReceiptNumber(generateReceiptNumber())
-  }, [])
+    // A draft keeps its receipt number so it doesn't change between saves.
+    if (!draftParam) setReceiptNumber(generateReceiptNumber())
+  }, [draftParam])
+
+  // Load the draft being continued (if any).
+  useEffect(() => {
+    if (!draftParam) return undefined
+    let cancelled = false
+
+    async function loadDraft() {
+      const { data, error } = await supabase
+        .from('purchase_receipt_drafts')
+        .select('id, payload')
+        .eq('id', draftParam)
+        .eq('branch', branchId)
+        .single()
+
+      if (cancelled) return
+      if (error || !data) {
+        setSubmitError(error?.message || 'That draft could not be found.')
+        setReceiptNumber(generateReceiptNumber())
+        setDraftLoading(false)
+        return
+      }
+
+      const payload = data.payload || {}
+      restoreRef.current = payload
+      setReceiptNumber(payload.receiptNumber || generateReceiptNumber())
+      setNotes(payload.notes || '')
+      setSelectedOrderId(payload.selectedOrderId || '')
+      setDraftLoading(false)
+    }
+
+    loadDraft()
+    return () => {
+      cancelled = true
+    }
+  }, [draftParam, branchId])
 
   useEffect(() => {
     let cancelled = false
@@ -259,6 +311,27 @@ export default function NewReceiptPage() {
       }
     )
 
+    // Continuing a draft: put back what was typed for each line. Outstanding
+    // is still the live figure, so the over-receipt flag stays accurate.
+    const restore = restoreRef.current
+    if (restore && restore.selectedOrderId === selectedOrder.id) {
+      restoreRef.current = null
+      const saved = new Map((restore.lines || []).map((line) => [line.orderLineId, line]))
+      setLines(
+        seeded.map((line) => {
+          const match = saved.get(line.orderLineId)
+          return match
+            ? {
+                ...line,
+                quantityReceivingNow: match.quantityReceivingNow,
+                shelfId: match.shelfId || '',
+              }
+            : line
+        })
+      )
+      return
+    }
+
     setLines(seeded)
   }, [selectedOrder])
 
@@ -273,6 +346,57 @@ export default function NewReceiptPage() {
   const hasInvalidQty = lines.some(
     (line) => Number(line.quantityReceivingNow) < 0
   )
+
+  // Save as Draft: the form as typed, into purchase_receipt_drafts. Only a
+  // Purchase Order is needed - the rest can be finished later.
+  const handleSaveDraft = async (event) => {
+    event.preventDefault()
+    setSubmitError('')
+
+    if (!selectedOrderId) {
+      setSubmitError('Select a Purchase Order first.')
+      return
+    }
+
+    setSaving(true)
+
+    const payload = {
+      receiptNumber,
+      selectedOrderId,
+      warehouseId,
+      notes,
+      lines: lines.map((line) => ({
+        orderLineId: line.orderLineId,
+        quantityReceivingNow: line.quantityReceivingNow,
+        shelfId: line.shelfId,
+      })),
+    }
+    const title = [receiptNumber, selectedOrder?.order_number].filter(Boolean).join(' · ')
+
+    try {
+      if (draftId) {
+        const { error } = await supabase
+          .from('purchase_receipt_drafts')
+          .update({ title, payload })
+          .eq('id', draftId)
+        if (error) throw error
+      } else {
+        const { data, error } = await supabase
+          .from('purchase_receipt_drafts')
+          .insert({ company: companyId, branch: branchId, title, payload })
+          .select('id')
+          .single()
+        if (error) throw error
+        setDraftId(data.id)
+      }
+      router.push(base)
+    } catch (err) {
+      console.error('Error saving receipt draft:', err)
+      setSubmitError(err.message || 'Could not save this draft.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleSubmit = async (event, submitStatus) => {
     event.preventDefault()
@@ -356,6 +480,15 @@ export default function NewReceiptPage() {
         }
       }
 
+      // The receipt exists now - the draft it came from is no longer needed.
+      if (draftId) {
+        const { error: draftDeleteError } = await supabase
+          .from('purchase_receipt_drafts')
+          .delete()
+          .eq('id', draftId)
+        if (draftDeleteError) console.error('Could not remove the receipt draft:', draftDeleteError)
+      }
+
       router.push(base)
     } catch (err) {
       console.error('Error creating purchase receipt:', err)
@@ -383,9 +516,9 @@ export default function NewReceiptPage() {
           <Button
             type="button"
             variant="outline"
-            disabled={saving || !selectedOrderId}
+            disabled={saving || !selectedOrderId || draftLoading}
             className="h-7 text-xs bg-core_light text-black"
-            onClick={(event) => handleSubmit(event, 'draft')}
+            onClick={handleSaveDraft}
           >
             Save as Draft
           </Button>
@@ -393,7 +526,7 @@ export default function NewReceiptPage() {
           <Button
             type="button"
             className="bg-core hover:bg-core/80 h-7 text-white text-xs"
-            disabled={saving || !selectedOrderId}
+            disabled={saving || !selectedOrderId || draftLoading}
             onClick={(event) => handleSubmit(event, 'posted')}
           >
             {saving ? 'Posting...' : 'Post Receipt'}
@@ -479,7 +612,7 @@ export default function NewReceiptPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-xs font-medium text-gray-600">
                   <tr>
-                    <th className="px-3 py-2 text-left">Variant</th>
+                    <th className="px-3 py-2 text-left">Item</th>
                     <th className="px-3 py-2 text-right">Ordered</th>
                     <th className="px-3 py-2 text-right">Already received</th>
                     <th className="px-3 py-2 text-right">Outstanding</th>
@@ -493,8 +626,13 @@ export default function NewReceiptPage() {
                     const over = receiving - Number(line.outstanding || 0)
                     return (
                       <tr key={line.orderLineId}>
-                        <td className="px-3 py-2 text-gray-700">
-                          {line.variantId}
+                        <td className="max-w-[220px] px-3 py-2">
+                          <p
+                            className="text-[10px] leading-[1.15] text-gray-700"
+                            title={variantNames[line.variantId]?.display}
+                          >
+                            {variantNames[line.variantId]?.display || '—'}
+                          </p>
                         </td>
                         <td className="px-3 py-2 text-right">
                           {line.quantityOrdered}

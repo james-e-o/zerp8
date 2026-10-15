@@ -90,7 +90,6 @@ The panel covers the active branch content area, including module content, while
 
 
 
-
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
@@ -240,13 +239,14 @@ CREATE TABLE public.access_level_permissions (
   access_level_key text NOT NULL,
   category text NOT NULL DEFAULT 'core'::text CHECK (category = ANY (ARRAY['core'::text, 'module'::text])),
   scope_key text NOT NULL,
-  permission_key text NOT NULL CHECK (permission_key = ANY (ARRAY['view'::text, 'create'::text, 'edit'::text, 'delete'::text, 'manage'::text, 'approve'::text])),
+  permission_key text NOT NULL,
   allowed boolean NOT NULL DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT access_level_permissions_pkey PRIMARY KEY (id),
   CONSTRAINT access_level_permissions_access_level_key_fkey FOREIGN KEY (access_level_key) REFERENCES public.access_level(key),
   CONSTRAINT access_level_permissions_scope_permission_fkey FOREIGN KEY (scope_key) REFERENCES public.permission_keys(resource_key),
-  CONSTRAINT access_level_permissions_scope_permission_fkey FOREIGN KEY (permission_key) REFERENCES public.permission_keys(permission_key)
+  CONSTRAINT access_level_permissions_scope_permission_fkey FOREIGN KEY (permission_key) REFERENCES public.permission_keys(permission_key),
+  CONSTRAINT alp_verb_fk FOREIGN KEY (permission_key) REFERENCES public.permission_verbs(key)
 );
 CREATE TABLE public.staff_permission_overrides (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -254,12 +254,13 @@ CREATE TABLE public.staff_permission_overrides (
   company_id uuid NOT NULL,
   category text NOT NULL DEFAULT 'core'::text CHECK (category = ANY (ARRAY['core'::text, 'module'::text])),
   scope_key text NOT NULL,
-  permission_key text NOT NULL CHECK (permission_key = ANY (ARRAY['view'::text, 'create'::text, 'edit'::text, 'delete'::text, 'manage'::text, 'approve'::text])),
+  permission_key text NOT NULL,
   allowed boolean NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT staff_permission_overrides_pkey PRIMARY KEY (id),
   CONSTRAINT staff_permission_overrides_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES public.staff(id),
-  CONSTRAINT staff_permission_overrides_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
+  CONSTRAINT staff_permission_overrides_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT spo_verb_fk FOREIGN KEY (permission_key) REFERENCES public.permission_verbs(key)
 );
 CREATE TABLE public.company_invites (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -311,26 +312,28 @@ CREATE TABLE public.staff_pending_acceptance (
 CREATE TABLE public.permission_keys (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   resource_key text NOT NULL,
-  permission_key text NOT NULL CHECK (permission_key = ANY (ARRAY['view'::text, 'create'::text, 'edit'::text, 'delete'::text, 'manage'::text, 'approve'::text])),
+  permission_key text NOT NULL CHECK (permission_key = ANY ('{approve,create,delete,edit,manage,override_currency,view}'::text[])),
   name text NOT NULL,
   description text,
   permission_group text NOT NULL,
   includes_branch boolean NOT NULL DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
   category USER-DEFINED NOT NULL DEFAULT 'core'::resource_category,
-  CONSTRAINT permission_keys_pkey PRIMARY KEY (id)
+  CONSTRAINT permission_keys_pkey PRIMARY KEY (id),
+  CONSTRAINT permission_keys_verb_fk FOREIGN KEY (permission_key) REFERENCES public.permission_verbs(key)
 );
 CREATE TABLE public.company_approval_settings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL,
   category text NOT NULL CHECK (category = ANY (ARRAY['core'::text, 'module'::text])),
   scope_key text NOT NULL,
-  permission_key text NOT NULL CHECK (permission_key = ANY (ARRAY['view'::text, 'create'::text, 'edit'::text, 'delete'::text, 'manage'::text])),
+  permission_key text NOT NULL,
   min_access_level_number smallint NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT company_approval_settings_pkey PRIMARY KEY (id),
-  CONSTRAINT company_approval_settings_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
+  CONSTRAINT company_approval_settings_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT cas_verb_fk FOREIGN KEY (permission_key) REFERENCES public.permission_verbs(key)
 );
 CREATE TABLE public.company_approval_delegates (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -362,7 +365,8 @@ CREATE TABLE public.permission_requests (
   CONSTRAINT permission_requests_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT permission_requests_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
   CONSTRAINT permission_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.staff(id),
-  CONSTRAINT permission_requests_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES public.staff(id)
+  CONSTRAINT permission_requests_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES public.staff(id),
+  CONSTRAINT pr_verb_fk FOREIGN KEY (permission_key) REFERENCES public.permission_verbs(key)
 );
 CREATE TABLE public.profile (
   id uuid NOT NULL,
@@ -1153,6 +1157,7 @@ CREATE TABLE public.purchase_orders (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   notes text,
   title text,
+  currency text,
   CONSTRAINT purchase_orders_pkey PRIMARY KEY (id),
   CONSTRAINT purchase_orders_branch_fkey FOREIGN KEY (branch) REFERENCES public.branches(id),
   CONSTRAINT purchase_orders_supplier_fkey FOREIGN KEY (supplier) REFERENCES public.suppliers(id),
@@ -1168,6 +1173,8 @@ CREATE TABLE public.purchase_order_line_items (
   quantity_returned numeric NOT NULL DEFAULT 0,
   unit_cost_snapshot numeric,
   line_total numeric,
+  cost_currency text,
+  original_unit_cost numeric,
   CONSTRAINT purchase_order_line_items_pkey PRIMARY KEY (id),
   CONSTRAINT purchase_order_line_items_purchase_order_fkey FOREIGN KEY (purchase_order) REFERENCES public.purchase_orders(id),
   CONSTRAINT purchase_order_line_items_variant_fkey FOREIGN KEY (variant) REFERENCES public.product_variants(id)
@@ -1195,11 +1202,20 @@ CREATE TABLE public.purchase_receipt_line_items (
   quantity numeric NOT NULL,
   unit_cost_snapshot numeric,
   shelf uuid,
+  quantity_accepted numeric,
+  excess_quantity numeric NOT NULL DEFAULT 0,
+  excess_status text NOT NULL DEFAULT 'none'::text CHECK (excess_status = ANY (ARRAY['none'::text, 'pending_approval'::text, 'approved'::text, 'rejected'::text])),
+  excess_approved_by uuid,
+  excess_approved_at timestamp with time zone,
+  discrepancy_type text NOT NULL DEFAULT 'none'::text CHECK (discrepancy_type = ANY (ARRAY['none'::text, 'wrong_item'::text, 'excess'::text])),
+  excess_approved_by_staff uuid,
   CONSTRAINT purchase_receipt_line_items_pkey PRIMARY KEY (id),
   CONSTRAINT purchase_receipt_line_items_purchase_receipt_fkey FOREIGN KEY (purchase_receipt) REFERENCES public.purchase_receipts(id),
   CONSTRAINT purchase_receipt_line_items_purchase_order_line_item_fkey FOREIGN KEY (purchase_order_line_item) REFERENCES public.purchase_order_line_items(id),
   CONSTRAINT purchase_receipt_line_items_variant_fkey FOREIGN KEY (variant) REFERENCES public.product_variants(id),
-  CONSTRAINT purchase_receipt_line_items_shelf_fkey FOREIGN KEY (shelf) REFERENCES public.warehouse_shelves(id)
+  CONSTRAINT purchase_receipt_line_items_shelf_fkey FOREIGN KEY (shelf) REFERENCES public.warehouse_shelves(id),
+  CONSTRAINT purchase_receipt_line_items_excess_approved_by_fkey FOREIGN KEY (excess_approved_by) REFERENCES auth.users(id),
+  CONSTRAINT purchase_receipt_line_items_excess_approved_by_staff_fkey FOREIGN KEY (excess_approved_by_staff) REFERENCES public.staff(id)
 );
 CREATE TABLE public.purchase_bills (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1345,4 +1361,126 @@ CREATE TABLE public.purchase_order_source_requests (
   CONSTRAINT purchase_order_source_requests_purchase_order_fkey FOREIGN KEY (purchase_order) REFERENCES public.purchase_orders(id),
   CONSTRAINT purchase_order_source_requests_purchase_request_fkey FOREIGN KEY (purchase_request) REFERENCES public.purchase_requests(id),
   CONSTRAINT purchase_order_source_requests_branch_fkey FOREIGN KEY (branch) REFERENCES public.branches(id)
+);
+CREATE TABLE public.permission_verbs (
+  key text NOT NULL,
+  label text NOT NULL,
+  sort_order integer NOT NULL DEFAULT 100,
+  CONSTRAINT permission_verbs_pkey PRIMARY KEY (key)
+);
+CREATE TABLE public.inventory_levels (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  variant uuid NOT NULL UNIQUE,
+  branch uuid,
+  company uuid,
+  quantity_on_hand numeric NOT NULL DEFAULT 0,
+  quantity_reserved numeric NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT inventory_levels_pkey PRIMARY KEY (id),
+  CONSTRAINT inventory_levels_variant_fkey FOREIGN KEY (variant) REFERENCES public.product_variants(id),
+  CONSTRAINT inventory_levels_branch_fkey FOREIGN KEY (branch) REFERENCES public.branches(id),
+  CONSTRAINT inventory_levels_company_fkey FOREIGN KEY (company) REFERENCES public.companies(id)
+);
+CREATE TABLE public.approval_policies (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company uuid NOT NULL,
+  category text NOT NULL CHECK (category = ANY (ARRAY['core'::text, 'module'::text])),
+  scope_key text NOT NULL,
+  permission_key text NOT NULL,
+  min_access_level_number smallint NOT NULL,
+  requires_approval boolean NOT NULL DEFAULT false,
+  approvals_required smallint NOT NULL DEFAULT 1 CHECK (approvals_required >= 1),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT approval_policies_pkey PRIMARY KEY (id),
+  CONSTRAINT approval_policies_company_fkey FOREIGN KEY (company) REFERENCES public.companies(id)
+);
+CREATE TABLE public.approval_delegates (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company uuid NOT NULL,
+  category text NOT NULL,
+  scope_key text NOT NULL,
+  permission_key text NOT NULL,
+  staff_id uuid,
+  access_level_key text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT approval_delegates_pkey PRIMARY KEY (id),
+  CONSTRAINT approval_delegates_company_fkey FOREIGN KEY (company) REFERENCES public.companies(id),
+  CONSTRAINT approval_delegates_staff_fkey FOREIGN KEY (staff_id) REFERENCES public.staff(id),
+  CONSTRAINT approval_delegates_access_level_fkey FOREIGN KEY (access_level_key) REFERENCES public.access_level(key)
+);
+CREATE TABLE public.approval_requests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company uuid NOT NULL,
+  branch uuid,
+  requested_by_user uuid NOT NULL,
+  category text NOT NULL,
+  scope_key text NOT NULL,
+  permission_key text NOT NULL,
+  action_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  approvals_required_snapshot smallint NOT NULL,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])),
+  consumed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  resolved_at timestamp with time zone,
+  CONSTRAINT approval_requests_pkey PRIMARY KEY (id),
+  CONSTRAINT approval_requests_company_fkey FOREIGN KEY (company) REFERENCES public.companies(id),
+  CONSTRAINT approval_requests_branch_fkey FOREIGN KEY (branch) REFERENCES public.branches(id),
+  CONSTRAINT approval_requests_requested_by_fkey FOREIGN KEY (requested_by_user) REFERENCES public.users(id)
+);
+CREATE TABLE public.approval_request_votes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  approval_request_id uuid NOT NULL,
+  voted_by_user uuid NOT NULL,
+  decision text NOT NULL CHECK (decision = ANY (ARRAY['approved'::text, 'rejected'::text])),
+  note text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT approval_request_votes_pkey PRIMARY KEY (id),
+  CONSTRAINT approval_request_votes_request_fkey FOREIGN KEY (approval_request_id) REFERENCES public.approval_requests(id),
+  CONSTRAINT approval_request_votes_voter_fkey FOREIGN KEY (voted_by_user) REFERENCES public.users(id)
+);
+CREATE TABLE public.purchase_settings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company uuid NOT NULL,
+  branch uuid,
+  request_number_format text NOT NULL DEFAULT 'PR-{YY}{MM}{DD}-{RAND}'::text,
+  order_number_format text NOT NULL DEFAULT 'PO-{YY}{MM}{DD}-{RAND}'::text,
+  receipt_number_format text NOT NULL DEFAULT 'RCT-{YY}{MM}{DD}-{RAND}'::text,
+  purchase_requests_enabled boolean NOT NULL DEFAULT true,
+  purchase_returns_enabled boolean NOT NULL DEFAULT true,
+  require_approval_before_issuing boolean NOT NULL DEFAULT false,
+  allow_estimated_cost_prices boolean NOT NULL DEFAULT true,
+  allow_editing_issued_orders boolean NOT NULL DEFAULT true,
+  allow_cancelling_issued_orders boolean NOT NULL DEFAULT true,
+  requests_require_approval boolean NOT NULL DEFAULT true,
+  convert_to_po_role text NOT NULL DEFAULT 'branch_manager'::text,
+  over_receipt_tolerance_percent numeric NOT NULL DEFAULT 0,
+  excess_handling text NOT NULL DEFAULT 'require_approval'::text CHECK (excess_handling = ANY (ARRAY['block'::text, 'warn'::text, 'require_approval'::text])),
+  require_supplier_invoice_number boolean NOT NULL DEFAULT true,
+  prevent_duplicate_invoice_numbers boolean NOT NULL DEFAULT true,
+  bills_matching_mode text NOT NULL DEFAULT 'three_way'::text CHECK (bills_matching_mode = ANY (ARRAY['none'::text, 'two_way'::text, 'three_way'::text])),
+  bills_price_tolerance_percent numeric NOT NULL DEFAULT 0,
+  bills_quantity_tolerance_percent numeric NOT NULL DEFAULT 0,
+  allow_non_po_bills boolean NOT NULL DEFAULT false,
+  returns_require_approval boolean NOT NULL DEFAULT true,
+  returns_required_reference text NOT NULL DEFAULT 'either'::text CHECK (returns_required_reference = ANY (ARRAY['purchase_order'::text, 'purchase_receipt'::text, 'either'::text])),
+  returns_require_authorization_before_completing boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT purchase_settings_pkey PRIMARY KEY (id),
+  CONSTRAINT purchase_settings_company_fkey FOREIGN KEY (company) REFERENCES public.companies(id),
+  CONSTRAINT purchase_settings_branch_fkey FOREIGN KEY (branch) REFERENCES public.branches(id)
+);
+CREATE TABLE public.purchase_approval_limits (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company uuid NOT NULL,
+  branch uuid,
+  access_level_key text NOT NULL,
+  max_amount numeric,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT purchase_approval_limits_pkey PRIMARY KEY (id),
+  CONSTRAINT purchase_approval_limits_company_fkey FOREIGN KEY (company) REFERENCES public.companies(id),
+  CONSTRAINT purchase_approval_limits_branch_fkey FOREIGN KEY (branch) REFERENCES public.branches(id),
+  CONSTRAINT purchase_approval_limits_access_level_fkey FOREIGN KEY (access_level_key) REFERENCES public.access_level(key)
 );

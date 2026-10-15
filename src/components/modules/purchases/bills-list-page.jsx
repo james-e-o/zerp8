@@ -21,10 +21,13 @@ export default function BillsListPage({ title, description, status }) {
 
     async function load() {
       setLoading(true)
+      // purchase_bills_view (not the raw table) adds effective_status,
+      // which turns into 'overdue' once due_date passes without needing
+      // a stored status to be flipped by a cron job.
       let query = supabase
-        .from('purchase_bills')
+        .from('purchase_bills_view')
         .select(
-          `id, bill_number, status, due_date, total,
+          `id, bill_number, effective_status, due_date, total,
            supplier:suppliers(name),
            purchase_order:purchase_orders(order_number)`
         )
@@ -32,7 +35,7 @@ export default function BillsListPage({ title, description, status }) {
         .order('created_at', { ascending: false })
 
       if (status && status !== 'all') {
-        query = query.eq('status', status.replace(/-/g, '_'))
+        query = query.eq('effective_status', status.replace(/-/g, '_'))
       }
 
       const { data, error } = await query
@@ -53,7 +56,7 @@ export default function BillsListPage({ title, description, status }) {
       {(title || description) && (
         <div>
           {title && (
-            <h2 className="text-base font-semibold text-gray-800">{title}</h2>
+            <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
           )}
           {description && (
             <p className="text-xs text-gray-500">{description}</p>
@@ -104,7 +107,7 @@ export default function BillsListPage({ title, description, status }) {
                     {formatNaira(bill.total || 0)}
                   </td>
                   <td className="px-3 py-2">
-                    <StatusBadge status={bill.status} />
+                    <StatusBadge status={bill.effective_status} />
                   </td>
                 </tr>
               ))}
