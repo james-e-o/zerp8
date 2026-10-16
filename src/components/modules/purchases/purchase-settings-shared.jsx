@@ -1,107 +1,427 @@
 'use client'
 
-import { Input } from '@/components/ui/input'
+import { useCallback, useEffect, useState } from 'react'
+import { useParams } from 'next/navigation'
+
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 
-// ASSUMPTION: adjust this path to wherever purchase-settings-shared.jsx is placed.
-import {
-  SettingsPageShell,
-  usePurchaseSettingsEditor,
-} from '@/components/modules/purchases/purchase-settings-shared'
+import supabase from '@/config/supabaseClient'
 
-// Goes at modules/purchases/settings/purchase-orders/page.js.
-// Wired to purchase_settings through the shared editor - same branch-
-// override / approval rules as the General tab.
+// One shared editor for every Purchase Settings tab, so the five tabs
+// that save to purchase_settings don't each carry their own copy of the
+// load / override / approval-gate / save logic. Suggested location:
+//   components/modules/purchases/purchase-settings-shared.jsx
+// (requires purchase-settings-save-patch-migration.sql to be run).
 //
-// Saved but NOT yet enforced by the order pages (storing the choice is
-// all that's built): requiring approval before issuing, and blocking
-// edits/cancels of an issued order. The notes under each switch say so.
+// A tab page is then just its fields:
+//
+//   const editor = usePurchaseSettingsEditor()
+//   return (
+//     <SettingsPageShell editor={editor} title="..." description="...">
+//       <section>... editor.view.some_field / editor.patch('some_field', v) ...</section>
+//     </SettingsPageShell>
+//   )
+//
+// Pass { withLimits: true } for the one tab (Requests & Approvals) that
+// also edits the approval-limit list; limits are then saved in the same
+// call as the settings, under the same single approval check.
+//
+// BRANCH OVERRIDE vs COMPANY DEFAULT - same rules as the General tab:
+//   - A branch with no override row shows the company defaults. Edit then
+//     saves to the COMPANY default, which goes through the approval
+//     engine: owner always allowed; others only once the owner has
+//     configured an approval policy for (module, purchase_settings, edit)
+//     - and then Save submits a request, and you save again once it's
+//     approved (the approval clears that one exact edit, once).
+//   - "Override for this branch" ON saves this branch's own copy (ordinary
+//     branch permission, no approval). OFF deletes it and the branch
+//     follows the company default again.
+//
+// NOTE the toggle writes the page's current draft values, so switching it
+// on from a tab copies the whole effective row (every tab's fields), not
+// just this tab's.
 
-export default function PurchaseOrdersSettingsPage() {
-  const editor = usePurchaseSettingsEditor()
-  const { view, patch, editing } = editor
+// Every purchase_settings column and its database default. The editor
+// merges the saved row over these, so a company that has never saved
+// anything still has a complete set of values.
+export const SETTINGS_DEFAULTS = {
+  request_number_format: 'PR-{YY}{MM}{DD}-{RAND}',
+  order_number_format: 'PO-{YY}{MM}{DD}-{RAND}',
+  receipt_number_format: 'RCT-{YY}{MM}{DD}-{RAND}',
+  purchase_requests_enabled: true,
+  purchase_returns_enabled: true,
+  require_approval_before_issuing: false,
+  allow_estimated_cost_prices: true,
+  allow_editing_issued_orders: true,
+  allow_cancelling_issued_orders: true,
+  requests_require_approval: true,
+  convert_to_po_role: 'branch_manager',
+  over_receipt_tolerance_percent: 0,
+  excess_handling: 'require_approval',
+  require_supplier_invoice_number: true,
+  prevent_duplicate_invoice_numbers: true,
+  bills_matching_mode: 'three_way',
+  bills_price_tolerance_percent: 0,
+  bills_quantity_tolerance_percent: 0,
+  allow_non_po_bills: false,
+  returns_require_approval: true,
+  returns_required_reference: 'either',
+  returns_require_authorization_before_completing: true,
+  bills_tolerance_action: 'warn',
+}
+
+// get_effective_purchase_settings() returns an all-null record (not null)
+// when nothing has been saved yet, and a saved row can hold NULL for a
+// column that was never set. Spreading those over the defaults would blank
+// every toggle and select, so only real values replace a default.
+const withDefaults = (row) => {
+  const merged = { ...SETTINGS_DEFAULTS }
+  Object.entries(row || {}).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) merged[key] = value
+  })
+  return merged
+}
+
+// Number fields are typed into text inputs, so they can be '' or negative
+// while someone is typing. What gets saved is always a number of 0 or more.
+const NUMERIC_KEYS = [
+  'over_receipt_tolerance_percent',
+  'bills_price_tolerance_percent',
+  'bills_quantity_tolerance_percent',
+]
+const cleanPayload = (draft) => {
+  const cleaned = { ...draft }
+  NUMERIC_KEYS.forEach((key) => {
+    const value = Number(cleaned[key])
+    cleaned[key] = Number.isFinite(value) && value > 0 ? value : 0
+  })
+  return cleaned
+}
+
+// [{ access_level_key, max_amount }] as the database expects it. Blank
+// rows are dropped; a blank amount means "no limit".
+const limitsPayload = (limits) =>
+  (limits || [])
+    .filter((limit) => limit.access_level_key)
+    .map((limit) => ({
+      access_level_key: limit.access_level_key,
+      max_amount: limit.max_amount === '' || limit.max_amount == null ? null : Number(limit.max_amount),
+    }))
+
+let nextLocalId = 1
+const withLocalIds = (rows) =>
+  (rows || []).map((row) => ({
+    id: row.id || `local-${nextLocalId++}`,
+    access_level_key: row.access_level_key,
+    max_amount: row.max_amount == null ? '' : String(row.max_amount),
+  }))
+
+export function usePurchaseSettingsEditor({ withLimits = false } = {}) {
+  const { companyId, branchId } = useParams()
+
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  const [hasOverride, setHasOverride] = useState(false)
+  const [saved, setSaved] = useState(SETTINGS_DEFAULTS)
+  const [draft, setDraft] = useState(SETTINGS_DEFAULTS)
+  const [savedLimits, setSavedLimits] = useState([])
+  const [draftLimits, setDraftLimits] = useState([])
+  const [editing, setEditing] = useState(false)
+
+  // 'allowed' | 'needs_approval' | 'owner_only' | null (not known yet)
+  const [companyEditGate, setCompanyEditGate] = useState(null)
+  const [pendingRequestId, setPendingRequestId] = useState(null)
+
+  const loadLimits = useCallback(async () => {
+    const { data, error } = await supabase.rpc('get_effective_purchase_approval_limits', {
+      p_branch: branchId,
+    })
+    if (error) throw error
+    return withLocalIds(data)
+  }, [branchId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      setLoadError('')
+
+      try {
+        const { data: effective, error: effectiveError } = await supabase.rpc(
+          'get_effective_purchase_settings',
+          { p_branch: branchId }
+        )
+        if (effectiveError) throw effectiveError
+        if (cancelled) return
+
+        const row = withDefaults(effective)
+        setHasOverride(!!effective?.branch)
+        setSaved(row)
+        setDraft(row)
+
+        if (withLimits) {
+          const limits = await loadLimits()
+          if (cancelled) return
+          setSavedLimits(limits)
+          setDraftLimits(limits)
+        }
+
+        const { data: gate, error: gateError } = await supabase.rpc('check_approval_gate', {
+          p_company: companyId,
+          p_category: 'module',
+          p_scope_key: 'purchase_settings',
+          p_permission_key: 'edit',
+        })
+        if (!cancelled && !gateError) {
+          if (gate === 'allowed') setCompanyEditGate('allowed')
+          else if (gate === 'needs_approval') setCompanyEditGate('needs_approval')
+          else setCompanyEditGate('owner_only') // 'no_policy' or 'blocked'
+        }
+      } catch (err) {
+        console.error('Failed to load Purchase Settings:', err)
+        if (!cancelled) setLoadError(err.message || 'Could not load Purchase Settings.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId, branchId, withLimits, loadLimits])
+
+  const startEdit = () => {
+    setDraft(saved)
+    setDraftLimits(savedLimits)
+    setSubmitError('')
+    setEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setDraft(saved)
+    setDraftLimits(savedLimits)
+    setSubmitError('')
+    setEditing(false)
+  }
+
+  const patch = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }))
+
+  const addLimit = () =>
+    setDraftLimits((prev) => [
+      ...prev,
+      { id: `local-${nextLocalId++}`, access_level_key: '', max_amount: '' },
+    ])
+  const updateLimit = (id, field, value) =>
+    setDraftLimits((prev) => prev.map((limit) => (limit.id === id ? { ...limit, [field]: value } : limit)))
+  const removeLimit = (id) => setDraftLimits((prev) => prev.filter((limit) => limit.id !== id))
+
+  const limitsArgument = (limits) => (withLimits ? { p_limits: limitsPayload(limits) } : {})
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSubmitError('')
+
+    try {
+      if (hasOverride) {
+        const { data, error } = await supabase.rpc('upsert_purchase_settings_branch_override', {
+          p_branch: branchId,
+          p_payload: cleanPayload(draft),
+          ...limitsArgument(draftLimits),
+        })
+        if (error) throw error
+        setSaved(withDefaults(data))
+        if (withLimits) setSavedLimits(draftLimits)
+      } else if (companyEditGate === 'needs_approval') {
+        const { data: requestId, error } = await supabase.rpc('submit_approval_request', {
+          p_company: companyId,
+          p_branch: null,
+          p_category: 'module',
+          p_scope_key: 'purchase_settings',
+          p_permission_key: 'edit',
+          p_action_payload: withLimits
+            ? { ...cleanPayload(draft), approval_limits: limitsPayload(draftLimits) }
+            : cleanPayload(draft),
+        })
+        if (error) throw error
+        setPendingRequestId(requestId)
+        setEditing(false)
+        setSaving(false)
+        return
+      } else {
+        const { data, error } = await supabase.rpc('upsert_purchase_settings_company_default', {
+          p_company: companyId,
+          p_payload: cleanPayload(draft),
+          ...limitsArgument(draftLimits),
+        })
+        if (error) throw error
+        setSaved(withDefaults(data))
+        if (withLimits) setSavedLimits(draftLimits)
+      }
+
+      setEditing(false)
+    } catch (err) {
+      console.error('Error saving Purchase Settings:', err)
+      setSubmitError(err.message || 'Something went wrong saving these settings.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleToggleOverride = async (checked) => {
+    setSaving(true)
+    setSubmitError('')
+
+    try {
+      if (checked) {
+        const { data, error } = await supabase.rpc('upsert_purchase_settings_branch_override', {
+          p_branch: branchId,
+          p_payload: saved,
+          ...limitsArgument(savedLimits),
+        })
+        if (error) throw error
+        setSaved(withDefaults(data))
+        setHasOverride(true)
+      } else {
+        const { error } = await supabase.rpc('delete_purchase_settings_branch_override', {
+          p_branch: branchId,
+        })
+        if (error) throw error
+
+        const { data: effective } = await supabase.rpc('get_effective_purchase_settings', {
+          p_branch: branchId,
+        })
+        const row = withDefaults(effective)
+        setHasOverride(false)
+        setSaved(row)
+        setDraft(row)
+
+        if (withLimits) {
+          const limits = await loadLimits()
+          setSavedLimits(limits)
+          setDraftLimits(limits)
+        }
+      }
+    } catch (err) {
+      console.error('Error changing branch override:', err)
+      setSubmitError(err.message || 'Could not change the branch override.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return {
+    loading,
+    loadError,
+    saving,
+    submitError,
+    hasOverride,
+    editing,
+    view: editing ? draft : saved,
+    limits: editing ? draftLimits : savedLimits,
+    canEdit: hasOverride || companyEditGate === 'allowed' || companyEditGate === 'needs_approval',
+    companyEditGate,
+    pendingRequestId,
+    saveLabel:
+      saving ? 'Saving...' : hasOverride || companyEditGate === 'allowed' ? 'Save' : 'Request approval to save',
+    startEdit,
+    cancelEdit,
+    patch,
+    addLimit,
+    updateLimit,
+    removeLimit,
+    handleSave,
+    handleToggleOverride,
+  }
+}
+
+/**
+ * The common frame of a settings tab: title + description, Edit / Save /
+ * Cancel, the approval and error messages, and the "Override for this
+ * branch" switch. The tab's own sections go in as children.
+ */
+export function SettingsPageShell({ editor, title, description, children }) {
+  if (editor.loading) {
+    return <p className="p-6 text-xs text-gray-400">Loading Purchase Settings...</p>
+  }
+  if (editor.loadError) {
+    return <p className="p-6 text-xs text-red-600">{editor.loadError}</p>
+  }
 
   return (
-    <SettingsPageShell
-      editor={editor}
-      title="Purchase Orders"
-      description="Require approval before issuing an order; allow estimated cost prices; control whether issued orders can be edited or cancelled; configure order numbering."
-    >
-      <section className="space-y-4 rounded-lg border border-gray-200 p-4">
-        <h2 className="text-xs font-semibold text-gray-800">Issuing</h2>
-
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium text-gray-800">Require approval before issuing an order</p>
-            <p className="mt-0.5 text-[11px] text-gray-500">
-              Not yet enforced — a PO currently goes straight to "open" with no approval step.
-            </p>
+    <div className="max-w-2xl space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-base font-bold tracking-tight text-slate-900">{title}</h1>
+          <p className="text-xs text-gray-500">{description}</p>
+        </div>
+        {!editor.editing ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-7 shrink-0 text-xs"
+            disabled={!editor.canEdit}
+            onClick={editor.startEdit}
+          >
+            Edit
+          </Button>
+        ) : (
+          <div className="flex shrink-0 gap-2">
+            <Button type="button" variant="outline" className="h-7 text-xs" onClick={editor.cancelEdit}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-core hover:bg-core/80 h-7 text-xs text-white"
+              disabled={editor.saving}
+              onClick={editor.handleSave}
+            >
+              {editor.saveLabel}
+            </Button>
           </div>
-          <Switch
-            checked={view.require_approval_before_issuing}
-            disabled={!editing}
-            onCheckedChange={(checked) => patch('require_approval_before_issuing', checked)}
-          />
-        </div>
+        )}
+      </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-xs font-medium text-gray-800">Allow estimated cost prices</p>
-          <Switch
-            checked={view.allow_estimated_cost_prices}
-            disabled={!editing}
-            onCheckedChange={(checked) => patch('allow_estimated_cost_prices', checked)}
-          />
-        </div>
-      </section>
+      {editor.submitError && <p className="text-xs text-red-600">{editor.submitError}</p>}
 
-      <section className="space-y-4 rounded-lg border border-gray-200 p-4">
-        <h2 className="text-xs font-semibold text-gray-800">After issuing</h2>
-
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium text-gray-800">Allow editing an issued order</p>
-            <p className="mt-0.5 text-[11px] text-gray-500">
-              Not yet enforced — nothing currently blocks editing a "sent"/"open" order.
-            </p>
-          </div>
-          <Switch
-            checked={view.allow_editing_issued_orders}
-            disabled={!editing}
-            onCheckedChange={(checked) => patch('allow_editing_issued_orders', checked)}
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium text-gray-800">Allow cancelling an issued order</p>
-            <p className="mt-0.5 text-[11px] text-gray-500">
-              Not yet enforced — nothing currently blocks cancelling an issued order.
-            </p>
-          </div>
-          <Switch
-            checked={view.allow_cancelling_issued_orders}
-            disabled={!editing}
-            onCheckedChange={(checked) => patch('allow_cancelling_issued_orders', checked)}
-          />
-        </div>
-      </section>
-
-      <section className="space-y-4 rounded-lg border border-gray-200 p-4">
-        <h2 className="text-xs font-semibold text-gray-800">Numbering</h2>
-        <label className="block text-xs font-medium text-gray-700">
-          Order number format
-          <Input
-            value={view.order_number_format}
-            disabled={!editing}
-            onChange={(e) => patch('order_number_format', e.target.value)}
-            className="mt-1 h-auto text-sm disabled:opacity-100"
-          />
-        </label>
-        <p className="text-[11px] text-gray-400">
-          Same setting as on the General tab. Orders still generate their numbers in code, not from
-          this format, for now.
+      {editor.pendingRequestId && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          Your change was submitted for approval and isn't saved yet. Once it's approved, come back
+          and save it again — the approval clears you to make this exact edit once.
         </p>
+      )}
+
+      {!editor.hasOverride && editor.companyEditGate === 'owner_only' && (
+        <p className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
+          Only the company owner can edit the company-wide defaults right now — no approval policy
+          has been configured for this yet. Turn on "Override for this branch" below to set your
+          own values for just this branch instead.
+        </p>
+      )}
+
+      <section className="rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium text-gray-800">Override for this branch</p>
+            <p className="mt-0.5 text-[11px] text-gray-500">
+              Off: this branch follows the company-wide defaults. On: the values on every
+              Purchase Settings tab apply only to this branch.
+            </p>
+          </div>
+          <Switch
+            checked={editor.hasOverride}
+            disabled={editor.saving || editor.editing || !editor.canEdit}
+            onCheckedChange={editor.handleToggleOverride}
+          />
+        </div>
       </section>
-    </SettingsPageShell>
+
+      {children}
+    </div>
   )
 }

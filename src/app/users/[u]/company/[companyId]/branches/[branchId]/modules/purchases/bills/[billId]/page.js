@@ -17,8 +17,7 @@ import {
 import supabase from '@/config/supabaseClient'
 import { formatNaira } from '@/components/modules/sales/dummy-data'
 import StatusBadge from '@/components/modules/sales/status-badge'
-// ASSUMPTION: adjust this path to wherever company-file-uploader.jsx is placed.
-import { AttachmentList } from '@/components/shared/company-files/company-file-uploader'
+
 
 // Rewired onto the real schema from purchase-bills-migration.sql:
 //  - purchase_bills_view (not the raw table) for effective_status,
@@ -157,7 +156,7 @@ export default function PurchaseBillDetailPage() {
   const canCancel = Number(bill.paid || 0) <= 0 && bill.effective_status !== 'cancelled'
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-3 bg-yellow-400">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">

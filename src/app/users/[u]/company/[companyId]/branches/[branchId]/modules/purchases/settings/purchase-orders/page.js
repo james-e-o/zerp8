@@ -91,7 +91,7 @@ export default function PurchaseOrdersSettingsPage() {
         <label className="block text-xs font-medium text-gray-700">
           Order number format
           <Input
-            value={view.order_number_format}
+            value={view.order_number_format ?? ''}
             disabled={!editing}
             onChange={(e) => patch('order_number_format', e.target.value)}
             className="mt-1 h-auto text-sm disabled:opacity-100"

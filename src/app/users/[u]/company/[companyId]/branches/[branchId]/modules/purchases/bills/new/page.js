@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { X, Upload, FileText, Maximize2 } from 'lucide-react'
 
@@ -22,6 +22,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 import supabase from '@/config/supabaseClient'
 import { formatNaira } from '@/components/modules/sales/dummy-data'
@@ -142,8 +152,13 @@ export default function BillForm() {
   const [draftId, setDraftId] = useState(draftParam || '')
   const [draftLoading, setDraftLoading] = useState(Boolean(draftParam))
   const [draftFilesKey, setDraftFilesKey] = useState(0)
-  const restoreRef = useRef(null) // draft values waiting to be applied once the PO's lines are loaded
-  const [draftRestoreTick, setDraftRestoreTick] = useState(0)
+  // The loaded draft's saved values, waiting until the purchase orders list
+  // has loaded so the PO, its lines, quantities and prices can all be put
+  // back together in one step. null once applied (or when there's no draft).
+  const [pendingDraft, setPendingDraft] = useState(null)
+  const [reviewOpen, setReviewOpen] = useState(false) // "review before saving" dialog
+  const [updateEstimates, setUpdateEstimates] = useState(false) // tick: also update estimated cost prices
+  const [notice, setNotice] = useState(null) // { title, lines, redirectTo } shown after saving
 
   // { id, file, uploading, url, error } per picked file; nothing is sent
   // to storage until the bill itself has been saved.
@@ -169,20 +184,27 @@ export default function BillForm() {
   const poLineItems = selectedOrder?.purchase_order_line_items || []
   const { names: variantNames } = useVariantNames(poLineItems.map((line) => line.variant))
 
-  // Reset per-PO state when the PO changes, so stale quantities/prices
-  // from a previously-selected order never leak into this one. While a
-  // draft is waiting to be restored for THIS PO, don't wipe anything.
-  useEffect(() => {
-    if (restoreRef.current && restoreRef.current.purchaseOrderId === purchaseOrderId) return
+  // The user picked a different Purchase Order: start the per-PO state fresh,
+  // so stale quantities/prices from a previously-selected order never leak
+  // into this one. (This used to be an effect on purchaseOrderId, which also
+  // fired while a draft was being restored and had to be worked around; doing
+  // it here means it only ever runs for a real user change.)
+  const handlePurchaseOrderChange = (value) => {
+    // The PO is required and can't be cleared by the user, so an empty value
+    // here is never a real choice. (Radix Select can report '' when its value
+    // is set programmatically before its options exist; ignoring it stops a
+    // restored draft from being wiped.)
+    if (!value) return
+    setPurchaseOrderId(value)
     setReceiptId('')
     setLineQuantities({})
     setLinePrices({})
     setSelectedLines({})
-  }, [purchaseOrderId])
+  }
 
-  // Load the draft being continued (if any): header fields now, and the PO
-  // selection. The line selection / quantities / prices are put back by the
-  // effect below, once that PO's lines have actually been loaded.
+  // Load the draft being continued (if any). The simple header fields are
+  // put back right away; the PO selection and its lines are applied by the
+  // effect below, once the purchase orders list is available.
   useEffect(() => {
     if (!draftParam) return undefined
     let cancelled = false
@@ -204,15 +226,13 @@ export default function BillForm() {
       }
 
       const payload = data.payload || {}
-      restoreRef.current = payload
       setSupplierReference(payload.supplierReference || '')
       setBillDate(payload.billDate || '')
       setDueDate(payload.dueDate || '')
       setTax(payload.tax ?? '')
       setNotes(payload.notes || '')
-      setPurchaseOrderId(payload.purchaseOrderId || '')
+      setPendingDraft(payload)
       setDraftLoading(false)
-      setDraftRestoreTick((tick) => tick + 1)
     }
 
     loadDraft()
@@ -221,31 +241,37 @@ export default function BillForm() {
     }
   }, [draftParam, branchId])
 
-  // Put the draft's line selection, quantities, prices and receipt back.
-  // Runs whenever the draft, the PO or the list of orders changes, and does
-  // its work once: when the draft's PO is selected AND found in the loaded
-  // orders. (Doing this on "PO changed" alone loses the race with the orders
-  // still loading, which left the table empty.)
+  // Put the draft's Purchase Order, receipt, line selection, quantities and
+  // prices back — all in one go, and only when BOTH the draft and the orders
+  // list are ready, so it doesn't matter which one finishes loading first
+  // (or whether you arrived by clicking a link or by reloading the page).
   useEffect(() => {
-    const pending = restoreRef.current
-    if (!pending || ordersLoading) return
+    if (!pendingDraft || ordersLoading) return
 
-    if (!orders.some((order) => order.id === pending.purchaseOrderId)) {
-      restoreRef.current = null
-      setPurchaseOrderId('')
+    const wanted = pendingDraft.purchaseOrderId
+    if (!wanted) {
+      setPendingDraft(null)
+      return
+    }
+
+    // The list hasn't actually arrived yet (nothing in it, no error): keep waiting.
+    if (orders.length === 0 && !ordersError) return
+
+    if (!orders.some((order) => order.id === wanted)) {
+      setPendingDraft(null)
       setSubmitError(
         'The purchase order on this draft is no longer available (it may have been cancelled). Pick another one to continue.'
       )
       return
     }
-    if (pending.purchaseOrderId !== purchaseOrderId) return
 
-    restoreRef.current = null
-    setReceiptId(pending.receiptId || '')
-    setLineQuantities(pending.lineQuantities || {})
-    setLinePrices(pending.linePrices || {})
-    setSelectedLines(pending.selectedLines || {})
-  }, [orders, ordersLoading, purchaseOrderId, draftRestoreTick])
+    setPurchaseOrderId(wanted)
+    setReceiptId(pendingDraft.receiptId || '')
+    setLineQuantities(pendingDraft.lineQuantities || {})
+    setLinePrices(pendingDraft.linePrices || {})
+    setSelectedLines(pendingDraft.selectedLines || {})
+    setPendingDraft(null)
+  }, [pendingDraft, orders, ordersLoading, ordersError])
 
   // Only SELECTED lines are part of this bill. Per line, the price used is
   // the Billing price if one was entered, otherwise the Estimated price from
@@ -297,6 +323,32 @@ export default function BillForm() {
 
   const hasOverLimit = billableLines.some((line) => line.overLimit)
   const linesAheadOfReceipts = billableLines.filter((line) => line.aheadOfReceipts > 0)
+
+  // Lines whose billing price differs from the Purchase Order's estimated
+  // price, with the exact difference in money and in percent of the PO price.
+  const priceDifferences = useMemo(
+    () =>
+      billableLines
+        .filter((line) => line.isSelected && line.quantity > 0)
+        .map((line) => {
+          const estimated = Number(line.unit_cost_snapshot || 0)
+          const billed = Number(line.unitPrice || 0)
+          const difference = billed - estimated
+          return {
+            id: line.id,
+            variant: line.variant,
+            name: line.displayName || 'Item',
+            currency: line.cost_currency || null,
+            estimated,
+            billed,
+            difference,
+            percent: estimated > 0 ? (difference / estimated) * 100 : null,
+          }
+        })
+        .filter((row) => Math.abs(row.difference) > 0.000001),
+    [billableLines]
+  )
+  const needsReview = priceDifferences.length > 0 || linesAheadOfReceipts.length > 0
 
   const subtotal = billableLines.reduce((sum, line) => sum + line.lineTotal, 0)
   const total = subtotal + Number(tax || 0)
@@ -354,15 +406,15 @@ export default function BillForm() {
     setSubmitError('')
 
     if (!purchaseOrderId) {
-      alert('Select a Purchase Order first.')
+      setSubmitError('Select a Purchase Order first.')
       return
     }
     if (!hasAnySelected) {
-      alert('Select at least one line item to save this draft.')
+      setSubmitError('Select at least one line item to save this draft.')
       return
     }
     if (hasOverLimit) {
-      alert('One or more lines are billed for more than what is still left to bill. Fix the lines shown in red.')
+      setSubmitError('One or more lines are billed for more than what is still left to bill. Fix the lines shown in red.')
       return
     }
 
@@ -437,24 +489,43 @@ export default function BillForm() {
     router.push(base)
   }
 
-  const handleSubmit = async (event, submitStatus) => {
+  // Checks that must pass before anything is saved. Returns the message to
+  // show, or '' when the bill is fine to save.
+  const validateBill = () => {
+    if (!purchaseOrderId) return 'Select a Purchase Order to bill against.'
+    if (!hasAnySelected) return 'Select at least one line item to bill.'
+    if (!hasAnyQuantity) return 'Enter a quantity against at least one selected line item.'
+    if (hasOverLimit) {
+      return 'One or more lines are billed for more than what is still left to bill. Fix the lines shown in red.'
+    }
+    return ''
+  }
+
+  // Save Bill button: if anything differs from the Purchase Order (price) or
+  // is being billed ahead of delivery, show the review dialog first; the
+  // bill is only saved once the user confirms there.
+  const handleSaveClick = (event) => {
     event.preventDefault()
     setSubmitError('')
+    const problem = validateBill()
+    if (problem) {
+      setSubmitError(problem)
+      return
+    }
+    if (needsReview) {
+      setReviewOpen(true)
+      return
+    }
+    handleSubmit(event, 'unpaid')
+  }
 
-    if (!purchaseOrderId) {
-      alert('Select a Purchase Order to bill against.')
-      return
-    }
-    if (!hasAnySelected) {
-      alert('Select at least one line item to bill.')
-      return
-    }
-    if (!hasAnyQuantity) {
-      alert('Enter a quantity against at least one selected line item.')
-      return
-    }
-    if (hasOverLimit) {
-      alert('One or more lines are billed for more than what is still left to bill. Fix the lines shown in red.')
+  const handleSubmit = async (event, submitStatus) => {
+    event?.preventDefault?.()
+    setSubmitError('')
+
+    const problem = validateBill()
+    if (problem) {
+      setSubmitError(problem)
       return
     }
 
@@ -493,6 +564,9 @@ export default function BillForm() {
       return
     }
 
+    // Everything the user should still be told once the bill is saved.
+    const noticeLines = []
+
     // The bill exists now, so the picked files can be filed under it.
     const billId = data?.bill?.id
     let failedUploads = []
@@ -516,37 +590,66 @@ export default function BillForm() {
       })
       if (promoteError) {
         console.error('Could not close the draft after saving the bill:', promoteError)
-        alert(
-          `The bill was saved, but its draft could not be removed (${promoteError.message}). You can delete the draft manually.`
+        noticeLines.push(
+          `The draft could not be removed (${promoteError.message}). You can delete it from Draft Bills.`
         )
       }
     }
 
-    setSaving(false)
-
-    if (data?.warnings?.length) {
-      const summary = data.warnings
-        .map((w) =>
-          w.type === 'quantity'
-            ? `Quantity exceeds what's been received by ${w.overage_percent}%`
-            : `Price differs from the Purchase Order by ${w.difference_percent}%`
+    // Ticked in the review dialog: make the billed prices the products'
+    // estimated cost prices.
+    if (billId && updateEstimates && priceDifferences.length > 0) {
+      const { data: estimateResult, error: estimateError } = await supabase.rpc(
+        'update_cost_estimates_from_bill',
+        {
+          p_branch: branchId,
+          p_updates: priceDifferences.map((row) => ({
+            variant: row.variant,
+            cost_price: row.billed,
+            cost_currency: row.currency,
+          })),
+        }
+      )
+      if (estimateError) {
+        noticeLines.push(`Estimated cost prices were not updated: ${estimateError.message}`)
+      } else {
+        const updated = Number(estimateResult?.updated || 0)
+        const skipped = Number(estimateResult?.skipped || 0)
+        noticeLines.push(
+          `Estimated cost price updated for ${updated} product${updated === 1 ? '' : 's'}.` +
+            (skipped > 0
+              ? ` ${skipped} left unchanged (different currency, or you can't edit that product).`
+              : '')
         )
-        .join('\n')
-      alert(`Bill created, but flagged for review:\n\n${summary}`)
+      }
+    }
+
+    // Flags raised by the server's own tolerance check.
+    if (data?.warnings?.length) {
+      data.warnings.forEach((w) => {
+        noticeLines.push(
+          w.type === 'quantity'
+            ? `Billed quantity is ${w.overage_percent}% more than what has been received.`
+            : `Billing price differs from the Purchase Order price by ${w.difference_percent}%.`
+        )
+      })
+      noticeLines.push('This bill has been flagged for review.')
     }
 
     if (failedUploads.length > 0) {
-      const details = failedUploads
-        .map((result) => `${result.file.name}: ${result.error}`)
-        .join('\n')
-      alert(
-        `The bill was saved, but ${failedUploads.length} file(s) could not be uploaded:\n\n${details}\n\nYou can add them again from the bill's page.`
-      )
-      router.push(`${base}/${billId}`)
-      return
+      failedUploads.forEach((result) => {
+        noticeLines.push(`File not uploaded: ${result.file.name} (${result.error}). Add it again from the bill's page.`)
+      })
     }
 
-    router.push(base)
+    setSaving(false)
+
+    const redirectTo = failedUploads.length > 0 ? `${base}/${billId}` : base
+    if (noticeLines.length > 0) {
+      setNotice({ title: 'Bill saved', lines: noticeLines, redirectTo })
+      return
+    }
+    router.push(redirectTo)
   }
 
   // Shared file input, rendered inside whichever upload trigger is
@@ -566,8 +669,7 @@ export default function BillForm() {
     <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold tracking-tight text-slate-900">New Bill</h1>
-          <p className="text-xs text-gray-500">The bill number is assigned once saved.</p>
+          <h1 className="text-base font-bold tracking-tight text-slate-900">New Bill</h1>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -587,7 +689,7 @@ export default function BillForm() {
             type="button"
             className="bg-core text-white h-6 text-xs hover:bg-core/90"
             disabled={saving || hasOverLimit || draftLoading}
-            onClick={(event) => handleSubmit(event, 'unpaid')}
+            onClick={handleSaveClick}
           >
             {saving ? 'Saving...' : 'Save Bill'}
           </Button>
@@ -604,7 +706,7 @@ export default function BillForm() {
         <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
           <label className="col-span-2 text-xs font-medium text-gray-800 lg:col-span-1">
             Purchase Order <span className="text-red-500">*</span>
-            <Select value={purchaseOrderId} onValueChange={setPurchaseOrderId}>
+            <Select value={purchaseOrderId} onValueChange={handlePurchaseOrderChange}>
               <SelectTrigger className="mt-1 h-auto w-full text-sm">
                 <SelectValue
                   placeholder={ordersLoading ? 'Loading purchase orders...' : 'Select a purchase order to bill against'}
@@ -687,7 +789,7 @@ export default function BillForm() {
 
         {/* Body. Desktop: fixed left panel (~25%) + the one scrollable right
             column (~75%). Mobile: stacked, page scrolls as a whole. */}
-        <div className="flex flex-col gap-4 lg:grid lg:min-h-0 lg:grow lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] lg:grid-rows-[minmax(0,1fr)]">
+        <div className="flex flex-col gap-4 lg:grid lg:min-h-0 lg:grow lg:grid-cols-[minmax(0,1fr)_minmax(0,4fr)] lg:grid-rows-[minmax(0,1fr)]">
           {/* LEFT - supplier invoice / screenshot (fixed, F4 proportions) */}
           <section className="flex flex-col gap-2 lg:min-h-0">
             <div className="flex shrink-0 flex-col items-start gap-2">
@@ -1044,6 +1146,148 @@ export default function BillForm() {
           </section>
         </div>
       </form>
+
+      {/* Review before saving: shown when a price differs from the Purchase
+          Order, or goods are being billed before they have arrived. */}
+      <AlertDialog open={reviewOpen} onOpenChange={setReviewOpen}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">Review before saving this bill</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              This bill differs from the Purchase Order in the ways below. Nothing is saved until you
+              press Save Bill.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="max-h-[55vh] space-y-4 overflow-y-auto pr-1 text-xs">
+            {linesAheadOfReceipts.length > 0 && (
+              <div>
+                <p className="mb-1 font-semibold text-amber-800">Billing ahead of delivery</p>
+                <p className="mb-1.5 text-[11px] text-gray-500">
+                  You are billing for goods that have not been received yet.
+                </p>
+                <table className="w-full text-[11px]">
+                  <thead className="text-gray-500">
+                    <tr>
+                      <th className="py-1 text-left font-medium">Item</th>
+                      <th className="py-1 text-right font-medium">Billing on this bill</th>
+                      <th className="py-1 text-right font-medium">Received so far</th>
+                      <th className="py-1 text-right font-medium">Not yet received</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {linesAheadOfReceipts.map((line) => (
+                      <tr key={line.id}>
+                        <td className="py-1 pr-2 text-gray-800">{line.displayName || 'Item'}</td>
+                        <td className="py-1 text-right">{line.quantity}</td>
+                        <td className="py-1 text-right">{line.quantity_received || 0}</td>
+                        <td className="py-1 text-right font-medium text-amber-700">{line.aheadOfReceipts}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {priceDifferences.length > 0 && (
+              <div>
+                <p className="mb-1 font-semibold text-gray-800">Price differs from the Purchase Order</p>
+                <p className="mb-1.5 text-[11px] text-gray-500">
+                  Difference is the billing price minus the Purchase Order price, per unit.
+                </p>
+                <table className="w-full text-[11px]">
+                  <thead className="text-gray-500">
+                    <tr>
+                      <th className="py-1 text-left font-medium">Item</th>
+                      <th className="py-1 text-right font-medium">PO price</th>
+                      <th className="py-1 text-right font-medium">Billing price</th>
+                      <th className="py-1 text-right font-medium">Difference</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {priceDifferences.map((row) => {
+                      const higher = row.difference > 0
+                      return (
+                        <tr key={row.id}>
+                          <td className="py-1 pr-2 text-gray-800">{row.name}</td>
+                          <td className="py-1 text-right">{formatNaira(row.estimated)}</td>
+                          <td className="py-1 text-right">{formatNaira(row.billed)}</td>
+                          <td className={`py-1 text-right font-medium ${higher ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {higher ? '+' : '-'}
+                            {formatNaira(Math.abs(row.difference))}
+                            {row.percent === null
+                              ? ''
+                              : ` (${higher ? '+' : '-'}${Math.abs(row.percent).toFixed(2)}%)`}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+
+                <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-gray-200 bg-gray-50/60 p-2.5">
+                  <Checkbox
+                    checked={updateEstimates}
+                    onCheckedChange={(checked) => setUpdateEstimates(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-[11px] leading-4 text-gray-700">
+                    <span className="font-medium text-gray-900">
+                      Also update the estimated cost price of {priceDifferences.length === 1 ? 'this product' : 'these products'}
+                    </span>
+                    <br />
+                    The billing price above becomes each product's estimated cost price for future
+                    Purchase Orders. Products priced in a different currency, or that you can't edit,
+                    are left unchanged.
+                  </span>
+                </label>
+              </div>
+            )}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-7 text-xs">Go back</AlertDialogCancel>
+            <AlertDialogAction
+              className="h-7 bg-core text-xs text-white hover:bg-core/90"
+              disabled={saving}
+              onClick={() => handleSubmit(null, 'unpaid')}
+            >
+              Save Bill
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Shown after the bill is saved, when there is something to tell the
+          user (flags from the server, files that failed, estimate update). */}
+      <AlertDialog
+        open={!!notice}
+        onOpenChange={(open) => {
+          if (!open && notice) {
+            const target = notice.redirectTo
+            setNotice(null)
+            router.push(target)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">{notice?.title}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <ul className="list-disc space-y-1 pl-4 text-xs text-gray-700">
+                {(notice?.lines || []).map((line, index) => (
+                  <li key={index}>{line}</li>
+                ))}
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction className="h-7 bg-core text-xs text-white hover:bg-core/90">
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={previewOpen && !!activeEntry} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-4xl">

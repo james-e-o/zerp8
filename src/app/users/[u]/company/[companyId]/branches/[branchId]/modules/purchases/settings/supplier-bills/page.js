@@ -115,7 +115,7 @@ export default function SupplierBillsSettingsPage() {
             <Input
               type="number"
               min="0"
-              value={view.bills_price_tolerance_percent}
+              value={view.bills_price_tolerance_percent ?? ''}
               disabled={!editing}
               onChange={(e) => patch('bills_price_tolerance_percent', e.target.value)}
               className="mt-1 h-auto text-sm disabled:opacity-100"
@@ -130,7 +130,7 @@ export default function SupplierBillsSettingsPage() {
             <Input
               type="number"
               min="0"
-              value={view.bills_quantity_tolerance_percent}
+              value={view.bills_quantity_tolerance_percent ?? ''}
               disabled={!editing}
               onChange={(e) => patch('bills_quantity_tolerance_percent', e.target.value)}
               className="mt-1 h-auto text-sm disabled:opacity-100"
