@@ -3,7 +3,7 @@ import PurchasesListPage from '@/components/modules/purchases/purchases-list-pag
 export default function ApprovedReturnsPage() {
   return (
     <PurchasesListPage
-      title="Approved Returns"
+      title="Approved Returns "
       description="Review approved supplier returns for this branch."
     />
   )
