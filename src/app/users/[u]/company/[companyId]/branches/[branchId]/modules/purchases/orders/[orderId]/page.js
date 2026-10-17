@@ -47,6 +47,7 @@ export default function PurchaseOrderDetailPage() {
   const [items, setItems] = useState([])
   const [sourceRequest, setSourceRequest] = useState(null)
   const [mergedSources, setMergedSources] = useState([])
+  const [quarantineTotal, setQuarantineTotal] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -96,10 +97,29 @@ export default function PurchaseOrderDetailPage() {
 
         const { data: lineRows, error: lineError } = await supabase
           .from('purchase_order_line_items')
-          .select('id, variant, quantity_ordered, unit_cost_snapshot, line_total')
+          .select('id, variant, quantity_ordered, quantity_received, quantity_returned, unit_cost_snapshot, line_total')
           .eq('purchase_order', orderId)
 
         if (lineError) throw lineError
+
+        // Goods that arrived for these lines but are still in quarantine
+        // (awaiting review or marked damaged). They do not count as
+        // received until someone accepts them.
+        const quarantineByLine = new Map()
+        const lineIds = (lineRows || []).map((row) => row.id)
+        if (lineIds.length > 0) {
+          const { data: holdRows } = await supabase
+            .from('purchase_receipt_holds')
+            .select('purchase_order_line_item, quantity')
+            .in('purchase_order_line_item', lineIds)
+            .in('status', ['awaiting_review', 'damaged'])
+          ;(holdRows || []).forEach((hold) => {
+            quarantineByLine.set(
+              hold.purchase_order_line_item,
+              (quarantineByLine.get(hold.purchase_order_line_item) || 0) + Number(hold.quantity || 0)
+            )
+          })
+        }
 
         const variantIds = [...new Set((lineRows || []).map((row) => row.variant).filter(Boolean))]
         let variants = []
@@ -164,8 +184,10 @@ export default function PurchaseOrderDetailPage() {
             productTitle: product?.title || 'Product unavailable',
             variantLabel: variant?.variant_label || 'Default variant',
             sku: variant?.sku || '',
+            inQuarantine: quarantineByLine.get(row.id) || 0,
           }
         }))
+        setQuarantineTotal([...quarantineByLine.values()].reduce((sum, qty) => sum + qty, 0))
         setSourceRequest(sourceRequestRow)
         setMergedSources(mergedRows)
       } catch (loadError) {
@@ -363,6 +385,11 @@ export default function PurchaseOrderDetailPage() {
         </div>
         <div className="flex items-center gap-2 print:hidden">
           <OrderStatusBadge status={order.status} />
+          {quarantineTotal > 0 && (
+            <span className="rounded-sm bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+              {quarantineTotal.toLocaleString()} in quarantine
+            </span>
+          )}
        
           {EDITABLE_STATUSES.includes(order.status) && (
             <Link href={`${base}/${order.id}/edit`}>
@@ -529,12 +556,15 @@ export default function PurchaseOrderDetailPage() {
           <p className="p-4 text-xs text-muted-foreground">This order has no line items.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-xs">
+            <table className="w-full min-w-[760px] text-xs">
               <thead className="bg-muted/50 text-[10px] text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium">Product</th>
                   <th className="px-4 py-2 text-left font-medium">SKU</th>
-                  <th className="px-4 py-2 text-right font-medium">Quantity</th>
+                  <th className="px-4 py-2 text-right font-medium">Ordered</th>
+                  <th className="px-4 py-2 text-right font-medium">Received</th>
+                  <th className="px-4 py-2 text-right font-medium">In quarantine</th>
+                  <th className="px-4 py-2 text-right font-medium">Returned</th>
                   <th className="px-4 py-2 text-right font-medium">Unit cost</th>
                   <th className="px-4 py-2 text-right font-medium">Line total</th>
                 </tr>
@@ -550,6 +580,17 @@ export default function PurchaseOrderDetailPage() {
                     </td>
                     <td className="px-4 py-2 text-muted-foreground">{item.sku || '—'}</td>
                     <td className="px-4 py-2 text-right text-foreground">{Number(item.quantity_ordered || 0).toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right text-foreground">{Number(item.quantity_received || 0).toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right text-foreground">
+                      {item.inQuarantine > 0 ? (
+                        <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          {item.inQuarantine.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right text-foreground">{Number(item.quantity_returned || 0).toLocaleString()}</td>
                     <td className="px-4 py-2 text-right text-foreground">
                       {formatCurrency(item.unit_cost_snapshot, currentBranch?.base_currency || '')}
                     </td>
@@ -561,7 +602,7 @@ export default function PurchaseOrderDetailPage() {
               </tbody>
               <tfoot className="border-t border-border bg-muted/30">
                 <tr>
-                  <th colSpan={4} className="px-4 py-3 text-right text-xs font-semibold text-foreground">Total</th>
+                  <th colSpan={7} className="px-4 py-3 text-right text-xs font-semibold text-foreground">Total</th>
                   <td className="px-4 py-3 text-right text-xs font-semibold text-foreground">
                     {formatCurrency(total, currentBranch?.base_currency || '')}
                   </td>

@@ -8,11 +8,11 @@ import { formatCurrency } from '@/components/modules/purchases/dummy-data'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 
 const ORDER_STATUS_STYLES = {
-  // 'open' = created internally, nothing sent yet.
-  open: 'bg-blue-100 text-blue-800',
-  // 'sent' = actually transmitted/exported to the supplier, set from
-  // the order detail page's Send/Export flow - kept visually distinct
-  // from 'open' now that the two are different events.
+  // 'open' and 'sent' are the same thing as far as the person using the
+  // app is concerned (exporting the PDF counts as sending too), so both
+  // are shown as "Open" (the database keeps both values; the Send button
+  // on the detail page still moves open -> sent harmlessly).
+  open: 'bg-indigo-100 text-indigo-800',
   sent: 'bg-indigo-100 text-indigo-800',
   partially_received: 'bg-amber-100 text-amber-800',
   fully_received: 'bg-emerald-100 text-emerald-800',
@@ -21,7 +21,7 @@ const ORDER_STATUS_STYLES = {
 
 export function OrderStatusBadge({ status }) {
   const normalizedStatus = String(status || 'unknown').toLowerCase()
-  const label = normalizedStatus
+  const label = (normalizedStatus === 'sent' ? 'open' : normalizedStatus)
     .replace(/[_-]/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 
@@ -78,7 +78,10 @@ export default function PurchaseOrdersListPage({
         .eq('branch', branchId)
         .order('created_at', { ascending: false })
 
-      if (status && status !== 'all') {
+      if (status === 'open' || status === 'sent') {
+        // The Open tab shows both values - open and sent mean the same thing.
+        query = query.in('status', ['open', 'sent'])
+      } else if (status && status !== 'all') {
         query = query.eq('status', status.replace(/-/g, '_'))
       }
 

@@ -24,7 +24,7 @@ export default function ReceiptsListPage({ title, description, status }) {
         .select(
           `id, receipt_number, status, created_at,
            purchase_order:purchase_orders ( order_number, supplier:suppliers(name) ),
-           purchase_receipt_line_items ( excess_status )`
+           purchase_receipt_line_items ( purchase_receipt_holds ( status ) )`
         )
         .eq('branch', branchId)
         .order('created_at', { ascending: false })
@@ -39,11 +39,13 @@ export default function ReceiptsListPage({ title, description, status }) {
       if (!error) {
         setReceipts((data || []).map((receipt) => ({
           ...receipt,
-          // A receipt "needs approval" if ANY of its lines are still
-          // sitting at pending_approval - approved/rejected lines (or
-          // lines with no discrepancy at all) don't count.
-          needsApproval: (receipt.purchase_receipt_line_items || []).some(
-            (line) => line.excess_status === 'pending_approval'
+          // "In quarantine" while ANY of the receipt's goods are still held
+          // (awaiting review or marked damaged) - accepted/returned goods
+          // no longer count.
+          inQuarantine: (receipt.purchase_receipt_line_items || []).some(
+            (line) => (line.purchase_receipt_holds || []).some(
+              (hold) => hold.status === 'awaiting_review' || hold.status === 'damaged'
+            )
           ),
         })))
       }
@@ -61,7 +63,7 @@ export default function ReceiptsListPage({ title, description, status }) {
       {(title || description) && (
         <div>
           {title && (
-            <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
+            <h2 className="text-sm tracking-tight font-semibold text-gray-800">{title}</h2>
           )}
           {description && (
             <p className="text-xs text-gray-500">{description}</p>
@@ -116,9 +118,9 @@ export default function ReceiptsListPage({ title, description, status }) {
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={receipt.status} />
-                      {receipt.needsApproval && (
+                      {receipt.inQuarantine && (
                         <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                          Needs approval
+                          In quarantine
                         </span>
                       )}
                     </div>

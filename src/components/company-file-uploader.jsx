@@ -133,6 +133,7 @@ export function AttachmentList({
   canAdd = false,
   canDelete = false,
   reloadKey = 0, // change this number to make the list reload (e.g. after the page uploads files itself)
+  onChange, // called after files are added or deleted here, so a page showing its own preview can reload
 }) {
   const { attachments, loading, error: loadError, reload } = useFileAttachments(entityType, entityId)
 
@@ -170,6 +171,7 @@ export function AttachmentList({
     setBusy(false)
     setError(problems.join('\n'))
     reload()
+    if (onChange) onChange()
   }
 
   const handleView = async (attachment) => {
@@ -218,6 +220,7 @@ export function AttachmentList({
     setBusy(false)
     reload()
     reloadRemoved()
+    if (onChange) onChange()
   }
 
   return (

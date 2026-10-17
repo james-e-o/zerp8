@@ -178,12 +178,12 @@ export default function PurchaseReceiptDetailPage() {
   }
 
   if (isLoading) {
-    return <p className="p-4 text-xs text-muted-foreground">Loading receipt...</p>
+    return <p className=" text-xs text-muted-foreground">Loading receipt...</p>
   }
 
   if (errorMessage) {
     return (
-      <div className="space-y-4 p-4 text-xs">
+      <div className="space-y-3 text-xs">
         <Link href={base}>
           <Button type="button" variant="outline" size="sm" className="h-7 rounded-sm text-xs">
             <ArrowLeft className="mr-1.5 size-3.5" /> Back to receipts
@@ -199,7 +199,7 @@ export default function PurchaseReceiptDetailPage() {
   const adjustmentLines = items.filter((item) => item.discrepancy_type !== 'none')
 
   return (
-    <div className="space-y-4 p-4 text-xs">
+    <div className="space-y-3  text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href={base}>
           <Button type="button" variant="outline" size="sm" className="h-7 rounded-sm text-xs">

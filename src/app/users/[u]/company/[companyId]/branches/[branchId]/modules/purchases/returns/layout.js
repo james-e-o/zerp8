@@ -6,6 +6,7 @@ const TABS = [
   { label: 'Pending', value: 'pending' },
   { label: 'Approved', value: 'approved' },
   { label: 'Completed', value: 'completed' },
+  { label: 'Dispatched', value: 'dispatched' },
   { label: 'Cancelled', value: 'cancelled' },
 ]
 

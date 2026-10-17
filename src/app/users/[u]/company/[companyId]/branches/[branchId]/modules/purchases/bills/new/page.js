@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { X, Upload, FileText, Maximize2 } from 'lucide-react'
 
@@ -156,6 +156,8 @@ export default function BillForm() {
   // has loaded so the PO, its lines, quantities and prices can all be put
   // back together in one step. null once applied (or when there's no draft).
   const [pendingDraft, setPendingDraft] = useState(null)
+  const totalsRef = useRef(null) // the subtotal / tax / total box, scrolled into view for a new bill
+  const scrollToTotalsRef = useRef(false)
   const [reviewOpen, setReviewOpen] = useState(false) // "review before saving" dialog
   const [updateEstimates, setUpdateEstimates] = useState(false) // tick: also update estimated cost prices
   const [notice, setNotice] = useState(null) // { title, lines, redirectTo } shown after saving
@@ -197,9 +199,27 @@ export default function BillForm() {
     if (!value) return
     setPurchaseOrderId(value)
     setReceiptId('')
-    setLineQuantities({})
     setLinePrices({})
-    setSelectedLines({})
+
+    // A new bill starts with every line that can still be billed selected, at
+    // its full remaining quantity (ordered minus already billed). The user
+    // unticks or lowers whatever this supplier invoice doesn't cover.
+    const order = orders.find((candidate) => candidate.id === value)
+    const nextSelected = {}
+    const nextQuantities = {}
+    ;(order?.purchase_order_line_items || []).forEach((line) => {
+      const remaining = Math.max(
+        Number(line.quantity_ordered || 0) - Number(line.quantity_billed || 0),
+        0
+      )
+      if (remaining > 0) {
+        nextSelected[line.id] = true
+        nextQuantities[line.id] = String(remaining)
+      }
+    })
+    setSelectedLines(nextSelected)
+    setLineQuantities(nextQuantities)
+    scrollToTotalsRef.current = true
   }
 
   // Load the draft being continued (if any). The simple header fields are
@@ -320,6 +340,17 @@ export default function BillForm() {
       }),
     [poLineItems, lineQuantities, linePrices, selectedLines, variantNames]
   )
+
+  // After a purchase order is picked on a NEW bill, scroll down to the totals
+  // so the bill's total is visible straight away. (Opening a draft restores
+  // its own state and doesn't come through here.)
+  useEffect(() => {
+    if (!scrollToTotalsRef.current || billableLines.length === 0) return
+    scrollToTotalsRef.current = false
+    setTimeout(() => {
+      totalsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }, 150)
+  }, [billableLines.length, purchaseOrderId])
 
   const hasOverLimit = billableLines.some((line) => line.overLimit)
   const linesAheadOfReceipts = billableLines.filter((line) => line.aheadOfReceipts > 0)
@@ -982,7 +1013,7 @@ export default function BillForm() {
               <div className="space-y-2">
                 <h2 className="text-sm font-semibold text-gray-800">Line items</h2>
                 <p className="text-xs text-gray-500">
-                  Select the lines to bill. Leave Billing price blank to use the Estimated price.
+                  Every line that can still be billed starts selected - untick any this supplier invoice doesn't cover. Leave Billing price blank to use the Estimated price.
                 </p>
                 <div className="overflow-x-auto rounded-lg border border-gray-200">
                   <table className="w-full min-w-[860px] text-xs">
@@ -1110,7 +1141,10 @@ export default function BillForm() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3 sm:grid-cols-3 sm:items-end sm:gap-4">
+            <div
+              ref={totalsRef}
+              className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3 sm:grid-cols-3 sm:items-end sm:gap-4"
+            >
               <div>
                 <p className="text-xs font-medium text-gray-700">Subtotal (from selected line items)</p>
                 <p className="mt-1 text-sm text-gray-800">{formatNaira(subtotal)}</p>

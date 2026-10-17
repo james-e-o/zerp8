@@ -28,47 +28,7 @@ const generateReceiptNumber = () => {
   return `RCT-${stamp}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
 }
 
-// Receipts can only be created against an existing Purchase Order — there is
-// no path to a blank receipt. Step 1 picks the PO; step 2 receives against
-// whatever quantity is still outstanding on each of its lines.
-//
-// Backend wiring notes:
-//   - purchase_receipts is ALWAYS inserted as status='draft' first, same
-//     whichever button was clicked - post_purchase_receipt() itself
-//     requires a draft row to post (it raises if status isn't 'draft'),
-//     so "Post Receipt" means insert-as-draft then immediately call the
-//     RPC, not insert-as-posted directly.
-//   - purchase_order_line_items.unit_cost_snapshot is the real column
-//     name (the original scaffold read line.unit_cost, which doesn't
-//     exist - fixed here).
-//   - shelf is persisted on purchase_receipt_line_items.shelf (added in
-//     purchases-schema-patch-1.sql). It is NOT yet propagated into
-//     stock_movements - post_purchase_receipt() doesn't write a shelf
-//     column there until that table's actual shape is confirmed.
-//   - Quantity received is NO LONGER capped at "outstanding". Entering
-//     more than what's left on the line is allowed - a BEFORE INSERT
-//     trigger on purchase_receipt_line_items (compute_purchase_receipt_
-//     line_discrepancy) automatically splits it into quantity_accepted
-//     (posts) and excess_quantity (held, excess_status='pending_
-//     approval') the moment the row is inserted. This page doesn't
-//     compute that split itself - it just stops blocking the quantity
-//     and shows the person what's about to happen.
-//   - Save as Draft no longer creates a purchase_receipts row. The form is
-//     saved into purchase_receipt_drafts (payload jsonb) - nothing is
-//     computed or posted, so a draft left overnight can't go stale (the
-//     excess/accepted split is only worked out when the real receipt rows
-//     are inserted at post time). Continue a draft with ?draft=<id>.
-//     Post Receipt creates the real receipt as before, then removes the
-//     draft it came from.
-//   - loadWarehouses() used to silently discard any error from
-//     resolve_branch_warehouse() - `if (!error && data) {...}` with no
-//     else branch at all. That's why the dropdown could get stuck on
-//     "Resolving warehouse..." forever with zero signal of why: an RLS
-//     block, a thrown exception from the SECURITY DEFINER permission
-//     check, a genuinely-missing default warehouse, and a slow network
-//     call were all indistinguishable from this component's point of
-//     view. Now every failure path sets warehouseError and logs to the
-//     console, and the JSX surfaces it under the Select.
+
 
 export default function NewReceiptPage() {
   const router = useRouter()
@@ -605,7 +565,7 @@ export default function NewReceiptPage() {
               Items to receive
             </h2>
             <p className="mb-2 text-[10px] text-gray-500">
-              Entering more than what's outstanding is allowed - the extra is held for approval rather than posted straight to stock.
+              Entering more than what's outstanding is allowed - the extra goes into quarantine until someone accepts it or returns it. Depending on Receiving Rules, everything you receive may go into quarantine first; nothing becomes available stock until it is accepted.
             </p>
 
             <div className="overflow-hidden rounded-lg border border-gray-200">
@@ -658,7 +618,7 @@ export default function NewReceiptPage() {
                             />
                             {over > 0 && (
                               <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                                +{over} over - needs approval
+                                +{over} over - goes to quarantine
                               </span>
                             )}
                           </div>
@@ -700,6 +660,7 @@ export default function NewReceiptPage() {
             className="mt-1 min-h-20 bg-white text-xs"
           />
         </label>
+
       </form>
     </div>
   )

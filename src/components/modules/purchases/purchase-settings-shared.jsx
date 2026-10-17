@@ -12,7 +12,7 @@ import supabase from '@/config/supabaseClient'
 // that save to purchase_settings don't each carry their own copy of the
 // load / override / approval-gate / save logic. Suggested location:
 //   components/modules/purchases/purchase-settings-shared.jsx
-// (requires purchase-settings-save-patch-migration.sql to be run).
+// (requires purchase-settings-defaults-migration.sql to be run).
 //
 // A tab page is then just its fields:
 //
@@ -38,13 +38,18 @@ import supabase from '@/config/supabaseClient'
 //     branch permission, no approval). OFF deletes it and the branch
 //     follows the company default again.
 //
-// NOTE the toggle writes the page's current draft values, so switching it
-// on from a tab copies the whole effective row (every tab's fields), not
-// just this tab's.
+// WHERE THE VALUES COME FROM: get_effective_purchase_settings() resolves
+// every item branch -> company -> the application defaults
+// (purchase_settings_defaults), so the page always receives a complete set.
+// A company or branch row only stores the items someone actually changed:
+// saving sends all the page's values, and the database keeps only those
+// that differ from what the item would follow anyway. Switching the branch
+// override on therefore starts an empty override - everything still
+// follows the company until a change is saved here.
 
-// Every purchase_settings column and its database default. The editor
-// merges the saved row over these, so a company that has never saved
-// anything still has a complete set of values.
+// A placeholder shown only until the real values load. It is NOT the source
+// of truth - the application defaults live in the database table
+// purchase_settings_defaults.
 export const SETTINGS_DEFAULTS = {
   request_number_format: 'PR-{YY}{MM}{DD}-{RAND}',
   order_number_format: 'PO-{YY}{MM}{DD}-{RAND}',
@@ -59,6 +64,7 @@ export const SETTINGS_DEFAULTS = {
   convert_to_po_role: 'branch_manager',
   over_receipt_tolerance_percent: 0,
   excess_handling: 'require_approval',
+  receiving_quarantine_required: true,
   require_supplier_invoice_number: true,
   prevent_duplicate_invoice_numbers: true,
   bills_matching_mode: 'three_way',
@@ -71,10 +77,8 @@ export const SETTINGS_DEFAULTS = {
   bills_tolerance_action: 'warn',
 }
 
-// get_effective_purchase_settings() returns an all-null record (not null)
-// when nothing has been saved yet, and a saved row can hold NULL for a
-// column that was never set. Spreading those over the defaults would blank
-// every toggle and select, so only real values replace a default.
+// Only real values replace the placeholder: a null/undefined field in the
+// response must never blank a toggle or select.
 const withDefaults = (row) => {
   const merged = { ...SETTINGS_DEFAULTS }
   Object.entries(row || {}).forEach(([key, value]) => {
@@ -409,8 +413,9 @@ export function SettingsPageShell({ editor, title, description, children }) {
           <div>
             <p className="text-xs font-medium text-gray-800">Override for this branch</p>
             <p className="mt-0.5 text-[11px] text-gray-500">
-              Off: this branch follows the company-wide defaults. On: the values on every
-              Purchase Settings tab apply only to this branch.
+              Off: this branch follows the company-wide settings. On: changes you save on any
+              Purchase Settings tab apply only to this branch; anything you don't change still
+              follows the company.
             </p>
           </div>
           <Switch
