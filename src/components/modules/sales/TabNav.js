@@ -11,8 +11,9 @@ export default function TabNav({ tabs, basePath }) {
   return (
     <nav className="flex h-11 shrink-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden border-line pt-1 pb-3.5">
       {tabs.map((tab) => {
-        const active = current === (tab.path || tab.value);
-        const href = tab.value === "all" ? basePath : `${basePath}/${tab.path || tab.value}`;
+        const value = tab.path || tab.value || "all";
+        const active = current === value;
+        const href = value === "all" ? basePath : `${basePath}/${value}`;
         return (
           <Link
             key={tab.value}
