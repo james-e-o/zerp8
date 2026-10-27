@@ -178,10 +178,10 @@ export default function SignupPage() {
   
   return (
     <AlertDialog setDialogOpen={setDialogOpen} dialogOpen={dialogOpen}>
-    <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
+    <div className="h-svh max-h-svh overflow-y-auto bg-[#f7f7f4] text-[#17192a] flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
       <div className="w-full -mt-20 max-w-sm">
             <div className={cn("flex flex-col gap-6")}>
-              <form onSubmit={Submit}>
+              <form onSubmit={Submit} className="rounded-xl border border-[#e6e5e2] bg-white p-5 shadow-[0_16px_42px_rgba(23,25,42,0.07)] sm:p-6">
                 <FieldGroup>
                   <div className="flex flex-col items-center gap-2 text-center">
                     <a
@@ -190,7 +190,7 @@ export default function SignupPage() {
                     >
                       <div className="flex size-8 items-center justify-center rounded-md">
                         <div className="inline-flex pt-0 md:pt-0 size-8 justify-center">
-                            <Image className="dark:invert w-7/8 scale-75 " src="/logo.png" alt="logo" width={200} height={200} priority />
+                            <Image className="dark:invert w-7/8 scale-75 " src="/zerp8-logo.png" alt="ZERP-8" width={200} height={200} priority />
                         </div>
                       </div>
                       
@@ -207,7 +207,7 @@ export default function SignupPage() {
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-medium">@ </span>
                           <Input 
                             id="username" 
-                            className="pl-6" 
+                            className="min-h-10 rounded border-[#dedee4] bg-white pl-6 text-[13px] focus-visible:border-[#736ce8] focus-visible:ring-[#5148e5]/20"
                             value={username.replace('@', '')}
                             onChange={handleUsernameChange}
                             type="text" 
@@ -240,7 +240,7 @@ export default function SignupPage() {
                       </Field>
                       <Field>
                         <FieldLabel htmlFor="email">Email</FieldLabel>
-                        <Input id="email" value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="m@example.com" />
+                        <Input id="email" className="min-h-10 rounded border-[#dedee4] bg-white text-[13px] focus-visible:border-[#736ce8] focus-visible:ring-[#5148e5]/20" value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="m@example.com" />
                         <FieldDescription className={'text-xs ml-1'}>
                           {error && errorMessage==message.emailError && (
                             <span className="text-orange-500">{errorMessage}</span>
@@ -252,7 +252,7 @@ export default function SignupPage() {
                           <Field>
                             <FieldLabel htmlFor="password">Password</FieldLabel>
                             <div className="relative ">
-                              <Input id="password" className={'mt-1'} value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} type={showPassword ? "text" : "password"} placeholder="" />
+                              <Input id="password" className={'mt-1 min-h-10 rounded border-[#dedee4] bg-white text-[13px] focus-visible:border-[#736ce8] focus-visible:ring-[#5148e5]/20'} value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} type={showPassword ? "text" : "password"} placeholder="" />
                               <Button type="button" variant={'ghost'} onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700" >
                                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                               </Button>
@@ -299,7 +299,7 @@ export default function SignupPage() {
                               Confirm Password
                             </FieldLabel>
                             <div className="relative ">
-                              <Input id="passwordValidate" className={'mt-1'} value={passwordValidate} onChange={(e) => setPasswordValidate(e.target.value)} onFocus={() => setValidateFocused(true)} onBlur={() => setValidateFocused(false)} type={showValidatePassword ? "text" : "password"} placeholder="" />
+                              <Input id="passwordValidate" className={'mt-1 min-h-10 rounded border-[#dedee4] bg-white text-[13px] focus-visible:border-[#736ce8] focus-visible:ring-[#5148e5]/20'} value={passwordValidate} onChange={(e) => setPasswordValidate(e.target.value)} onFocus={() => setValidateFocused(true)} onBlur={() => setValidateFocused(false)} type={showValidatePassword ? "text" : "password"} placeholder="" />
                               <Button type="button" variant={'ghost'} onClick={() => setShowValidatePassword(!showValidatePassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700" >
                                 {showValidatePassword ? <EyeOff size={18} /> : <Eye size={18} />}
                               </Button>
@@ -325,7 +325,7 @@ export default function SignupPage() {
                       </Field>
 
                       <Field>
-                        <Button disabled={isLoading} className={'bg-core'} type="submit">{isLoading&&<Spinner spinning={isLoading}/>}Create Account</Button>
+                        <Button disabled={isLoading} className={'min-h-10 rounded bg-[#5148e5] text-[13px] font-semibold text-white hover:bg-[#4038cc]'} type="submit">{isLoading&&<Spinner spinning={isLoading}/>}Create Account</Button>
                       </Field>
                   <FieldSeparator>Or</FieldSeparator>
                   <Field className="grid gap-4 sm:grid-cols-2">

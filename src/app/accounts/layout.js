@@ -10,7 +10,7 @@ const AccountLayout = ({children}) => {
           {/* LOGO */}
           <Link href="/" className="font-Inter tracking-tight inline-flex font-Madetommy font-extrabold text-xl md:text-2xl text-neutral-900 items-center gap-2">
           <div className="inline-flex pt-0 md:pt-0 size-8 justify-center">
-              <Image className="dark:invert w-7/8 scale-75 " src="/logo.png" alt="logo" width={200} height={200} priority />
+              <Image className="dark:invert w-7/8 scale-75 " src="/zerp8-logo.png" alt="ZERP-8" width={200} height={200} priority />
           </div>
           ZERP-8
         </Link>
@@ -22,4 +22,3 @@ const AccountLayout = ({children}) => {
 }
 
 export default AccountLayout
-

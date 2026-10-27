@@ -2,8 +2,16 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner"
 
 export const metadata = {
-  title: "Zerp8",
-  description: "",
+  title: "ZERP-8 | Connected business operations",
+  description:
+    "Connect products, purchasing, inventory, and sales in one business operations platform built for growing, multi-branch businesses.",
+  openGraph: {
+    title: "ZERP-8 | Connected business operations",
+    description:
+      "Bring products, purchasing, inventory, and sales together in one platform.",
+    siteName: "ZERP-8",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }) {
@@ -18,4 +26,3 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
-
