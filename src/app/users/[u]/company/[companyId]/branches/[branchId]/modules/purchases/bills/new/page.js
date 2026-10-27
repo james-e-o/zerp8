@@ -114,6 +114,14 @@ function FileMedia({ file }) {
 // form doesn't duplicate that policy, it just shows the same numbers
 // the backend will check against and surfaces whatever it reports back.
 //
+// Goods that arrived but are not on the order (excess / unexpected items)
+// never change the purchase order. Once someone accepts them in Quarantine
+// they appear here under "Accepted extras" and can be billed. While they
+// are still held they are not billable; a notice says so.
+//
+// Real order goods are billable up to the ordered quantity whether or not
+// they have arrived or are sitting in quarantine; the form flags which.
+//
 // Attachments: files are picked and previewed locally, then uploaded
 // together AFTER the bill is created (there's no bill id to file them
 // under before that) via the shared useStagedFiles() hook - they go to
@@ -146,6 +154,10 @@ export default function BillForm() {
   const [lineQuantities, setLineQuantities] = useState({}) // { [poLineItemId]: quantity }
   const [linePrices, setLinePrices] = useState({}) // { [poLineItemId]: billing price (blank = use estimated) }
   const [selectedLines, setSelectedLines] = useState({}) // { [poLineItemId]: true } - lines included in this bill
+  const [selectedExtras, setSelectedExtras] = useState({}) // { [holdId]: true }
+  const [extraQuantities, setExtraQuantities] = useState({}) // { [holdId]: quantity }
+  const [extraPrices, setExtraPrices] = useState({}) // { [holdId]: price (blank = receipt cost) }
+  const [holds, setHolds] = useState([]) // receipt holds on the selected PO
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [fileError, setFileError] = useState('')
@@ -184,7 +196,92 @@ export default function BillForm() {
 
   const selectedOrder = orders.find((order) => order.id === purchaseOrderId)
   const poLineItems = selectedOrder?.purchase_order_line_items || []
-  const { names: variantNames } = useVariantNames(poLineItems.map((line) => line.variant))
+
+  // Everything held or accepted from receipts on this order. Used for the
+  // accepted-extras section, the held-goods notice, and to tell "in
+  // quarantine" apart from "not delivered yet" on real order lines.
+  useEffect(() => {
+    let cancelled = false
+    setHolds([])
+    if (!purchaseOrderId) return undefined
+
+    async function loadHolds() {
+      const { data, error } = await supabase
+        .from('purchase_receipt_holds')
+        .select(
+          'id, kind, status, quantity, quantity_billed, variant, purchase_order_line_item, purchase_receipt_line_items(unit_cost_snapshot)'
+        )
+        .eq('purchase_order', purchaseOrderId)
+      if (cancelled) return
+      if (error) {
+        // Not fatal: the bill still works for the order's own lines.
+        console.error('Could not load receipt holds:', error)
+        return
+      }
+      setHolds(data || [])
+    }
+
+    loadHolds()
+    return () => {
+      cancelled = true
+    }
+  }, [purchaseOrderId])
+
+  const { names: variantNames } = useVariantNames([
+    ...poLineItems.map((line) => line.variant),
+    ...holds.map((hold) => hold.variant),
+  ])
+
+  // Goods that are on the order and sitting in quarantine, per order line.
+  const quarantinedByLine = useMemo(() => {
+    const map = {}
+    holds.forEach((hold) => {
+      if (hold.kind === 'normal' && ['awaiting_review', 'damaged'].includes(hold.status) && hold.purchase_order_line_item) {
+        map[hold.purchase_order_line_item] = (map[hold.purchase_order_line_item] || 0) + Number(hold.quantity || 0)
+      }
+    })
+    return map
+  }, [holds])
+
+  // Accepted excess / unexpected goods that can still be billed.
+  const extraLines = useMemo(
+    () =>
+      holds
+        .filter(
+          (hold) =>
+            (hold.kind === 'excess' || hold.kind === 'wrong_item') &&
+            hold.status === 'accepted' &&
+            Number(hold.quantity || 0) - Number(hold.quantity_billed || 0) > 0
+        )
+        .map((hold) => {
+          const billable = Number(hold.quantity || 0) - Number(hold.quantity_billed || 0)
+          const isSelected = Boolean(selectedExtras[hold.id])
+          const quantity = Number(extraQuantities[hold.id] || 0)
+          const priceRaw = extraPrices[hold.id]
+          const receiptCost = Number(hold.purchase_receipt_line_items?.unit_cost_snapshot || 0)
+          const hasPrice = priceRaw !== undefined && priceRaw !== ''
+          const unitPrice = hasPrice ? Number(priceRaw) : receiptCost
+          return {
+            ...hold,
+            billable,
+            isSelected,
+            quantity,
+            receiptCost,
+            unitPrice,
+            overLimit: isSelected && quantity > billable,
+            displayName: variantNames[hold.variant]?.display || '',
+            lineTotal: isSelected ? quantity * unitPrice : 0,
+          }
+        }),
+    [holds, selectedExtras, extraQuantities, extraPrices, variantNames]
+  )
+
+  // Extras still held in quarantine: received, but not billable yet.
+  const heldExtras = holds.filter(
+    (hold) =>
+      (hold.kind === 'excess' || hold.kind === 'wrong_item') &&
+      ['awaiting_review', 'damaged'].includes(hold.status)
+  )
 
   // The user picked a different Purchase Order: start the per-PO state fresh,
   // so stale quantities/prices from a previously-selected order never leak
@@ -200,6 +297,9 @@ export default function BillForm() {
     setPurchaseOrderId(value)
     setReceiptId('')
     setLinePrices({})
+    setSelectedExtras({})
+    setExtraQuantities({})
+    setExtraPrices({})
 
     // A new bill starts with every line that can still be billed selected, at
     // its full remaining quantity (ordered minus already billed). The user
@@ -290,6 +390,9 @@ export default function BillForm() {
     setLineQuantities(pendingDraft.lineQuantities || {})
     setLinePrices(pendingDraft.linePrices || {})
     setSelectedLines(pendingDraft.selectedLines || {})
+    setSelectedExtras(pendingDraft.selectedExtras || {})
+    setExtraQuantities(pendingDraft.extraQuantities || {})
+    setExtraPrices(pendingDraft.extraPrices || {})
     setPendingDraft(null)
   }, [pendingDraft, orders, ordersLoading, ordersError])
 
@@ -334,11 +437,15 @@ export default function BillForm() {
           fullyBilled,
           overLimit,
           aheadOfReceipts: Math.min(aheadOfReceipts, quantity),
+          aheadInQuarantine: Math.min(
+            Math.min(aheadOfReceipts, quantity),
+            quarantinedByLine[line.id] || 0
+          ),
           displayName: variantNames[line.variant]?.display || '',
           lineTotal: isSelected ? quantity * unitPrice : 0,
         }
       }),
-    [poLineItems, lineQuantities, linePrices, selectedLines, variantNames]
+    [poLineItems, lineQuantities, linePrices, selectedLines, variantNames, quarantinedByLine]
   )
 
   // After a purchase order is picked on a NEW bill, scroll down to the totals
@@ -352,7 +459,7 @@ export default function BillForm() {
     }, 150)
   }, [billableLines.length, purchaseOrderId])
 
-  const hasOverLimit = billableLines.some((line) => line.overLimit)
+  const hasOverLimit = billableLines.some((line) => line.overLimit) || extraLines.some((line) => line.overLimit)
   const linesAheadOfReceipts = billableLines.filter((line) => line.aheadOfReceipts > 0)
 
   // Lines whose billing price differs from the Purchase Order's estimated
@@ -379,12 +486,19 @@ export default function BillForm() {
         .filter((row) => Math.abs(row.difference) > 0.000001),
     [billableLines]
   )
-  const needsReview = priceDifferences.length > 0 || linesAheadOfReceipts.length > 0
+  const selectedExtraLines = extraLines.filter((line) => line.isSelected && line.quantity > 0)
+  const needsReview =
+    priceDifferences.length > 0 || linesAheadOfReceipts.length > 0 || selectedExtraLines.length > 0
 
-  const subtotal = billableLines.reduce((sum, line) => sum + line.lineTotal, 0)
+  const subtotal =
+    billableLines.reduce((sum, line) => sum + line.lineTotal, 0) +
+    extraLines.reduce((sum, line) => sum + line.lineTotal, 0)
   const total = subtotal + Number(tax || 0)
-  const hasAnySelected = billableLines.some((line) => line.isSelected)
-  const hasAnyQuantity = billableLines.some((line) => line.isSelected && line.quantity > 0)
+  const hasAnySelected =
+    billableLines.some((line) => line.isSelected) || extraLines.some((line) => line.isSelected)
+  const hasAnyQuantity =
+    billableLines.some((line) => line.isSelected && line.quantity > 0) ||
+    extraLines.some((line) => line.isSelected && line.quantity > 0)
   const selectableLines = billableLines.filter((line) => !line.fullyBilled)
   const allLinesSelected =
     selectableLines.length > 0 && selectableLines.every((line) => line.isSelected)
@@ -403,6 +517,15 @@ export default function BillForm() {
         )
         return { ...prev, [line.id]: String(remaining) }
       })
+    }
+  }
+
+  const toggleExtra = (hold, checked) => {
+    setSelectedExtras((prev) => ({ ...prev, [hold.id]: checked }))
+    if (checked) {
+      setExtraQuantities((prev) =>
+        prev[hold.id] !== undefined && prev[hold.id] !== '' ? prev : { ...prev, [hold.id]: String(hold.billable) }
+      )
     }
   }
 
@@ -462,6 +585,9 @@ export default function BillForm() {
       selectedLines,
       lineQuantities,
       linePrices,
+      selectedExtras,
+      extraQuantities,
+      extraPrices,
     }
     const title = [selectedOrder?.order_number, selectedOrder?.supplier?.name, supplierReference]
       .filter(Boolean)
@@ -574,6 +700,18 @@ export default function BillForm() {
         line_total: line.lineTotal,
       }))
 
+    // Accepted extras are billed against the receipt hold, not an order line.
+    selectedExtraLines.forEach((line) => {
+      lineItems.push({
+        purchase_receipt_hold: line.id,
+        variant: line.variant,
+        description_snapshot: line.displayName || '',
+        quantity: line.quantity,
+        unit_price_snapshot: line.unitPrice,
+        line_total: line.lineTotal,
+      })
+    })
+
     const { data, error } = await supabase.rpc('create_purchase_bill', {
       p_branch: branchId,
       p_supplier: selectedOrder?.supplier?.id,
@@ -681,6 +819,17 @@ export default function BillForm() {
       return
     }
     router.push(redirectTo)
+  }
+
+  // Plain-language split of a line's "ahead" quantity: sitting in quarantine
+  // versus genuinely not delivered yet.
+  const aheadText = (line) => {
+    const inQuarantine = line.aheadInQuarantine || 0
+    const notDelivered = line.aheadOfReceipts - inQuarantine
+    const parts = []
+    if (inQuarantine > 0) parts.push(`${inQuarantine} in quarantine`)
+    if (notDelivered > 0) parts.push(`${notDelivered} not delivered yet`)
+    return `${parts.join(', ')} (of ${line.quantity} billed; ${line.quantity_received || 0} available, ${line.quantity_ordered} ordered)`
   }
 
   // Shared file input, rendered inside whichever upload trigger is
@@ -1127,17 +1276,125 @@ export default function BillForm() {
 
                 {linesAheadOfReceipts.length > 0 && (
                   <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">
-                    <p className="font-medium">Billing ahead of delivery</p>
+                    <p className="font-medium">Billing ahead of available stock</p>
                     <ul className="mt-0.5 list-disc pl-4">
                       {linesAheadOfReceipts.map((line) => (
                         <li key={line.id}>
-                          {line.displayName || 'Item'}: {line.aheadOfReceipts} of {line.quantity} not
-                          received yet ({line.quantity_received || 0} received of {line.quantity_ordered} ordered)
+                          {line.displayName || 'Item'}: {aheadText(line)}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Accepted excess / unexpected goods: billable extras, outside
+                the order's own lines. */}
+            {purchaseOrderId && extraLines.length > 0 && (
+              <div className="space-y-2">
+                <h2 className="text-sm font-semibold text-gray-800">Accepted extras</h2>
+                <p className="text-xs text-gray-500">
+                  Goods that arrived beyond or outside this order and have been accepted from quarantine.
+                  They are not part of the order; tick any this supplier invoice charges for. Leave Billing
+                  price blank to use the cost on the receipt.
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full min-w-[760px] text-xs">
+                    <thead className="bg-gray-50 text-[11px] text-gray-600">
+                      <tr>
+                        <th className="w-9 px-3 py-2" />
+                        <th className="px-3 py-2 text-left">Item</th>
+                        <th className="px-3 py-2 text-left">Type</th>
+                        <th className="px-3 py-2 text-right">Accepted</th>
+                        <th className="px-3 py-2 text-right">Billing qty</th>
+                        <th className="px-3 py-2 text-right">Receipt cost</th>
+                        <th className="px-3 py-2 text-right">Billing price</th>
+                        <th className="px-3 py-2 text-right">Line total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {extraLines.map((line) => (
+                        <tr key={line.id} className={line.isSelected ? 'bg-core/5' : ''}>
+                          <td className="px-3 py-2">
+                            <Checkbox
+                              checked={line.isSelected}
+                              onCheckedChange={(checked) => toggleExtra(line, checked === true)}
+                              aria-label="Select extra to bill"
+                            />
+                          </td>
+                          <td className="max-w-[220px] px-3 py-2">
+                            <p className="text-[10px] leading-[1.15] text-gray-800" title={line.displayName}>
+                              {line.displayName || '—'}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`inline-flex rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${
+                                line.kind === 'excess' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {line.kind === 'excess' ? 'Excess' : 'Not on order'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600">{line.billable}</td>
+                          <td className="px-3 py-2 text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              max={line.billable}
+                              disabled={!line.isSelected}
+                              value={extraQuantities[line.id] ?? ''}
+                              onChange={(event) =>
+                                setExtraQuantities((prev) => ({ ...prev, [line.id]: event.target.value }))
+                              }
+                              aria-invalid={line.overLimit}
+                              className={`h-7 w-24 text-right text-xs ${
+                                line.overLimit ? 'border-red-500 text-red-600 focus-visible:ring-red-500' : ''
+                              }`}
+                            />
+                            {line.overLimit && (
+                              <p className="mt-0.5 text-[10px] text-red-600">Max {line.billable}</p>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600">{formatNaira(line.receiptCost)}</td>
+                          <td className="px-3 py-2 text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              disabled={!line.isSelected}
+                              value={extraPrices[line.id] ?? ''}
+                              placeholder={String(line.receiptCost)}
+                              onChange={(event) =>
+                                setExtraPrices((prev) => ({ ...prev, [line.id]: event.target.value }))
+                              }
+                              className="h-7 w-28 text-right text-xs"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-gray-800">
+                            {line.isSelected ? formatNaira(line.lineTotal) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {purchaseOrderId && heldExtras.length > 0 && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] leading-4 text-gray-700">
+                <p className="font-medium">Received but held in quarantine - not billable yet</p>
+                <ul className="mt-0.5 list-disc pl-4">
+                  {heldExtras.map((hold) => (
+                    <li key={hold.id}>
+                      {variantNames[hold.variant]?.display || 'Item'}: {Number(hold.quantity)}{' '}
+                      {hold.kind === 'excess' ? 'excess' : 'not on the order'}. Accept it in Quarantine to bill it.
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
@@ -1196,17 +1453,18 @@ export default function BillForm() {
           <div className="max-h-[55vh] space-y-4 overflow-y-auto pr-1 text-xs">
             {linesAheadOfReceipts.length > 0 && (
               <div>
-                <p className="mb-1 font-semibold text-amber-800">Billing ahead of delivery</p>
+                <p className="mb-1 font-semibold text-amber-800">Billing ahead of available stock</p>
                 <p className="mb-1.5 text-[11px] text-gray-500">
-                  You are billing for goods that have not been received yet.
+                  Some of these goods are still in quarantine or have not been delivered yet.
                 </p>
                 <table className="w-full text-[11px]">
                   <thead className="text-gray-500">
                     <tr>
                       <th className="py-1 text-left font-medium">Item</th>
                       <th className="py-1 text-right font-medium">Billing on this bill</th>
-                      <th className="py-1 text-right font-medium">Received so far</th>
-                      <th className="py-1 text-right font-medium">Not yet received</th>
+                      <th className="py-1 text-right font-medium">Available so far</th>
+                      <th className="py-1 text-right font-medium">In quarantine</th>
+                      <th className="py-1 text-right font-medium">Not delivered</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1215,7 +1473,39 @@ export default function BillForm() {
                         <td className="py-1 pr-2 text-gray-800">{line.displayName || 'Item'}</td>
                         <td className="py-1 text-right">{line.quantity}</td>
                         <td className="py-1 text-right">{line.quantity_received || 0}</td>
-                        <td className="py-1 text-right font-medium text-amber-700">{line.aheadOfReceipts}</td>
+                        <td className="py-1 text-right">{line.aheadInQuarantine || 0}</td>
+                        <td className="py-1 text-right font-medium text-amber-700">
+                          {line.aheadOfReceipts - (line.aheadInQuarantine || 0)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {selectedExtraLines.length > 0 && (
+              <div>
+                <p className="mb-1 font-semibold text-gray-800">Extras outside the purchase order</p>
+                <p className="mb-1.5 text-[11px] text-gray-500">
+                  These accepted goods are not on the order. Billing them does not change the order.
+                </p>
+                <table className="w-full text-[11px]">
+                  <thead className="text-gray-500">
+                    <tr>
+                      <th className="py-1 text-left font-medium">Item</th>
+                      <th className="py-1 text-left font-medium">Type</th>
+                      <th className="py-1 text-right font-medium">Quantity</th>
+                      <th className="py-1 text-right font-medium">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {selectedExtraLines.map((line) => (
+                      <tr key={line.id}>
+                        <td className="py-1 pr-2 text-gray-800">{line.displayName || 'Item'}</td>
+                        <td className="py-1">{line.kind === 'excess' ? 'Excess' : 'Not on order'}</td>
+                        <td className="py-1 text-right">{line.quantity}</td>
+                        <td className="py-1 text-right">{formatNaira(line.lineTotal)}</td>
                       </tr>
                     ))}
                   </tbody>

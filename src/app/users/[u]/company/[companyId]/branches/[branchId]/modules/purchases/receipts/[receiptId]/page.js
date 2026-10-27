@@ -3,354 +3,314 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, Pencil } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
-import StatusBadge from '@/components/modules/sales/status-badge'
 import supabase from '@/config/supabaseClient'
+import {
+  formatDate,
+  formatMoney,
+  formatQty,
+  useBranchCurrency,
+  useStockNames,
+} from '@/components/modules/inventory/inventory-shared'
+import {
+  ErrorNote,
+  HOLD_KIND,
+  HOLD_STATUS,
+  Tone,
+  chunk,
+  isExtraKind,
+  receiptState,
+  sourceLabel,
+  useFlowPaths,
+} from '@/components/modules/inventory/receipt-shared'
 
-// Per-line discrepancy badges. 'none' isn't rendered at all - only
-// lines that actually have something to say about them get a badge,
-// same spirit as OrderStatusBadge/StatusBadge elsewhere in this app.
-const DISCREPANCY_LABELS = {
-  wrong_item: 'Wrong item',
-  excess: 'Excess',
-}
+// Purchases > Receipts > [receipt]: one receipt as inventory counted it, and
+// what has happened to each line since (accepted, in quarantine, damaged,
+// returned). Read-only. Purchases acts on two things from here: excess goods
+// (Receipts > Excess) and damaged goods (Returns > To return).
 
-const EXCESS_STATUS_STYLES = {
-  pending_approval: 'bg-amber-100 text-amber-800',
-  approved: 'bg-emerald-100 text-emerald-800',
-  rejected: 'bg-red-100 text-red-800',
-}
-
-function ExcessStatusBadge({ status }) {
-  const label = status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-  return (
-    <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${EXCESS_STATUS_STYLES[status] || 'bg-gray-100 text-gray-700'}`}>
-      {label}
-    </span>
-  )
-}
-
-function staffName(staff) {
-  if (!staff) return null
-  const name = [staff.first_name, staff.last_name].filter(Boolean).join(' ')
-  return name || null
-}
-
-export default function PurchaseReceiptDetailPage() {
-  const { u, companyId, branchId, receiptId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/receipts`
+export default function PurchasesReceiptDetailPage() {
+  const { receiptId } = useParams()
+  const { branchId, purchaseReceipts: receiptsPath, purchaseReturns: returnsPath, orders: ordersPath } = useFlowPaths()
+  const currency = useBranchCurrency()
 
   const [receipt, setReceipt] = useState(null)
-  const [items, setItems] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [warehouseName, setWarehouseName] = useState('')
+  const [lines, setLines] = useState([])
+  const [holdsByLine, setHoldsByLine] = useState({})
+  const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
 
-  const [canApproveExcess, setCanApproveExcess] = useState(false)
-  const [decidingLineId, setDecidingLineId] = useState('')
-  const [decisionError, setDecisionError] = useState('')
-
-  async function loadReceipt() {
-    setIsLoading(true)
-    setErrorMessage('')
-
-    try {
-      const { data: receiptRow, error: receiptError } = await supabase
-        .from('purchase_receipts')
-        .select(
-          `id, receipt_number, status, notes, created_at,
-           purchase_order:purchase_orders(order_number, supplier:suppliers(name))`
-        )
-        .eq('id', receiptId)
-        .eq('branch', branchId)
-        .maybeSingle()
-
-      if (receiptError) throw receiptError
-      if (!receiptRow) throw new Error('Purchase receipt not found.')
-
-      const { data: lineRows, error: lineError } = await supabase
-        .from('purchase_receipt_line_items')
-        .select(
-          `id, variant, purchase_order_line_item, quantity, quantity_accepted,
-           excess_quantity, excess_status, discrepancy_type, excess_approved_at,
-           unit_cost_snapshot, shelf,
-           approver:excess_approved_by_staff(first_name, last_name)`
-        )
-        .eq('purchase_receipt', receiptId)
-
-      if (lineError) throw lineError
-
-      // Resolve variant -> product title, same pattern as the purchase
-      // order detail page - showing a raw variant uuid isn't useful to
-      // anyone looking at this page.
-      const variantIds = [...new Set((lineRows || []).map((row) => row.variant).filter(Boolean))]
-      let variantsById = new Map()
-      let productsById = new Map()
-
-      if (variantIds.length > 0) {
-        const { data: variantRows, error: variantError } = await supabase
-          .from('product_variants')
-          .select('id, product, variant_label, sku')
-          .in('id', variantIds)
-
-        if (variantError) throw variantError
-        variantsById = new Map((variantRows || []).map((v) => [v.id, v]))
-
-        const productIds = [...new Set((variantRows || []).map((v) => v.product).filter(Boolean))]
-        if (productIds.length > 0) {
-          const { data: productRows, error: productError } = await supabase
-            .from('products')
-            .select('id, title')
-            .in('id', productIds)
-
-          if (productError) throw productError
-          productsById = new Map((productRows || []).map((p) => [p.id, p]))
-        }
-      }
-
-      setReceipt(receiptRow)
-      setItems((lineRows || []).map((row) => {
-        const variant = variantsById.get(row.variant)
-        const product = variant ? productsById.get(variant.product) : null
-        return {
-          ...row,
-          productTitle: product?.title || 'Product unavailable',
-          variantLabel: variant?.variant_label || 'Default variant',
-          sku: variant?.sku || '',
-        }
-      }))
-    } catch (loadError) {
-      console.error('Failed to load purchase receipt:', loadError)
-      setErrorMessage(loadError.message || 'Could not load this purchase receipt.')
-    } finally {
-      setIsLoading(false)
-    }
+  const { variants } = useStockNames(lines.map((line) => line.variant))
+  const nameOf = (id) => {
+    const info = variants[id]
+    if (!info) return { title: 'Item', label: '', sku: '' }
+    return info
   }
 
-  useEffect(() => {
-    if (receiptId && branchId) loadReceipt()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receiptId, branchId])
-
-  // Approving/rejecting excess reuses purchase_orders:edit - the same
-  // authority that can amend an order in the first place. UI-level
-  // check only; approve_purchase_receipt_excess() re-checks this
-  // itself server-side, so a stale client check can't bypass it.
   useEffect(() => {
     let cancelled = false
 
-    async function checkPermissions() {
-      if (!branchId) return
-      const { data, error } = await supabase.rpc('can_access_purchase_order_resource', {
-        p_branch: branchId,
-        p_verb: 'edit',
-      })
-      if (!cancelled) setCanApproveExcess(!error && data === true)
+    async function load() {
+      if (!receiptId || !branchId) return
+      setLoading(true)
+      setErrorMessage('')
+
+      try {
+        let head = await supabase
+          .from('purchase_receipts')
+          .select(
+            `*, order_ref:purchase_orders!purchase_order ( id, order_number, supplier:suppliers ( name ) )`
+          )
+          .eq('id', receiptId)
+          .eq('branch', branchId)
+          .maybeSingle()
+
+        if (head.error) {
+          head = await supabase
+            .from('purchase_receipts')
+            .select('*')
+            .eq('id', receiptId)
+            .eq('branch', branchId)
+            .maybeSingle()
+        }
+        if (head.error) throw head.error
+        if (!head.data) throw new Error('Receipt not found.')
+
+        const { data: lineRows, error: lineError } = await supabase
+          .from('purchase_receipt_line_items')
+          .select(
+            `*, batch_row:inventory_batches!batch ( batch_number, supplier_batch_reference, expiry_date )`
+          )
+          .eq('purchase_receipt', receiptId)
+          .order('id')
+        if (lineError) throw lineError
+
+        const grouped = {}
+        for (const part of chunk((lineRows || []).map((row) => row.id))) {
+          const { data: holdRows, error: holdError } = await supabase
+            .from('purchase_receipt_holds')
+            .select('*')
+            .in('purchase_receipt_line_item', part)
+          if (holdError) {
+            console.error('Could not read quarantine status:', holdError)
+            continue
+          }
+          for (const hold of holdRows || []) {
+            ;(grouped[hold.purchase_receipt_line_item] ||= []).push(hold)
+          }
+        }
+
+        let warehouse = ''
+        const warehouseId = head.data.warehouse
+        if (warehouseId) {
+          const { data: warehouseRow } = await supabase
+            .from('warehouses')
+            .select('*')
+            .eq('id', warehouseId)
+            .maybeSingle()
+          warehouse = warehouseRow?.name || warehouseRow?.label || warehouseRow?.code || ''
+        }
+
+        if (cancelled) return
+        setReceipt(head.data)
+        setWarehouseName(warehouse)
+        setLines(lineRows || [])
+        setHoldsByLine(grouped)
+      } catch (error) {
+        if (cancelled) return
+        console.error('Failed to load receipt:', error)
+        setErrorMessage(error.message || 'Could not load this receipt.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
 
-    checkPermissions()
+    load()
     return () => {
       cancelled = true
     }
-  }, [branchId])
+  }, [receiptId, branchId])
 
-  const handleDecision = async (lineItemId, approve) => {
-    setDecisionError('')
-    setDecidingLineId(lineItemId)
-
-    try {
-      const { data, error } = await supabase.rpc('approve_purchase_receipt_excess', {
-        p_line_item: lineItemId,
-        p_approve: approve,
-      })
-
-      if (error) throw error
-      if (!data?.success) throw new Error(data?.error || 'Could not record that decision.')
-
-      await loadReceipt()
-    } catch (err) {
-      console.error('Failed to decide on excess:', err)
-      setDecisionError(err.message || 'Could not record that decision.')
-    } finally {
-      setDecidingLineId('')
-    }
-  }
-
-  if (isLoading) {
-    return <p className=" text-xs text-muted-foreground">Loading receipt...</p>
-  }
-
-  if (errorMessage) {
+  if (loading) return <p className="p-4 text-xs text-gray-500">Loading receipt...</p>
+  if (errorMessage || !receipt) {
     return (
-      <div className="space-y-3 text-xs">
-        <Link href={base}>
-          <Button type="button" variant="outline" size="sm" className="h-7 rounded-sm text-xs">
-            <ArrowLeft className="mr-1.5 size-3.5" /> Back to receipts
-          </Button>
+      <div className="flex flex-col gap-3 p-4">
+        <ErrorNote>{errorMessage || 'Receipt not found.'}</ErrorNote>
+        <Link href={receiptsPath} className="text-xs text-core hover:underline">
+          Back to receipts
         </Link>
-        <p role="alert" className="border border-red-200 bg-red-50 p-3 text-red-700">
-          {errorMessage}
-        </p>
       </div>
     )
   }
 
-  const adjustmentLines = items.filter((item) => item.discrepancy_type !== 'none')
+  const allHolds = Object.values(holdsByLine).flat()
+  const openHolds = allHolds.filter((hold) => hold.status === 'awaiting_review' || hold.status === 'damaged')
+  const state = receiptState(receipt, openHolds)
+  const units = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+  const value = lines.reduce(
+    (sum, line) => sum + (line.unit_cost_snapshot == null ? 0 : Number(line.quantity || 0) * Number(line.unit_cost_snapshot)),
+    0
+  )
+  const order = receipt.order_ref
+  const needsExcess = allHolds
+    .filter((hold) => isExtraKind(hold.kind) && hold.status === 'awaiting_review')
+    .reduce((sum, hold) => sum + Number(hold.quantity || 0), 0)
+  const needsReturn = allHolds
+    .filter((hold) => hold.status === 'damaged' && (hold.damage_reason || 'arrival') === 'arrival' && hold.return_decision !== 'write_off')
+    .reduce((sum, hold) => sum + Number(hold.quantity || 0), 0)
 
   return (
-    <div className="space-y-3  text-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link href={base}>
-          <Button type="button" variant="outline" size="sm" className="h-7 rounded-sm text-xs">
-            <ArrowLeft className="mr-1.5 size-3.5" /> Back to receipts
-          </Button>
-        </Link>
-        {receipt.status === 'draft' && (
-          <Link href={`${base}/${receiptId}/edit`}>
-            <Button type="button" size="sm" className="h-7 rounded-sm bg-core text-xs text-white">
-              <Pencil className="mr-1.5 size-3" /> Edit
-            </Button>
+    <div className="flex flex-col gap-4 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link
+            href={receiptsPath}
+            className="mb-1 inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800"
+          >
+            <ArrowLeft className="size-3" /> Receipts
           </Link>
-        )}
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold tracking-tight text-gray-800">{receipt.receipt_number}</h2>
+            <Tone tone={state.tone}>{state.label}</Tone>
+          </div>
+        </div>
       </div>
 
-      <section className="space-y-3 rounded-sm border border-border bg-card p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-base font-semibold text-foreground">
-              Receipt {receipt.receipt_number}
-            </h1>
-            <p className="mt-1 text-muted-foreground">
-              Purchase order: {receipt.purchase_order?.order_number || '—'}
-            </p>
-            <p className="text-muted-foreground">
-              Supplier: {receipt.purchase_order?.supplier?.name || '—'}
-            </p>
-          </div>
-          <StatusBadge status={receipt.status} />
-        </div>
-
-        <div>
-          <h2 className="mb-2 font-semibold text-foreground">Received items</h2>
-          {items.length === 0 ? (
-            <p className="text-muted-foreground">No items on this receipt.</p>
-          ) : (
-            <div className="overflow-hidden rounded-lg border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-xs font-medium text-gray-600">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Product</th>
-                    <th className="px-3 py-2 text-right">Quantity</th>
-                    <th className="px-3 py-2 text-right">Unit cost</th>
-                    <th className="px-3 py-2 text-left">Shelf</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-3 py-2 text-gray-700">
-                        <span className="font-medium text-foreground">{item.productTitle}</span>
-                        {item.variantLabel !== 'Default variant' && (
-                          <span className="ml-1 text-muted-foreground">· {item.variantLabel}</span>
-                        )}
-                        {item.sku && <span className="ml-1 text-muted-foreground">({item.sku})</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {item.quantity}
-                        {item.discrepancy_type !== 'none' && (
-                          <span className="ml-1 text-muted-foreground">
-                            ({item.quantity_accepted} accepted{Number(item.excess_quantity) > 0 ? `, ${item.excess_quantity} held` : ''})
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">{item.unit_cost_snapshot}</td>
-                      <td className="px-3 py-2 text-gray-700">{item.shelf || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {(needsExcess > 0 || needsReturn > 0) && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          {needsExcess > 0 && (
+            <span>
+              {formatQty(needsExcess)} unit(s) not on the order.{' '}
+              <Link href={`${receiptsPath}/excess`} className="font-medium underline">
+                Decide in Excess
+              </Link>
+            </span>
+          )}
+          {needsReturn > 0 && (
+            <span>
+              {formatQty(needsReturn)} unit(s) damaged on arrival.{' '}
+              <Link href={`${returnsPath}/to-return`} className="font-medium underline">
+                Decide in To return
+              </Link>
+            </span>
           )}
         </div>
-
-        <div>
-          <h2 className="font-semibold text-foreground">Notes</h2>
-          <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
-            {receipt.notes || '—'}
-          </p>
-        </div>
-      </section>
-
-      {adjustmentLines.length > 0 && (
-        <section className="space-y-3 rounded-sm border border-amber-200 bg-amber-50/40 p-4">
-          <h2 className="font-semibold text-foreground">Adjustments</h2>
-          <p className="text-muted-foreground">
-            Something on this receipt didn't match the order exactly. The accepted portion of each
-            line already posted; what's held below is still physically on hand, just not counted as
-            sellable stock until it's decided on.
-          </p>
-
-          {decisionError && (
-            <p role="alert" className="text-red-600">{decisionError}</p>
-          )}
-
-          <div className="space-y-2">
-            {adjustmentLines.map((item) => (
-              <div
-                key={item.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-200 bg-white p-3"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-foreground">{item.productTitle}</span>
-                    {item.variantLabel !== 'Default variant' && (
-                      <span className="text-muted-foreground">· {item.variantLabel}</span>
-                    )}
-                    <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700">
-                      {DISCREPANCY_LABELS[item.discrepancy_type] || item.discrepancy_type}
-                    </span>
-                    <ExcessStatusBadge status={item.excess_status} />
-                  </div>
-                  <p className="mt-1 text-muted-foreground">
-                    {item.excess_quantity} unit{Number(item.excess_quantity) === 1 ? '' : 's'} held
-                    {item.excess_status !== 'pending_approval' && (
-                      <>
-                        {' '}· {staffName(item.approver) ? `by ${staffName(item.approver)}` : 'by the company owner'}
-                        {item.excess_approved_at && ` on ${new Date(item.excess_approved_at).toLocaleDateString()}`}
-                      </>
-                    )}
-                  </p>
-                </div>
-
-                {canApproveExcess && item.excess_status === 'pending_approval' && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-7 rounded-sm bg-emerald-600 text-xs text-white hover:bg-emerald-700"
-                      disabled={decidingLineId === item.id}
-                      onClick={() => handleDecision(item.id, true)}
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 rounded-sm border-red-200 text-xs text-red-700 hover:bg-red-50"
-                      disabled={decidingLineId === item.id}
-                      onClick={() => handleDecision(item.id, false)}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
       )}
+
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-gray-200 p-3 text-xs sm:grid-cols-4">
+        <Field label="Source">{sourceLabel(receipt)}</Field>
+        <Field label="Purchase order">
+          {order?.id ? (
+            <Link href={`${ordersPath}/${order.id}`} className="text-core hover:underline">
+              {order.order_number}
+            </Link>
+          ) : (
+            '—'
+          )}
+        </Field>
+        <Field label="Supplier">{order?.supplier?.name || '—'}</Field>
+        <Field label="Warehouse">{warehouseName || '—'}</Field>
+        <Field label="Counted on">{formatDate(receipt.received_at || receipt.created_at)}</Field>
+        <Field label="Delivery note">{receipt.delivery_note || '—'}</Field>
+        <Field label="Units">{formatQty(units)}</Field>
+        <Field label="Value at order price">{value > 0 ? formatMoney(value, currency) : '—'}</Field>
+      </dl>
+
+      {receipt.notes && (
+        <p className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">{receipt.notes}</p>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full min-w-[860px] text-xs">
+          <thead className="bg-gray-50 text-[11px] font-medium text-gray-600">
+            <tr>
+              <th className="px-3 py-2 text-left">Item</th>
+              <th className="px-3 py-2 text-left">Batch</th>
+              <th className="px-3 py-2 text-right">Counted</th>
+              <th className="px-3 py-2 text-right">Matches order</th>
+              <th className="px-3 py-2 text-right">Not on order</th>
+              <th className="px-3 py-2 text-right">Unit cost</th>
+              <th className="px-3 py-2 text-left">What happened to it</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {lines.map((line) => {
+              const info = nameOf(line.variant)
+              const batch = line.batch_row
+              const holds = holdsByLine[line.id] || []
+              const totals = new Map()
+              for (const hold of holds) {
+                const key = `${hold.kind}:${hold.status}`
+                totals.set(key, (totals.get(key) || 0) + Number(hold.quantity || 0))
+              }
+              return (
+                <tr key={line.id}>
+                  <td className="max-w-[240px] px-3 py-2">
+                    <p className="text-[11px] leading-tight text-gray-800">
+                      {info.title}
+                      {info.label ? ` · ${info.label}` : ''}
+                    </p>
+                    {info.sku && <p className="text-[10px] text-gray-500">{info.sku}</p>}
+                  </td>
+                  <td className="px-3 py-2 text-gray-700">
+                    {batch ? (
+                      <>
+                        {batch.batch_number}
+                        <span className="block text-[10px] text-gray-500">
+                          {batch.supplier_batch_reference ? `Lot ${batch.supplier_batch_reference} · ` : ''}
+                          {batch.expiry_date ? `Exp ${formatDate(batch.expiry_date)}` : 'No expiry'}
+                        </span>
+                      </>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-900">{formatQty(line.quantity)}</td>
+                  <td className="px-3 py-2 text-right text-gray-900">
+                    {formatQty(line.quantity_accepted ?? line.quantity)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-900">
+                    {Number(line.excess_quantity || 0) > 0 ? formatQty(line.excess_quantity) : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-900">
+                    {line.unit_cost_snapshot == null ? '—' : formatMoney(line.unit_cost_snapshot, currency)}
+                  </td>
+                  <td className="px-3 py-2">
+                    {totals.size === 0 ? (
+                      <span className="text-gray-500">{receipt.status === 'draft' ? 'Not posted yet' : 'Straight to stock'}</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {[...totals.entries()].map(([key, quantity]) => {
+                          const [kind, status] = key.split(':')
+                          const statusInfo = HOLD_STATUS[status] || { label: status, tone: 'gray' }
+                          const extra = isExtraKind(kind)
+                          return (
+                            <Tone key={key} tone={extra && status === 'awaiting_review' ? 'amber' : statusInfo.tone}>
+                              {formatQty(quantity)} {extra ? (HOLD_KIND[kind]?.label || kind).toLowerCase() + ', ' : ''}
+                              {statusInfo.label.toLowerCase()}
+                            </Tone>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-gray-500">{label}</dt>
+      <dd className="mt-0.5 text-gray-800">{children}</dd>
     </div>
   )
 }

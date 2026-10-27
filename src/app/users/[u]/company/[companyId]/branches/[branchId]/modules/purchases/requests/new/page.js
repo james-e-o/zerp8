@@ -1,6 +1,6 @@
 'use client'
 
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,9 @@ const generateRequestNumber = () => {
 
   return `PR-${stamp}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
 }
+
+// The empty line the table always has at least one of.
+const blankLine = () => ({ variantId: '', qty: 0, estimatedCostPrice: 0 })
 
 // A draft is not a half-formed purchase_requests row - it's a snapshot of
 // in-progress form state, stored as one JSONB blob in
@@ -55,11 +58,23 @@ export default function PurchaseRequestForm() {
   const [currentUser, setCurrentUser] = useState(null)
   const [neededBy, setNeededBy] = useState('')
   const [notes, setNotes] = useState('')
-  const [items, setItems] = useState([
-    { variantId: '', qty: 1, estimatedCostPrice: 0 },
-  ])
+  const [items, setItems] = useState([blankLine()])
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState('')
+
+  // The table always keeps one line. Whatever the table does to the list
+  // (including removing the last remaining line), if the result would be
+  // empty it becomes a single fresh blank line instead - so clicking the
+  // red X on the last line clears and resets it rather than leaving nothing.
+  const setItemsKeepingOneLine = useCallback((updater) => {
+    setItems((previous) => {
+      const next = typeof updater === 'function' ? updater(previous) : updater
+      return Array.isArray(next) && next.length > 0 ? next : [blankLine()]
+    })
+  }, [])
+
+  const clearAllLines = () => setItems([blankLine()])
+  const isAlreadyBlank = items.length === 1 && !items[0]?.variantId
 
   const {
     catalog,
@@ -213,9 +228,13 @@ export default function PurchaseRequestForm() {
 
   // The real, final submit - creates the actual purchase_requests row,
   // starting at 'pending_approval' (there is no 'draft' state for a real
-  // row anymore - that lives only in purchase_request_drafts). If this
-  // form was opened from a draft, the draft row is deleted once the real
-  // request exists, so it doesn't linger as a duplicate.
+  // row anymore - that lives only in purchase_request_drafts).
+  //
+  // The request, its line items and (if this form was opened from a draft)
+  // the removal of that draft all happen inside ONE database function,
+  // create_purchase_request(), in a single transaction: if any part fails,
+  // nothing is saved - no request without lines, no orphaned lines, and the
+  // draft is kept.
   const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitError('')
@@ -238,38 +257,21 @@ export default function PurchaseRequestForm() {
     setSaving(true)
 
     try {
-      const { data: request, error: requestError } = await supabase
-        .from('purchase_requests')
-        .insert({
-          branch: branchId,
-          title: title.trim(),
-          request_number: requestNumber,
-          status: 'pending_approval',
-          notes: notes || null,
-          requested_by: currentUser.id,
-          needed_by: neededBy || null,
-        })
-        .select('id')
-        .single()
+      const { error } = await supabase.rpc('create_purchase_request', {
+        p_branch: branchId,
+        p_title: title.trim(),
+        p_request_number: requestNumber,
+        p_notes: notes || null,
+        p_needed_by: neededBy || null,
+        p_line_items: validItems.map((item) => ({
+          variant: item.variantId,
+          quantity_requested: item.qty,
+          estimated_unit_cost: item.estimatedCostPrice,
+        })),
+        p_draft: draftId || null,
+      })
 
-      if (requestError) throw requestError
-
-      const lineItems = validItems.map((item) => ({
-        purchase_request: request.id,
-        variant: item.variantId,
-        quantity_requested: item.qty,
-        estimated_unit_cost: item.estimatedCostPrice,
-      }))
-
-      const { error: lineItemsError } = await supabase
-        .from('purchase_request_line_items')
-        .insert(lineItems)
-
-      if (lineItemsError) throw lineItemsError
-
-      if (draftId) {
-        await supabase.from('purchase_request_drafts').delete().eq('id', draftId)
-      }
+      if (error) throw error
 
       router.push(base)
     } catch (err) {
@@ -284,7 +286,7 @@ export default function PurchaseRequestForm() {
     <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold tracking-tight text-slate-900">
+          <h1 className="text-sm font-bold tracking-tight text-slate-900">
             New Purchase Request
           </h1>
 
@@ -295,7 +297,7 @@ export default function PurchaseRequestForm() {
           <Button
             type="button"
             variant="outline"
-            className={'h-7 text-xs'}
+            className={'h-6 text-xs'}
             onClick={() => router.back()}
           >
             Cancel
@@ -304,7 +306,7 @@ export default function PurchaseRequestForm() {
           <Button
             type="button"
             variant="outline"
-            className={'h-7 text-xs'}
+            className={'h-6 text-xs'}
             disabled={saving || draftLoading}
             onClick={handleSaveDraft}
           >
@@ -313,7 +315,7 @@ export default function PurchaseRequestForm() {
 
           <Button
             type="button"
-            className="bg-core text-white h-7 text-xs"
+            className="bg-core text-white h-6 text-xs"
             disabled={saving || draftLoading}
             onClick={handleSubmit}
           >
@@ -330,25 +332,29 @@ export default function PurchaseRequestForm() {
         id="purchase-request-form"
         className="flex min-h-0 justify-between grow flex-col gap-4 overflow-hidden"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className="text-xs font-medium text-gray-800 sm:col-span-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 lg:gap-4">
+          <label className="text-xs font-medium text-gray-800">
             Title <span className="text-red-500">*</span>
 
             <Input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="e.g. Q4 packaging restock"
-              className="mt-1 h-auto w-full text-sm"
+              className="mt-1 h-auto w-full text-xs lg:text-sm"
             />
           </label>
 
-          <div className="text-xs font-medium text-gray-800">
-            Requested by
+          <label className="text-xs font-medium text-gray-800">
+            Requested by <span className="text-red-500"></span>
 
-            <p className="mt-1 h-auto w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-              {requesterLabel}
-            </p>
-          </div>
+            <Input
+              value={requesterLabel}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g. Q4 packaging restock"
+              className="mt-1 h-auto w-full text-xs lg:text-sm"
+              readOnly
+            />
+          </label>
 
           <label className="text-xs font-medium text-gray-800">
             Needed by
@@ -357,7 +363,7 @@ export default function PurchaseRequestForm() {
               type="date"
               value={neededBy}
               onChange={(event) => setNeededBy(event.target.value)}
-              className="mt-1 h-auto w-full text-sm"
+              className="mt-1 h-auto w-full text-xs lg:text-sm"
             />
           </label>
         </div>
@@ -372,13 +378,27 @@ export default function PurchaseRequestForm() {
               {draftLoading ? 'Loading draft...' : 'Loading products...'}
             </p>
           ) : (
-            <PurchaseRequestLineItemsTable
-              items={items}
-              setItems={setItems}
-              catalog={catalog}
-              branchCurrencyCode={branchCurrencyCode}
-              branchCurrencySymbol={branchCurrencySymbol}
-            />
+            <>
+              <div className="mb-1 flex shrink-0 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-6 text-xs"
+                  disabled={isAlreadyBlank}
+                  onClick={clearAllLines}
+                >
+                  Clear all
+                </Button>
+              </div>
+
+              <PurchaseRequestLineItemsTable
+                items={items}
+                setItems={setItemsKeepingOneLine}
+                catalog={catalog}
+                branchCurrencyCode={branchCurrencyCode}
+                branchCurrencySymbol={branchCurrencySymbol}
+              />
+            </>
           )}
           {currencyMismatches.length > 0 && (
             <p className="mt-2 text-xs text-amber-600">

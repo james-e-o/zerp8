@@ -150,6 +150,14 @@ export default function PurchaseBillDetailPage() {
   const [bill, setBill] = useState(null)
   const [lineItems, setLineItems] = useState([])
   const [payments, setPayments] = useState([])
+  // Supplier credits applied to this bill, and the supplier's credits that
+  // still have something left to apply.
+  const [appliedCredits, setAppliedCredits] = useState([])
+  const [creditOptions, setCreditOptions] = useState([])
+  const [creditId, setCreditId] = useState('')
+  const [creditAmount, setCreditAmount] = useState('')
+  const [applyingCredit, setApplyingCredit] = useState(false)
+  const [creditError, setCreditError] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -187,7 +195,7 @@ export default function PurchaseBillDetailPage() {
         supabase
           .from('purchase_bills_view')
           .select(
-            `id, bill_number, effective_status, issued_at, due_date, total, subtotal, tax, paid,
+            `id, bill_number, effective_status, issued_at, due_date, total, subtotal, tax, paid, credit_applied,
              supplier_reference, notes,
              supplier:suppliers(id, name),
              purchase_order:purchase_orders(id, order_number),
@@ -211,6 +219,31 @@ export default function PurchaseBillDetailPage() {
       setLoadError(billError.message || 'Could not load this bill.')
       setLoading(false)
       return
+    }
+
+    // Credits applied to this bill, and credits that could still be applied.
+    // Both come from the supplier credits migration; if it has not been run,
+    // these quietly stay empty.
+    {
+      const billSupplier = billData?.supplier?.id
+      const [{ data: allocRows }, { data: openCredits }] = await Promise.all([
+        supabase
+          .from('supplier_credit_allocations')
+          .select('id, amount, created_at, credit:supplier_credits ( id, credit_number, kind )')
+          .eq('purchase_bill', billId)
+          .order('created_at', { ascending: false }),
+        billSupplier
+          ? supabase
+              .from('supplier_credits')
+              .select('id, credit_number, kind, remaining_amount')
+              .eq('supplier', billSupplier)
+              .eq('branch', branchId)
+              .eq('status', 'open')
+              .gt('remaining_amount', 0)
+          : Promise.resolve({ data: [] }),
+      ])
+      setAppliedCredits(allocRows || [])
+      setCreditOptions(openCredits || [])
     }
 
     // Delivery status of what this bill covers. Received / returned are the
@@ -315,7 +348,28 @@ export default function PurchaseBillDetailPage() {
     return <p className="p-6 text-xs text-red-600">{loadError || 'Bill not found.'}</p>
   }
 
-  const balance = Number(bill.total || 0) - Number(bill.paid || 0)
+  const creditApplied = Number(bill.credit_applied || 0)
+  const balance = Number(bill.total || 0) - Number(bill.paid || 0) - creditApplied
+  const creditsBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers/${bill.supplier?.id}/credits`
+  const pickedCredit = creditOptions.find((credit) => credit.id === creditId)
+
+  const applyCredit = async () => {
+    setCreditError('')
+    setApplyingCredit(true)
+    const { error } = await supabase.rpc('apply_supplier_credit_to_bill', {
+      p_credit: creditId,
+      p_bill: billId,
+      p_amount: Number(creditAmount),
+    })
+    setApplyingCredit(false)
+    if (error) {
+      setCreditError(error.message || 'Could not apply the credit.')
+      return
+    }
+    setCreditId('')
+    setCreditAmount('')
+    load()
+  }
   const canCancel = Number(bill.paid || 0) <= 0 && bill.effective_status !== 'cancelled'
   const orderHref = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders/${bill.purchase_order?.id}`
 
@@ -476,6 +530,12 @@ export default function PurchaseBillDetailPage() {
               <p className="text-[10px] text-gray-500">Paid</p>
               <p className="text-xs text-gray-800">{formatNaira(bill.paid || 0)}</p>
             </div>
+            {creditApplied > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500">Credit applied</p>
+                <p className="text-xs text-gray-800">{formatNaira(creditApplied)}</p>
+              </div>
+            )}
             <div>
               <p className="text-[10px] text-gray-500">Balance</p>
               <p className={`text-xs font-medium ${balance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
@@ -541,6 +601,90 @@ export default function PurchaseBillDetailPage() {
             </div>
             {bill.notes && <p className="text-[11px] text-gray-500">Notes: {bill.notes}</p>}
           </div>
+
+          {(appliedCredits.length > 0 || (creditOptions.length > 0 && balance > 0 && bill.effective_status !== 'cancelled')) && (
+            <div className="space-y-1">
+              <h2 className="text-xs font-semibold text-gray-800">Supplier credit</h2>
+              {appliedCredits.length > 0 && (
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <table className="w-full text-[11px]">
+                    <tbody className="divide-y divide-gray-100">
+                      {appliedCredits.map((row) => (
+                        <tr key={row.id}>
+                          <td className="px-2.5 py-1.5">
+                            <Link
+                              href={`${creditsBase}/${row.credit?.id}`}
+                              className="text-core hover:underline"
+                            >
+                              {row.credit?.credit_number || 'Credit'}
+                            </Link>
+                            {row.credit?.kind === 'debit_note' && (
+                              <span className="ml-1.5 rounded-sm bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-800">
+                                our debit note
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-gray-500">
+                            {new Date(row.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-right text-gray-800">- {formatNaira(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {creditOptions.length > 0 && balance > 0 && bill.effective_status !== 'cancelled' && (
+                <div className="flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 p-2.5">
+                  <label className="block text-[10px] text-gray-500">
+                    Apply a credit
+                    <select
+                      value={creditId}
+                      onChange={(event) => {
+                        const next = creditOptions.find((credit) => credit.id === event.target.value)
+                        setCreditId(event.target.value)
+                        setCreditAmount(next ? String(Math.min(Number(next.remaining_amount), balance)) : '')
+                      }}
+                      className="mt-1 block h-8 w-56 rounded-sm border border-gray-200 bg-white px-2 text-xs text-gray-800"
+                    >
+                      <option value="">Choose a credit...</option>
+                      {creditOptions.map((credit) => (
+                        <option key={credit.id} value={credit.id}>
+                          {credit.credit_number} - {formatNaira(credit.remaining_amount)} left
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-[10px] text-gray-500">
+                    Amount
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={creditAmount}
+                      onChange={(event) => setCreditAmount(event.target.value)}
+                      className="mt-1 h-8 w-28 text-xs"
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 bg-core text-xs text-white hover:bg-core/90"
+                    disabled={
+                      applyingCredit ||
+                      !pickedCredit ||
+                      !(Number(creditAmount) > 0) ||
+                      Number(creditAmount) > Math.min(Number(pickedCredit?.remaining_amount || 0), balance)
+                    }
+                    onClick={applyCredit}
+                  >
+                    {applyingCredit ? 'Applying...' : 'Apply'}
+                  </Button>
+                  {creditError && <p className="w-full text-[11px] text-red-600">{creditError}</p>}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-1">
             <h2 className="text-xs font-semibold text-gray-800">Payment history</h2>

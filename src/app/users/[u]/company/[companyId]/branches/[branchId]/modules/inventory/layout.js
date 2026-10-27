@@ -42,13 +42,13 @@ export default async function InventoryLayout({ params, children }) {
 
   const navigationItems = [
     { key: 'overview', label: 'Overview', icon: 'Home', path: '' },
+    { key: 'receipts', label: 'Receipts', icon: 'PackagePlus', path: '/receipts' },
     { key: 'stock', label: 'Stock', icon: 'Boxes', path: '/stock' },
+    { key: 'outgoing', label: 'Outgoing', icon: 'PackageMinus', path: '/outgoing' },
     { key: 'movements', label: 'Movements', icon: 'ArrowLeftRight', path: '/movements' },
     { key: 'adjustments', label: 'Adjustments', icon: 'SlidersHorizontal', path: '/adjustments' },
-    { key: 'warehouses', label: 'Warehouses', icon: 'Warehouse', path: '/warehouses' },
     { key: 'transfers', label: 'Transfers', icon: 'Truck', path: '/transfers' },
-    { key: 'counts', label: 'Counts', icon: 'ClipboardCheck', path: '/counts' },
-    { key: 'reserved', label: 'Reserved', icon: 'Lock', path: '/reserved' },
+    { key: 'warehouses', label: 'Warehouses', icon: 'Warehouse', path: '/warehouses' },
     { key: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
   ];
 
@@ -66,5 +66,3 @@ export default async function InventoryLayout({ params, children }) {
     </InventoryLayoutClient>
   );
 }
-
-

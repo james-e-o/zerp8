@@ -1,5 +1,5 @@
-import StockListPage from "@/components/modules/inventory/stock-list-page";
+import StockListPage from '@/components/modules/inventory/stock-list-page'
 
-export default function StockPage() {
-  return <StockListPage title="All Stock" />;
+export default function Page() {
+  return <StockListPage view="all" />
 }

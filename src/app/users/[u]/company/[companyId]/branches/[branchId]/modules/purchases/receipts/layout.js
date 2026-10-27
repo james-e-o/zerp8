@@ -1,12 +1,15 @@
 import PageHeader from '@/components/PageHeader'
 import TabNav from '@/components/modules/sales/TabNav'
-import Link from 'next/link'
 
+// Purchases sees receipts but does not make them: inventory counts goods in
+// (Inventory > Receipts). This section tracks what arrived against each order
+// and holds the one decision that belongs to purchases, Excess.
 const TABS = [
-  { label: 'All', value: 'all' },
-  { label: 'Draft', value: 'draft' },
-  { label: 'Posted', value: 'posted' },
-  { label: 'Cancelled', value: 'cancelled' },
+  { label: 'All', value: '' },
+  { label: 'Quarantine', value: 'quarantine' },
+  { label: 'Excess', value: 'excess' },
+  { label: 'Unbilled', value: 'unbilled' },
+  { label: 'Done', value: 'done' },
 ]
 
 export default async function ReceiptsLayout({ children, params }) {
@@ -17,18 +20,10 @@ export default async function ReceiptsLayout({ children, params }) {
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader
         title="Receipts"
-        description="Track goods received against supplier orders."
-        action={
-          <Link
-            href={`${basePath}/new`}
-            className="rounded-md bg-core px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-core/90"
-          >
-            New receipt
-          </Link>
-        }
+        description="See what inventory has received against your orders."
       />
       <TabNav tabs={TABS} basePath={basePath} />
-      {children}
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   )
 }

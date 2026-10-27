@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 import { Info } from 'lucide-react'
 import { toast } from 'sonner'
 import supabase from '@/config/supabaseClient';
@@ -34,6 +35,10 @@ import supabase from '@/config/supabaseClient';
  *   component directly - contextAdjustments is lifted to
  *   CreateProductPage, which performs the actual pricing_rules insert
  *   after the product (and its id) exists.
+ *
+ * Oct 2026 update #2 - Inventory tracking card (batch / expiry / shelf life),
+ * physical products only. State lives in `quantities` (trackingMode,
+ * requiresExpiry, shelfLifeDays) so the create page and drafts carry it.
  *
  * Oct 2026 update - products are now company-wide, so this product's
  * *cost* is in the company's currency (companyCurrency, new prop,
@@ -357,6 +362,62 @@ export const ProductConfigurations = forwardRef(({
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* INVENTORY TRACKING - batches (physical products only) */}
+        {productType === 'physical' && (
+          <div className="space-y-3 p-4" data-field="inventoryTracking">
+            <h3 className="text-xs font-semibold">Inventory tracking</h3>
+            <div className="rounded-sm bg-white border border-neutral-500 p-4 space-y-4">
+              <div className="flex items-start gap-3">
+                <Switch
+                  checked={quantities.trackingMode === 'batch'}
+                  onCheckedChange={(v) => setQuantities(prev => ({
+                    ...prev,
+                    trackingMode: v ? 'batch' : 'none',
+                    requiresExpiry: v ? prev.requiresExpiry : false,
+                    shelfLifeDays: v ? prev.shelfLifeDays : '',
+                  }))}
+                />
+                <div>
+                  <p className="text-xs font-medium">Track by batch</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    Each delivery is recorded as a batch (batch number and, if used, an expiry date). Applies to every
+                    stocked variant; you can change it per variant on the product's edit page. It can only be changed
+                    while the product has no stock.
+                  </p>
+                </div>
+              </div>
+
+              {quantities.trackingMode === 'batch' && (
+                <div className="ml-12 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Switch
+                      checked={!!quantities.requiresExpiry}
+                      onCheckedChange={(v) => setQuantities(prev => ({ ...prev, requiresExpiry: v, shelfLifeDays: v ? prev.shelfLifeDays : '' }))}
+                    />
+                    <div>
+                      <p className="text-xs font-medium">Items expire</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">An expiry date is then required on every batch received.</p>
+                    </div>
+                  </div>
+                  {quantities.requiresExpiry && (
+                    <div className="max-w-[200px]">
+                      <Label className="text-[10px] mb-1 block">Shelf life in days <span className="text-neutral-400">(Optional)</span></Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="e.g. 180"
+                        value={quantities.shelfLifeDays}
+                        onChange={(e) => updateQuantity('shelfLifeDays', e.target.value)}
+                        className="h-8 border border-neutral-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

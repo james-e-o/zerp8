@@ -12,6 +12,7 @@ import { inventoryTransfers } from "@/components/modules/inventory/inventory-dem
 
 const STATUS_LABELS = {
   "in-transit": "In Transit",
+  draft: "Pending",
 };
 
 export default function TransfersListPage({

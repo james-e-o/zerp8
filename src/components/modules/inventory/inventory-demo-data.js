@@ -44,3 +44,21 @@ export const inventoryReservations = [
   { ref: 'QUO-261001-0062', customer: 'Nova Stores', product: 'USB-C Hub', sku: 'SKU-1004', qty: 6, expires: '04 Oct 2026', status: 'Expiring Soon', warehouse: 'Lagos Main Warehouse' },
   { ref: 'SO-260930-0098', customer: 'Crestline Ltd', product: 'Barcode Scanner', sku: 'SKU-1006', qty: 9, expires: '10 Oct 2026', status: 'Active', warehouse: 'Abuja Fulfillment Warehouse' },
 ]
+
+export const inventoryBatches = [
+  { id: 'BAT-1001-A', product: 'Premium Office Chair', sku: 'SKU-1001', warehouse: 'Lagos Main Warehouse', quantity: 64, expires: '12 Nov 2026', status: 'Expiring' },
+  { id: 'BAT-1001-B', product: 'Premium Office Chair', sku: 'SKU-1001', warehouse: 'Lagos Main Warehouse', quantity: 84, expires: '18 Jun 2027', status: 'Available' },
+  { id: 'BAT-1003-A', product: 'Wireless Keyboard', sku: 'SKU-1003', warehouse: 'Lagos Main Warehouse', quantity: 22, expires: '30 Sep 2026', status: 'Expired' },
+  { id: 'BAT-1006-A', product: 'Barcode Scanner', sku: 'SKU-1006', warehouse: 'Abuja Fulfillment Warehouse', quantity: 12, expires: '05 Feb 2027', status: 'Blocked' },
+]
+
+export const inventoryWarehouses = [
+  { id: 'WH-LAGOS', name: 'Lagos Main Warehouse', code: 'LAG-MAIN', shelves: 18, variants: 124, status: 'Active' },
+  { id: 'WH-ABUJA', name: 'Abuja Fulfillment Warehouse', code: 'ABJ-FUL', shelves: 12, variants: 86, status: 'Active' },
+  { id: 'WH-IBADAN', name: 'Ibadan Storage', code: 'IBA-STO', shelves: 6, variants: 0, status: 'Archived' },
+]
+
+export const inventoryQuarantine = [
+  { id: 'QTN-261003-0012', product: 'USB-C Hub', sku: 'SKU-1004', warehouse: 'Lagos Main Warehouse', quantity: 3, reason: 'Packaging damaged', status: 'Awaiting Review' },
+  { id: 'QTN-261002-0008', product: 'Thermal Receipt Roll', sku: 'SKU-1005', warehouse: 'Lagos Main Warehouse', quantity: 8, reason: 'Quality inspection', status: 'Awaiting Review' },
+]

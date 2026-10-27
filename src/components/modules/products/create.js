@@ -68,6 +68,15 @@ import { BranchContext } from "@/app/users/[u]/company/[companyId]/branches/[bra
 //     own display name for this product immediately (product_branch_aliases),
 //     without affecting the canonical, company-wide title.
 //
+// Oct 2026 update #3 - stock rules:
+//   - Services are never stocked: is_tracked_inventory is forced false for
+//     them in handleSubmit (and the Variants tab hides the column).
+//   - New batch-tracking settings live in `quantities` (trackingMode,
+//     requiresExpiry, shelfLifeDays) so drafts carry them for free. They are
+//     applied after creation through update_product_with_variants.
+//   - Stock rows are no longer created for a new variant: they appear when
+//     stock first arrives. Nothing to do on this page for that.
+//
 // Oct 2026 update #2 - Save to Draft / Select Draft, wired to the new
 // product_drafts table (one JSONB `payload` column per draft, scoped to
 // this branch). The payload is a direct snapshot of this page's OWN
@@ -113,6 +122,11 @@ const DEFAULT_QUANTITIES = {
   minSaleQuantity: '1',
   quantityIncrement: '1',
   bulkThreshold: '', // default; each variant can override its own in the Variants tab
+  // Batch tracking (physical products). Applied to every stocked variant
+  // at creation; each variant can be adjusted later on the edit page.
+  trackingMode: 'none', // 'none' | 'batch'
+  requiresExpiry: false,
+  shelfLifeDays: '',
 };
 
 const DEFAULT_STANDARD_PRICING = {
@@ -690,7 +704,8 @@ const CreateProductPage = () => {
       setCostPrice(p.costPrice || '');
       setStandardPricing(p.standardPricing || DEFAULT_STANDARD_PRICING);
       setContextAdjustments(p.contextAdjustments || {});
-      setQuantities(p.quantities || DEFAULT_QUANTITIES);
+      // Merge so drafts saved before batch tracking existed still load.
+      setQuantities({ ...DEFAULT_QUANTITIES, ...(p.quantities || {}) });
       setServiceDuration(p.serviceDuration || '');
       setRequiresStaff(p.requiresStaff ?? true);
       setSelectedStaff(p.selectedStaff || '');
@@ -743,7 +758,8 @@ const CreateProductPage = () => {
           is_active: true,
           // Default true unless a row was explicitly unchecked - mirrors
           // the read used for the checkboxes themselves in variants.jsx.
-          is_tracked_inventory: variant.managed !== false,
+          // Services are never stocked, whatever the checkbox says.
+          is_tracked_inventory: productType === 'physical' && variant.managed !== false,
           is_tracked_shop: variant.trackedInShop !== false,
           reserve: 0,
           // reorder_level removed - no longer collected on this form
@@ -818,6 +834,37 @@ const CreateProductPage = () => {
       if (!data?.success) throw new Error(data?.error || 'Failed to create product');
 
       const productId = data.product_id;
+
+      // Step 1b - batch tracking. create_product_with_variants does not
+      // know about it, so it is applied right after, to the stocked
+      // variants only. Like the pricing step below, a failure here must
+      // never be reported as "product creation failed".
+      if (productType === 'physical' && quantities.trackingMode === 'batch' && productId) {
+        try {
+          const shelf = parseInt(quantities.shelfLifeDays, 10);
+          const batchVariants = (data.variants || [])
+            .filter(created => variantsPayload.find(v => v.sku === created.sku)?.is_tracked_inventory)
+            .map(created => ({
+              id: created.variant_id,
+              tracking_mode: 'batch',
+              requires_expiry: !!quantities.requiresExpiry,
+              shelf_life_days: quantities.requiresExpiry && shelf > 0 ? shelf : null,
+            }));
+          if (batchVariants.length > 0) {
+            const { data: batchResult, error: batchError } = await supabase.rpc('update_product_with_variants', {
+              p_branch: currentBranch?.id,
+              p_product: productId,
+              p_fields: {},
+              p_variants: batchVariants,
+            });
+            if (batchError) throw batchError;
+            if (!batchResult?.success) throw new Error(batchResult?.error || 'Batch tracking could not be turned on');
+          }
+        } catch (batchErr) {
+          console.error(batchErr);
+          toast.warning('Product created, but batch tracking could not be turned on. You can set it on the product\'s edit page.');
+        }
+      }
 
       // Step 2 - resolve contextAdjustments into per-product pricing_rules
       // override rows now that the product id exists. This is intentionally

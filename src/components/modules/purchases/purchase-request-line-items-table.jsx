@@ -263,7 +263,7 @@ export default function PurchaseRequestLineItemsTable({
   return (
     <div className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-gray-200">
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="min-w-[900px] w-full border-collapse text-left text-xs">
+        <table className="min-w-225 w-full border-collapse text-left text-xs">
           <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-500">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>

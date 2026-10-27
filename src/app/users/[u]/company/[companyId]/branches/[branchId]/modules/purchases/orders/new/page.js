@@ -1,6 +1,6 @@
 'use client'
 
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,7 @@ import supabase from '@/config/supabaseClient'
 import { formatCurrency } from '@/components/modules/purchases/dummy-data'
 import { useRequestCatalog } from '@/components/modules/purchases/request-catalog'
 import { useSuppliers } from '@/components/modules/purchases/purchase-catalog'
+import { useBranchWarehouses } from '@/components/modules/purchases/use-branch-warehouses'
 import PurchaseOrderLineItemsTable from '@/components/modules/purchases/purchase-order-line-items-table'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 
@@ -26,6 +27,10 @@ const generateOrderNumber = () => {
   ).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`
   return `PO-${stamp}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
 }
+
+// The empty line the table always has at least one of.
+// deliveryWarehouse '' = follow the order's delivery location.
+const blankLine = () => ({ variantId: '', qty: 1, standardCostPrice: 0, unitCost: 0, deliveryWarehouse: '' })
 
 // Converting an approved Purchase Request into a Purchase Order does
 // NOT create the order directly - it hands the request's items +
@@ -66,15 +71,18 @@ export default function NewPurchaseOrderPage() {
   const [orderNumber, setOrderNumber] = useState('')
   const [draftId, setDraftId] = useState(draftParam || null)
   const [supplierId, setSupplierId] = useState('')
-  // No separate "requested by" concept here - purchase_orders.created_by
-  // already records who made the order, auto-filled from the session,
-  // same as the request form's requested_by.
-  const [currentUser, setCurrentUser] = useState(null)
+  const [creator, setCreator] = useState(null)
+  const [isLoadingCreator, setIsLoadingCreator] = useState(true)
+  const [creatorError, setCreatorError] = useState('')
   const [neededBy, setNeededBy] = useState('')
   const [notes, setNotes] = useState('')
-  const [items, setItems] = useState([
-    { variantId: '', qty: 1, standardCostPrice: 0, unitCost: 0 },
-  ])
+  const [items, setItems] = useState([blankLine()])
+  // The order's delivery location. Every line follows it unless that line is
+  // given its own. Only warehouses of this branch can be chosen; it starts as
+  // the branch's default warehouse.
+  const [deliveryWarehouse, setDeliveryWarehouse] = useState('')
+  const [deliveryTouched, setDeliveryTouched] = useState(false)
+  const { warehouses: branchWarehouses, defaultId: defaultWarehouseId } = useBranchWarehouses(branchId)
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [sourceRequestId, setSourceRequestId] = useState(initialFromRequestId || '')
@@ -90,6 +98,20 @@ export default function NewPurchaseOrderPage() {
   const [sourceRequestIds, setSourceRequestIds] = useState(initialFromRequestIds)
   const [sourceRequestNumbers, setSourceRequestNumbers] = useState([])
   const [draftLoading, setDraftLoading] = useState(Boolean(draftParam))
+
+  // The table always keeps one line. Whatever the table does to the list
+  // (including removing the last remaining line), if the result would be
+  // empty it becomes a single fresh blank line instead - so clicking the
+  // red X on the last line clears and resets it rather than leaving nothing.
+  const setItemsKeepingOneLine = useCallback((updater) => {
+    setItems((previous) => {
+      const next = typeof updater === 'function' ? updater(previous) : updater
+      return Array.isArray(next) && next.length > 0 ? next : [blankLine()]
+    })
+  }, [])
+
+  const clearAllLines = () => setItems([blankLine()])
+  const isAlreadyBlank = items.length === 1 && !items[0]?.variantId
 
   const { suppliers, loading: suppliersLoading } = useSuppliers(companyId)
   const { catalog, currencies, loading: catalogLoading, error: catalogError } =
@@ -194,19 +216,71 @@ export default function NewPurchaseOrderPage() {
   }, [orderNumber, titleIsCustom])
 
   useEffect(() => {
+    // Also covers drafts saved before delivery locations existed: they come
+    // back without one and get the branch default (a draft that has its own
+    // marks it touched when it loads, so it is left alone).
+    if (!deliveryTouched && !deliveryWarehouse && defaultWarehouseId) {
+      setDeliveryWarehouse(defaultWarehouseId)
+    }
+  }, [defaultWarehouseId, deliveryTouched, deliveryWarehouse])
+
+  useEffect(() => {
     let cancelled = false
 
-    async function loadUser() {
-      const { data, error } = await supabase.auth.getUser()
-      if (cancelled || error || !data?.user) return
-      setCurrentUser(data.user)
+    async function loadCreator() {
+      setIsLoadingCreator(true)
+      setCreatorError('')
+
+      try {
+        const { data, error: userError } = await supabase.auth.getUser()
+        if (userError) throw userError
+        if (!data?.user) throw new Error('Could not identify the signed-in user.')
+
+        const { data: company, error: companyError } = await supabase
+          .from('companies')
+          .select('owner')
+          .eq('id', companyId)
+          .single()
+
+        if (companyError) throw companyError
+
+        let creatorRecord
+        if (company.owner === data.user.id) {
+          creatorRecord = { id: data.user.id, email: data.user.email }
+        } else {
+          const { data: staff, error: staffError } = await supabase
+            .from('staff')
+            .select('id, email')
+            .eq('user', data.user.id)
+            .eq('company', companyId)
+            .maybeSingle()
+
+          if (staffError) throw staffError
+          if (!staff) throw new Error('Could not find your staff record for this company.')
+          creatorRecord = staff
+        }
+
+        if (!creatorRecord.email) {
+          throw new Error('Could not find an email for the creator.')
+        }
+        if (cancelled) return
+
+        setCreator(creatorRecord)
+      } catch (error) {
+        console.error('Failed to load purchase order creator:', error)
+        if (!cancelled) {
+          setCreatorError(error.message || 'Could not load the purchase order creator.')
+        }
+      } finally {
+        if (!cancelled) setIsLoadingCreator(false)
+      }
     }
 
-    loadUser()
+    loadCreator()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [companyId])
 
   useEffect(() => {
     let cancelled = false
@@ -243,8 +317,10 @@ export default function NewPurchaseOrderPage() {
       setNeededBy(payload.neededBy || '')
       setNotes(payload.notes || '')
       setItems(Array.isArray(payload.items) && payload.items.length > 0
-        ? payload.items
-        : [{ variantId: '', qty: 1, standardCostPrice: 0, unitCost: 0 }])
+        ? payload.items.map((item) => ({ deliveryWarehouse: '', ...item }))
+        : [blankLine()])
+      setDeliveryWarehouse(payload.deliveryWarehouse || '')
+      setDeliveryTouched(Boolean(payload.deliveryWarehouse))
       setSourceRequestId(payload.sourceRequestId || '')
       setSourceRequestNumber(payload.sourceRequestNumber || '')
       setSourceRequestIds(Array.isArray(payload.sourceRequestIds) ? payload.sourceRequestIds : [])
@@ -311,6 +387,7 @@ export default function NewPurchaseOrderPage() {
               qty: row.quantity_requested,
               standardCostPrice: 0,
               unitCost: row.estimated_unit_cost || 0,
+              deliveryWarehouse: '',
             }))
           )
         }
@@ -385,6 +462,7 @@ export default function NewPurchaseOrderPage() {
               qty: row.quantity_requested,
               standardCostPrice: 0,
               unitCost: row.estimated_unit_cost || 0,
+              deliveryWarehouse: '',
             }))
           )
         }
@@ -403,8 +481,7 @@ export default function NewPurchaseOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceRequestIds, branchId, draftParam])
 
-  const createdByLabel =
-    currentUser?.user_metadata?.full_name || currentUser?.email || 'You'
+  const createdByLabel = creator?.email || ''
 
   // Each item's cost is entered in its own product's cost_currency
   // (unchanged - that input never changes), then converted into
@@ -448,8 +525,8 @@ export default function NewPurchaseOrderPage() {
 
   const handleSaveDraft = async () => {
     setSubmitError('')
-    if (!currentUser?.id) {
-      setSubmitError('Could not identify the current user - try reloading the page.')
+    if (!creator?.id) {
+      setSubmitError(creatorError || 'Could not identify the purchase order creator - try reloading the page.')
       return
     }
     if (!title.trim()) {
@@ -472,6 +549,7 @@ export default function NewPurchaseOrderPage() {
         orderCurrency,
         manualRates,
         titleIsCustom,
+        deliveryWarehouse,
       }
 
       if (draftId) {
@@ -480,7 +558,7 @@ export default function NewPurchaseOrderPage() {
           .update({
             title: title.trim(),
             payload,
-            updated_by: currentUser.id,
+            updated_by: creator.id,
             updated_at: new Date().toISOString(),
           })
           .eq('id', draftId)
@@ -495,8 +573,8 @@ export default function NewPurchaseOrderPage() {
             branch: branchId,
             title: title.trim(),
             payload,
-            created_by: currentUser.id,
-            updated_by: currentUser.id,
+            created_by: creator.id,
+            updated_by: creator.id,
           })
           .select('id')
           .single()
@@ -514,6 +592,13 @@ export default function NewPurchaseOrderPage() {
     }
   }
 
+  // The real, final submit. After the checks below, everything that creates
+  // the order happens inside ONE database function, create_purchase_order(),
+  // in a single transaction: the order, its line items, marking the source
+  // request(s) as converted, recording merged source requests, and removing
+  // the draft this was started from. If any part fails, nothing is saved.
+  // The function also re-checks (and locks) the source request(s), so the
+  // "still approved?" checks that used to be done here are done there.
   const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitError('')
@@ -522,8 +607,8 @@ export default function NewPurchaseOrderPage() {
       setSubmitError('A supplier is required to create a Purchase Order.')
       return
     }
-    if (!currentUser?.id) {
-      setSubmitError('Could not identify the current user - try reloading the page.')
+    if (!creator?.id) {
+      setSubmitError(creatorError || 'Could not identify the purchase order creator - try reloading the page.')
       return
     }
     if (!title.trim()) {
@@ -534,6 +619,10 @@ export default function NewPurchaseOrderPage() {
     const validItems = resolvedItems.filter((item) => item.variantId)
     if (validItems.length === 0) {
       setSubmitError('Add at least one product to the order.')
+      return
+    }
+    if (!deliveryWarehouse) {
+      setSubmitError('Choose where this order should be delivered.')
       return
     }
 
@@ -556,154 +645,40 @@ export default function NewPurchaseOrderPage() {
     setSaving(true)
 
     try {
-      if (sourceRequestId) {
-        const { data: sourceRequest, error: sourceRequestError } = await supabase
-          .from('purchase_requests')
-          .select('id, status')
-          .eq('id', sourceRequestId)
-          .eq('branch', branchId)
-          .maybeSingle()
-
-        if (sourceRequestError) throw sourceRequestError
-        if (!sourceRequest || sourceRequest.status !== 'approved') {
-          throw new Error('The source request is no longer approved and cannot be converted.')
-        }
-      }
-
-      if (sourceRequestIds.length > 0) {
-        const { data: sourceRequests, error: sourceRequestsError } = await supabase
-          .from('purchase_requests')
-          .select('id, status')
-          .in('id', sourceRequestIds)
-          .eq('branch', branchId)
-
-        if (sourceRequestsError) throw sourceRequestsError
-        const stillApproved = (sourceRequests || []).filter((row) => row.status === 'approved')
-        if (stillApproved.length !== sourceRequestIds.length) {
-          throw new Error('One or more selected purchase requests are no longer approved and cannot be merged.')
-        }
-      }
-
-      const { data: order, error: orderError } = await supabase
-        .from('purchase_orders')
-        .insert({
-          branch: branchId,
-          title: title.trim(),
-          supplier: supplierId,
-          order_number: orderNumber,
-          // 'open' = this PO has been created/finalized internally.
-          // It is NOT yet claiming anything was transmitted to the
-          // supplier - that's a separate, later event ('sent'),
-          // triggered from the order detail page's Send/Export flow,
-          // not from creating the order here.
-          status: 'open',
-          currency: orderCurrency,
-          notes: notes || null,
-          expected_delivery_date: neededBy || null,
-          created_by: currentUser.id,
-          // Real column on purchase_orders is `purchase_request`, not
-          // `source_request` - confirmed against the live schema
-          // (information_schema.columns). This was the cause of the
-          // PGRST204 "Could not find the 'source_request' column" error.
-          purchase_request: sourceRequestId || null,
-        })
-        .select('id')
-        .single()
-
-      if (orderError) throw orderError
-
-      // unit_cost_snapshot/line_total are in orderCurrency (what the
-      // order is actually priced in). cost_currency/original_unit_cost
-      // keep what the product's own cost was before conversion, so a
-      // later audit can see what actually happened, not just the
-      // converted result.
-      // validItems now comes from resolvedItems directly (not a
-      // separate filter over items), so each one already carries its
-      // own fromCode/resolvedUnitCost - no need to re-match them up.
-      const lineItems = validItems.map((item) => {
-        const convertedUnitCost = item.resolvedUnitCost ?? item.unitCost
-        return {
-          purchase_order: order.id,
+      // unit_cost_snapshot is in orderCurrency (what the order is actually
+      // priced in). cost_currency / original_unit_cost keep what the
+      // product's own cost was before conversion, so a later audit can see
+      // what actually happened, not just the converted result. line_total
+      // is worked out in the database function.
+      const { data: orderId, error } = await supabase.rpc('create_purchase_order', {
+        p_branch: branchId,
+        p_title: title.trim(),
+        p_supplier: supplierId,
+        p_order_number: orderNumber,
+        p_currency: orderCurrency,
+        p_notes: notes || null,
+        p_expected_delivery_date: neededBy || null,
+        p_created_by: creator.id,
+        p_line_items: validItems.map((item) => ({
           variant: item.variantId,
           quantity_ordered: item.qty,
-          unit_cost_snapshot: convertedUnitCost,
+          unit_cost_snapshot: item.resolvedUnitCost ?? item.unitCost,
           cost_currency: item.fromCode || orderCurrency,
           original_unit_cost: item.unitCost,
-          line_total: Number(item.qty || 0) * Number(convertedUnitCost || 0),
-        }
+          // This line's own delivery location, or the order's.
+          delivery_warehouse: item.deliveryWarehouse || deliveryWarehouse,
+        })),
+        p_source_request: sourceRequestId || null,
+        p_source_requests: sourceRequestIds.length > 0 ? sourceRequestIds : null,
+        p_draft: draftId || null,
+        p_delivery_warehouse: deliveryWarehouse || null,
       })
 
-      const { error: lineItemsError } = await supabase
-        .from('purchase_order_line_items')
-        .insert(lineItems)
+      if (error) throw error
 
-      if (lineItemsError) throw lineItemsError
-
-      // Mark the source request as converted - guarded to 'approved' so
-      // a stale/double submit can't flip an already-converted (or since-
-      // changed) request a second time. If this update affects zero rows
-      // the PO still exists (it's the source of truth now) - not treated
-      // as fatal, just logged, since the convert-button guard already
-      // checked this on page load.
-      if (sourceRequestId) {
-        const { error: requestUpdateError } = await supabase
-          .from('purchase_requests')
-          .update({ status: 'converted' })
-          .eq('id', sourceRequestId)
-          .eq('status', 'approved')
-
-        if (requestUpdateError) {
-          console.error('Order created, but failed to mark source request as converted:', requestUpdateError)
-        }
-      }
-
-      // Merge path: record every merged request against this order in
-      // the join table, then flip each of them to 'converted' the same
-      // way the single-conversion path does above - one UPDATE covering
-      // all of them, guarded to 'approved' so a stale id can't flip a
-      // request that's already moved on. The per-row trigger still
-      // checks purchase_orders:create on each row individually; no new
-      // permission key needed for this to be safe.
-      if (sourceRequestIds.length > 0) {
-        const { error: sourceRequestsInsertError } = await supabase
-          .from('purchase_order_source_requests')
-          .insert(sourceRequestIds.map((id) => ({
-            purchase_order: order.id,
-            purchase_request: id,
-            branch: branchId,
-          })))
-
-        if (sourceRequestsInsertError) {
-          console.error('Order created, but failed to record its merged source requests:', sourceRequestsInsertError)
-        }
-
-        const { error: requestsUpdateError } = await supabase
-          .from('purchase_requests')
-          .update({ status: 'converted' })
-          .in('id', sourceRequestIds)
-          .eq('status', 'approved')
-
-        if (requestsUpdateError) {
-          console.error('Order created, but failed to mark one or more source requests as converted:', requestsUpdateError)
-        }
-      }
-
-      if (draftId) {
-        const { error: draftDeleteError } = await supabase
-          .from('purchase_order_drafts')
-          .delete()
-          .eq('id', draftId)
-          .eq('branch', branchId)
-
-        if (draftDeleteError) {
-          console.error('Purchase order was created, but its draft could not be deleted:', draftDeleteError)
-        }
-      }
-
-      // Was `${base}/sent` - a route that doesn't exist. This should
-      // land on the order's own detail page, same as every other
+      // Lands on the order's own detail page, same as every other
       // create-then-redirect flow in this module.
-      router.push(`${base}/${order.id}`)
+      router.push(`${base}/${orderId}`)
     } catch (err) {
       console.error('Error creating purchase order:', err)
       setSubmitError(err.message || 'Something went wrong saving this order.')
@@ -716,7 +691,7 @@ export default function NewPurchaseOrderPage() {
     <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold tracking-tight text-slate-900">
+          <h1 className="text-sm font-bold tracking-tight text-slate-900">
             New Purchase Order
           </h1>
 
@@ -735,7 +710,7 @@ export default function NewPurchaseOrderPage() {
           <Button
             type="button"
             variant="outline"
-            className="h-7 text-xs"
+            className="h-6 text-xs"
             onClick={() => router.back()}
           >
             Cancel
@@ -744,8 +719,8 @@ export default function NewPurchaseOrderPage() {
           <Button
             type="button"
             variant="outline"
-            className="h-7 text-xs"
-            disabled={saving || sourceRequestLoading || draftLoading}
+            className="h-6 text-xs"
+            disabled={saving || sourceRequestLoading || draftLoading || isLoadingCreator || !creator?.id}
             onClick={handleSaveDraft}
           >
             {saving ? 'Saving...' : 'Save as Draft'}
@@ -754,8 +729,8 @@ export default function NewPurchaseOrderPage() {
           <Button
             type="submit"
             form="purchase-order-form"
-            className="h-7 bg-core text-xs text-white"
-            disabled={saving || sourceRequestLoading || draftLoading}
+            className="h-6 bg-core text-xs text-white"
+            disabled={saving || sourceRequestLoading || draftLoading || isLoadingCreator || !creator?.id}
           >
             {saving ? 'Creating...' : 'Create Purchase Order'}
           </Button>
@@ -771,8 +746,10 @@ export default function NewPurchaseOrderPage() {
         onSubmit={handleSubmit}
         className="flex min-h-0 justify-between grow flex-col gap-4 overflow-hidden"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className="text-xs font-medium text-gray-800 sm:col-span-2">
+        {/* Header fields: 3 columns on desktop, 2 on tablet, 1 (stacked, tighter
+            spacing, smaller text) on mobile. */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 lg:gap-4">
+          <label className="text-xs font-medium text-gray-800">
             Title <span className="text-red-500">*</span>
             <Input
               value={title}
@@ -781,14 +758,14 @@ export default function NewPurchaseOrderPage() {
                 setTitleIsCustom(true)
               }}
               placeholder="e.g. Lagos branch generator fuel"
-              className="mt-1 h-auto w-full text-sm"
+              className="mt-1 h-auto w-full text-xs lg:text-sm"
             />
           </label>
 
           <label className="text-xs font-medium text-gray-800">
             Supplier <span className="text-red-500">*</span>
             <Select value={supplierId} onValueChange={setSupplierId}>
-              <SelectTrigger className="mt-1 h-auto w-full text-sm">
+              <SelectTrigger className="mt-1 h-6 w-full text-xs lg:text-sm">
                 <SelectValue placeholder={suppliersLoading ? 'Loading suppliers...' : 'Select supplier'} />
               </SelectTrigger>
               <SelectContent>
@@ -799,14 +776,21 @@ export default function NewPurchaseOrderPage() {
             </Select>
           </label>
 
-          <div className="text-xs font-medium text-gray-800">
-            Created by
+          <label className="text-xs font-medium text-gray-800">
+            Created by <span className="text-red-500"></span>
 
-            <p className="mt-1 h-auto w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-              {createdByLabel}
-            </p>
-          </div>
-
+            <Input
+              value={isLoadingCreator ? 'Loading creator...' : createdByLabel}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g. Q4 packaging restock"
+              className="mt-1 h-auto w-full text-xs lg:text-sm"
+              readOnly
+            />
+             {creatorError && (
+              <p className="mt-1 text-xs text-red-600">{creatorError}</p>
+            )}
+          </label>
+        
           <label className="text-xs font-medium text-gray-800">
             Needed by
 
@@ -814,8 +798,33 @@ export default function NewPurchaseOrderPage() {
               type="date"
               value={neededBy}
               onChange={(event) => setNeededBy(event.target.value)}
-              className="mt-1 h-auto w-full text-sm"
+              className="mt-1 h-auto w-full text-xs lg:text-sm"
             />
+          </label>
+
+          <label className="text-xs font-medium text-gray-800">
+            Delivery location <span className="text-red-500">*</span>
+            <Select
+              value={deliveryWarehouse}
+              onValueChange={(value) => {
+                setDeliveryWarehouse(value)
+                setDeliveryTouched(true)
+              }}
+            >
+              <SelectTrigger className="mt-1 h-6 w-full text-xs lg:text-sm">
+                <SelectValue placeholder="Select a warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                {branchWarehouses.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="mt-1 block text-[10px] font-normal text-gray-500">
+              Every line goes here unless you choose a different warehouse on that line.
+            </span>
           </label>
 
           {/* Only shown to someone with override_currency - everyone
@@ -825,7 +834,7 @@ export default function NewPurchaseOrderPage() {
             <label className="text-xs font-medium text-gray-800">
               Order currency
               <Select value={orderCurrency} onValueChange={setOrderCurrency}>
-                <SelectTrigger className="mt-1 h-auto w-full text-sm">
+                <SelectTrigger className="mt-1 h-6 w-full text-xs lg:text-sm">
                   <SelectValue placeholder="Select currency" />
                 </SelectTrigger>
                 <SelectContent>
@@ -855,13 +864,29 @@ export default function NewPurchaseOrderPage() {
                   : 'Loading products...'}
             </p>
           ) : (
-            <PurchaseOrderLineItemsTable
-              items={items}
-              setItems={setItems}
-              catalog={catalog}
-              branchCurrencyCode={branchCurrencyCode}
-              branchCurrencySymbol={branchCurrencySymbol}
-            />
+            <>
+              <div className="mb-1 flex shrink-0 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-6 text-xs"
+                  disabled={isAlreadyBlank}
+                  onClick={clearAllLines}
+                >
+                  Clear all
+                </Button>
+              </div>
+
+              <PurchaseOrderLineItemsTable
+                items={items}
+                setItems={setItemsKeepingOneLine}
+                catalog={catalog}
+                branchCurrencyCode={branchCurrencyCode}
+                branchCurrencySymbol={branchCurrencySymbol}
+                warehouses={branchWarehouses}
+                orderWarehouseId={deliveryWarehouse}
+              />
+            </>
           )}
           {unresolvedCurrencies.length > 0 && (
             <div className="mt-2 space-y-2 rounded border border-red-200 bg-red-50 p-3">

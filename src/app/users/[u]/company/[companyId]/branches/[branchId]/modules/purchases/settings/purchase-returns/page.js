@@ -17,9 +17,9 @@ import {
 } from '@/components/modules/purchases/purchase-settings-shared'
 
 // Goes at modules/purchases/settings/purchase-returns/page.js.
-// Wired to purchase_settings through the shared editor. Saved only: the
-// purchase_returns table exists, but the Returns pages (and these rules)
-// aren't built, so the toggles change nothing until that work happens.
+// Wired to purchase_settings through the shared editor. These rules are
+// enforced by the returns functions in the database (purchase-returns-
+// migration.sql and supplier-credits-migration.sql).
 
 const REFERENCE_OPTIONS = [
   { value: 'purchase_order', label: 'Purchase Order' },
@@ -35,13 +35,8 @@ export default function PurchaseReturnsSettingsPage() {
     <SettingsPageShell
       editor={editor}
       title="Purchase Returns"
-      description="Configure return approvals, required return references and whether a return needs authorization before it can be completed."
+      description="Configure return approvals, required return references, authorization before dispatch, and whether a refund needs a credit note."
     >
-      <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-        The Returns pages aren't built yet, so these are saved but don't change anything until
-        they are.
-      </p>
-
       <section className="space-y-4 rounded-lg border border-gray-200 p-4">
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs font-medium text-gray-800">Require approval for returns</p>
@@ -54,7 +49,7 @@ export default function PurchaseReturnsSettingsPage() {
 
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs font-medium text-gray-800">
-            Require authorization before a return is completed
+            Require authorization before a return is dispatched
           </p>
           <Switch
             checked={view.returns_require_authorization_before_completing}
@@ -62,6 +57,21 @@ export default function PurchaseReturnsSettingsPage() {
             onCheckedChange={(checked) =>
               patch('returns_require_authorization_before_completing', checked)
             }
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium text-gray-800">Require a credit note for refunds</p>
+            <p className="text-[11px] text-gray-500">
+              Off (default): a supplier can refund cash with no credit note. On: a refund can only be
+              recorded against the supplier's credit note.
+            </p>
+          </div>
+          <Switch
+            checked={view.returns_require_credit_note}
+            disabled={!editing}
+            onCheckedChange={(checked) => patch('returns_require_credit_note', checked)}
           />
         </div>
       </section>

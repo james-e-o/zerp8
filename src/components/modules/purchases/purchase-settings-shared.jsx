@@ -74,6 +74,7 @@ export const SETTINGS_DEFAULTS = {
   returns_require_approval: true,
   returns_required_reference: 'either',
   returns_require_authorization_before_completing: true,
+  returns_require_credit_note: false,
   bills_tolerance_action: 'warn',
 }
 

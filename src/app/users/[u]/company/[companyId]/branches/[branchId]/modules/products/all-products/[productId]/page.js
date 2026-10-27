@@ -113,8 +113,9 @@ export default function ProductDetailPage() {
           .from("product_variants")
           .select("*")
           .eq("product", productId)
-          .eq("is_active", true)
-          .order("created_at", { ascending: false });
+          // Deactivated variants stay visible (badged) so they can be found
+          // and re-activated from the edit page.
+          .order("created_at", { ascending: true });
 
         if (variantError) throw variantError;
         const variantIds = (variantRows || []).map((variant) => variant.id);
@@ -224,8 +225,12 @@ export default function ProductDetailPage() {
                 <h1 className="mt-1 text-lg font-semibold text-foreground">{product.title || "Untitled product"}</h1>
                 {product.sub_title ? <p className="mt-1 text-xs text-muted-foreground">{product.sub_title}</p> : null}
               </div>
-              <Button type="button" variant="outline" size="sm" className="h-7 px-2.5 text-[11px]">
-                Edit
+              <Button asChild type="button" variant="outline" size="sm" className="h-7 px-2.5 text-[11px]">
+                <Link
+                  href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/products/all-products/${productId}/edit`}
+                >
+                  Edit
+                </Link>
               </Button>
             </div>
 
@@ -250,8 +255,9 @@ export default function ProductDetailPage() {
                 </div>
                 <p className="mt-2 text-sm font-semibold text-foreground">
                   {variants.length > 0 ? (() => {
-                    const code = getVariantCurrencyCode(variants[0], branchCurrency);
-                    const parts = getCurrencyParts(getPrimaryPrice(variants[0]), code, getCurrencyMeta(availableCurrencies, code) || currencyMeta);
+                    const baseVariant = variants.find((variant) => variant.is_active) || variants[0];
+                    const code = getVariantCurrencyCode(baseVariant, branchCurrency);
+                    const parts = getCurrencyParts(getPrimaryPrice(baseVariant), code, getCurrencyMeta(availableCurrencies, code) || currencyMeta);
                     return <><span className="text-core">{parts.symbol}</span>{parts.amount}</>;
                   })() : "Price not set"}
                 </p>
@@ -308,6 +314,7 @@ export default function ProductDetailPage() {
             </div>
           ) : (
             variants.map((variant) => {
+              const variantInactive = variant.is_active === false;
               const variantPrice = getPrimaryPrice(variant);
               const variantCurrency = getVariantCurrencyCode(variant, branchCurrency);
               const variantCurrencyMeta = getCurrencyMeta(availableCurrencies, variantCurrency) || currencyMeta;
@@ -315,15 +322,15 @@ export default function ProductDetailPage() {
               const costCurrencyMeta = getCurrencyMeta(availableCurrencies, costCurrency) || currencyMeta;
               const isSelected = selectedVariant?.id === variant.id;
               return (
+                <div key={variant.id}>
                 <button
-                  key={variant.id}
                   type="button"
                   onClick={() => setSelectedVariantId(variant.id)}
                   className={`w-full rounded-sm border p-3 text-left transition-colors ${
                     isSelected
                       ? "border-core bg-core_light ring-1 ring-core"
                       : "border-border bg-muted hover:bg-card"
-                  }`}
+                  } ${variantInactive ? "opacity-70" : ""}`}
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -341,10 +348,27 @@ export default function ProductDetailPage() {
                         </>;
                       })()}
                       <span className="rounded-sm bg-card px-2 py-1">Margin: {variant.margin_percentage ?? "—"}%</span>
-                      <span className="rounded-sm bg-card px-2 py-1">Active: {variant.is_active ? "Yes" : "No"}</span>
+                      {product.type !== "service" && (
+                        <span className="rounded-sm bg-card px-2 py-1">
+                          {variant.is_tracked_inventory ? (variant.tracking_mode === "batch" ? "Stocked · batches" : "Stocked") : "Not stocked"}
+                        </span>
+                      )}
+                      <span className="rounded-sm bg-card px-2 py-1">{variant.is_tracked_shop ? "Listed in shop" : "Not in shop"}</span>
+                      <span className={`rounded-sm px-2 py-1 ${variantInactive ? "bg-amber-100 text-amber-800" : "bg-card"}`}>
+                        {variantInactive ? "Inactive" : "Active"}
+                      </span>
                     </div>
                   </div>
                 </button>
+                {variant.is_tracked_inventory && product.type !== "service" ? (
+                  <Link
+                    href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/inventory/stock/${variant.id}`}
+                    className="mt-1 inline-block text-[10px] text-core hover:underline"
+                  >
+                    View stock
+                  </Link>
+                ) : null}
+                </div>
               );
             })
           )}

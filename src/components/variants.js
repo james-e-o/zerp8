@@ -69,6 +69,9 @@ const calculateSellingPrice = (costPrice, marginValue) => {
 // as an estimate rather than a final number the way ProductConfigurations'
 // Cost Price field now does too.
 //
+// Oct 2026 update #3 - "Tracked in Inventory" is now "Stocked goods"; the column
+// and the master switch are hidden for services (they are never stocked).
+//
 // Oct 2026 update #2 - Margin % and Margin Value now sync LIVE as you
 // type, matching ProductConfigurations' Standard block instead of only
 // resolving on blur. Previously these two Inputs were uncontrolled
@@ -93,6 +96,9 @@ const calculateSellingPrice = (costPrice, marginValue) => {
 // ----------------------------------------------------------------------
 
 export function VariantTable({ combinations = [], costPrice, standardPricing = {}, bulkThreshold, updateValue, productType = 'physical' }) {
+  // Services are not stocked, so the inventory column and switch are hidden.
+  const showStock = productType !== 'service'
+  const gridCols = showStock ? 'grid-cols-9' : 'grid-cols-8'
   const [pendingEdits, setPendingEdits] = useState({})
   // Live edit buffer for margin %/value, per row index - see comment above.
   const [marginDrafts, setMarginDrafts] = useState({})
@@ -175,16 +181,18 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
       accessorKey: 'details',
       id: 'details',
       header: () => (
-        <div className="grid grid-cols-9 gap-0 min-w-4xl bg-white h-full">
+        <div className={`grid ${gridCols} gap-0 min-w-4xl bg-white h-full`}>
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">{productType === 'service' ? 'Quality Tier' : 'Variant'}</p>
           </div>
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">SKU</p>
           </div>
-          <div className="flex items-center justify-center border-r border-gray-200 p-2">
-            <p className="text-[11px] text-center font-medium">Tracked in Inventory</p>
-          </div>
+          {showStock && (
+            <div className="flex items-center justify-center border-r border-gray-200 p-2">
+              <p className="text-[11px] text-center font-medium">Stocked goods</p>
+            </div>
+          )}
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">Tracked in Shop</p>
           </div>
@@ -242,7 +250,7 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
         }
 
         return (
-          <div className="grid grid-cols-9 gap-0 min-w-4xl bg-white h-full">
+          <div className={`grid ${gridCols} gap-0 min-w-4xl bg-white h-full`}>
             <div className="flex items-center justify-center border-r border-gray-100 p-2">
               <div className="text-sm">{combo.variant}</div>
             </div>
@@ -257,12 +265,14 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
                 className="h-7 w-32 text-[11px]"
               />
             </div>
-            <div className="flex items-center justify-center border-r border-gray-100 p-2">
-              <Checkbox
-                checked={isTrackedInventory(combo)}
-                onCheckedChange={(v) => updateValue(rowIndex, 'managed', v)}
-              />
-            </div>
+            {showStock && (
+              <div className="flex items-center justify-center border-r border-gray-100 p-2">
+                <Checkbox
+                  checked={isTrackedInventory(combo)}
+                  onCheckedChange={(v) => updateValue(rowIndex, 'managed', v)}
+                />
+              </div>
+            )}
             <div className="flex items-center justify-center border-r border-gray-100 p-2">
               <Checkbox
                 checked={isTrackedInShop(combo)}
@@ -345,10 +355,12 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
   return (
     <div className="w-full border rounded-md overflow-hidden flex flex-col h-full">
       <div className="p-3 bg-white border-b flex items-center gap-6 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Switch checked={trackInventorySwitch} onCheckedChange={(v) => handleBulkToggle('managed', v, setTrackInventorySwitch)} />
-          <span className="text-xs font-medium">Track Inventory</span>
-        </div>
+        {showStock && (
+          <div className="flex items-center gap-2">
+            <Switch checked={trackInventorySwitch} onCheckedChange={(v) => handleBulkToggle('managed', v, setTrackInventorySwitch)} />
+            <span className="text-xs font-medium">Stocked goods</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Switch checked={trackInShopSwitch} onCheckedChange={(v) => handleBulkToggle('trackedInShop', v, setTrackInShopSwitch)} />
           <span className="text-xs font-medium">Track in Shop</span>

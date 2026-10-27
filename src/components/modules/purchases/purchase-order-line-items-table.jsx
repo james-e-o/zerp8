@@ -29,6 +29,14 @@ import {
 import { Input } from '@/components/ui/input'
 
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -51,7 +59,11 @@ import { formatCurrency } from './dummy-data'
 // the catalog's own cost_price kept alongside only as a reference point
 // (standardCostPrice), not the thing being edited.
 //
-// Line item shape: { variantId, qty, standardCostPrice, unitCost }
+// Line item shape: { variantId, qty, standardCostPrice, unitCost, deliveryWarehouse }
+//
+// deliveryWarehouse '' means "follow the order's delivery location"
+// (orderWarehouseId); any other value is this line's own location. Only the
+// branch's warehouses (`warehouses`) are offered.
 
 export default function PurchaseOrderLineItemsTable({
   items,
@@ -59,6 +71,8 @@ export default function PurchaseOrderLineItemsTable({
   catalog,
   branchCurrencyCode,
   branchCurrencySymbol,
+  warehouses = [],
+  orderWarehouseId = '',
 }) {
   const [detailsVariant, setDetailsVariant] = useState(null)
 
@@ -78,6 +92,7 @@ export default function PurchaseOrderLineItemsTable({
         qty: 1,
         standardCostPrice: 0,
         unitCost: 0,
+        deliveryWarehouse: '',
       })
       return next
     })
@@ -211,6 +226,56 @@ export default function PurchaseOrderLineItemsTable({
           ),
       },
       {
+        id: 'deliverTo',
+        header: (
+          <span className="block text-[10px] leading-tight">
+            Deliver
+            <br />
+            to
+          </span>
+        ),
+        cell: ({ row }) => {
+          const own = row.original.deliveryWarehouse || ''
+          const effective = own || orderWarehouseId
+          const differs = Boolean(own) && own !== orderWarehouseId
+
+          return (
+            <Select
+              value={effective}
+              onValueChange={(value) =>
+                // Choosing the order's own location goes back to "follow it".
+                updateRow(row.index, {
+                  deliveryWarehouse: value === orderWarehouseId ? '' : value,
+                })
+              }
+            >
+              <SelectTrigger
+                className={`h-7 w-24 px-1.5 text-[10px] ${
+                  differs ? 'border-core text-core' : ''
+                }`}
+                title={
+                  warehouses.find((warehouse) => warehouse.id === effective)?.name ||
+                  'Delivery location'
+                }
+                aria-label="Delivery location for this line"
+              >
+                <span className="truncate">
+                  <SelectValue placeholder="Location" />
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id} className="text-xs">
+                    {warehouse.name}
+                    {warehouse.id === orderWarehouseId ? ' (order default)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )
+        },
+      },
+      {
         id: 'actions',
         header: '',
         cell: ({ row }) => (
@@ -251,7 +316,7 @@ export default function PurchaseOrderLineItemsTable({
         ),
       },
     ],
-    [catalog]
+    [catalog, warehouses, orderWarehouseId]
   )
 
   const table = useReactTable({
@@ -269,7 +334,7 @@ export default function PurchaseOrderLineItemsTable({
   return (
     <div className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-gray-200">
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="min-w-[900px] w-full border-collapse text-left text-xs">
+        <table className="min-w-[1000px] w-full border-collapse text-left text-xs">
           <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-500">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -283,7 +348,9 @@ export default function PurchaseOrderLineItemsTable({
                           ? 'w-32'
                           : ['standardCostPrice', 'unitCost', 'amount'].includes(header.column.id)
                             ? 'w-32'
-                        : ''
+                            : header.column.id === 'deliverTo'
+                              ? 'w-28'
+                              : ''
                     }`}
                   >
                     {flexRender(
