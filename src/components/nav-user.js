@@ -4,6 +4,7 @@ import {  BadgeCheck,  Bell,  ChevronsUpDown,  CreditCard,  LogOut,  Settings,  
 import {  Avatar,  AvatarFallback,  AvatarImage,} from "@/components/ui/avatar"
 import {  DropdownMenu,  DropdownMenuContent,  DropdownMenuGroup,  DropdownMenuItem,  DropdownMenuLabel,  DropdownMenuSeparator,  DropdownMenuTrigger,} from "@/components/ui/dropdown-menu"
 import {  SidebarMenu,  SidebarMenuButton,  SidebarMenuItem,  useSidebar,} from "@/components/ui/sidebar"
+import ThemeMenuItem from "@/components/theme-menu-item"
 
 export function NavUser({user}){
   
@@ -70,6 +71,8 @@ export function NavUser({user}){
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <ThemeMenuItem />
+            <DropdownMenuSeparator />
             <DropdownMenuItem>
               <LogOut />
               Log out
@@ -80,4 +83,3 @@ export function NavUser({user}){
     </SidebarMenu>
   )
 }
-

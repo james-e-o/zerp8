@@ -15,6 +15,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/c
 import { LogOut, ChevronsUpDown, Building2, Home } from "lucide-react"
 import supabase from "@/config/supabaseClient"
 import { toast } from "sonner"
+import ThemeMenuItem from "@/components/theme-menu-item"
 
 export default function ModuleSidebarFooterUser({ user, u, companyId, branch }) {
   const { isMobile } = useSidebar()
@@ -83,6 +84,8 @@ export default function ModuleSidebarFooterUser({ user, u, companyId, branch }) 
               </DropdownMenuItem>
             </DropdownMenuGroup>
 
+            <DropdownMenuSeparator className="text-army" />
+            <ThemeMenuItem />
             <DropdownMenuSeparator className="text-army" />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="size-4 text-army" />

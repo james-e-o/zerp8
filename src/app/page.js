@@ -14,6 +14,7 @@ import {
   Store,
   Waypoints,
 } from 'lucide-react'
+import ThemeToggle from '@/components/theme-toggle'
 
 const workflow = [
   { number: '01', label: 'Products', detail: 'A shared catalogue', icon: Boxes },
@@ -143,13 +144,16 @@ export default function Home() {
           <nav aria-label="Main navigation" className="hidden items-center gap-8 text-[13px] font-medium text-[#565a6b] md:flex">
             <a className="transition-colors hover:text-[#5148e5]" href="#product">Product</a><a className="transition-colors hover:text-[#5148e5]" href="#solutions">Solutions</a><a className="transition-colors hover:text-[#5148e5]" href="#features">Features</a><Link className="transition-colors hover:text-[#5148e5]" href="/faqs">Resources</Link>
           </nav>
-          <div className="hidden items-center gap-6 md:flex"><Link className="text-[13px] font-medium text-[#565a6b] hover:text-[#5148e5]" href="/accounts/login">Log in</Link><Link className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#17192a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#5148e5]" href="/accounts/signup">Get started <ArrowRight size={15} /></Link></div>
-          <details className="group relative md:hidden">
-            <summary aria-label="Toggle navigation menu" className="flex size-10 cursor-pointer list-none flex-col items-center justify-center gap-[5px] rounded border border-[#e0dfe5] [&::-webkit-details-marker]:hidden"><span className="h-0.5 w-4 bg-[#17192a]" /><span className="h-0.5 w-4 bg-[#17192a]" /></summary>
+          <div className="hidden items-center gap-4 md:flex"><ThemeToggle /><Link className="text-[13px] font-medium text-[#565a6b] hover:text-[#5148e5]" href="/accounts/login">Log in</Link><Link className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#17192a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#5148e5]" href="/accounts/signup">Get started <ArrowRight size={15} /></Link></div>
+          <div className="flex items-center gap-2 md:hidden">
+            <ThemeToggle />
+            <details className="group relative">
+              <summary aria-label="Toggle navigation menu" className="flex size-10 cursor-pointer list-none flex-col items-center justify-center gap-[5px] rounded border border-[#e0dfe5] [&::-webkit-details-marker]:hidden"><span className="h-0.5 w-4 bg-[#17192a]" /><span className="h-0.5 w-4 bg-[#17192a]" /></summary>
             <nav aria-label="Mobile navigation" className="absolute right-0 top-12 hidden w-[min(280px,calc(100vw-36px))] flex-col rounded-md border border-[#e4e3e8] bg-white p-2 shadow-xl group-open:flex">
               <a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#product">Product</a><a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#solutions">Solutions</a><a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#features">Features</a><Link className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="/faqs">Resources</Link><Link className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="/accounts/login">Log in</Link><Link className="mt-1 flex items-center justify-between rounded bg-[#17192a] px-3 py-3 text-xs font-semibold text-white" href="/accounts/signup">Get started <ArrowRight size={15} /></Link>
             </nav>
-          </details>
+            </details>
+          </div>
         </div>
       </header>
 

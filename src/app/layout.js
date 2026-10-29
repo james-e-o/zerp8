@@ -1,5 +1,6 @@
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner"
+import ThemeProvider from "@/components/theme-provider"
 
 export const metadata = {
   title: "ZERP-8 | Connected business operations",
@@ -16,12 +17,14 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
-        className={`font-Inter  h-svh w-full overflow-hidden antialiased`}
+        className={`font-Inter h-svh w-full overflow-hidden antialiased dark:bg-navy`}
       >
-        <Toaster richColors position="top-right"  />
-        {children}
+        <ThemeProvider>
+          <Toaster richColors position="top-right"  />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -262,7 +262,7 @@ export default function CompanyPage() {
 
   return (
     <ReusableCompanySidebar>
-      <div className="p-4 h-full flex flex-col overflow-y-auto bg-amber-300">
+      <div className="p-4 h-full flex flex-col overflow-y-auto">
         {showWelcome && (
           <div className="mb-6 bg-card border border-core/20 rounded-xl px-5 py-3.5 flex items-center justify-between">
             <p className="text-sm text-foreground">

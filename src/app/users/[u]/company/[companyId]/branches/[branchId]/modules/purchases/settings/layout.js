@@ -26,7 +26,6 @@ const TABS = [
   { label: 'General', value: 'all' },
   { label: 'Purchase Orders', value: 'purchase-orders' },
   { label: 'Requests & Approvals', value: 'requests-approvals' },
-  { label: 'Receiving Rules', value: 'receiving-rules' },
   { label: 'Supplier Bills', value: 'supplier-bills' },
   { label: 'Purchase Returns', value: 'purchase-returns' },
 ]

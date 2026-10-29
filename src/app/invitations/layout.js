@@ -3,6 +3,7 @@
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import Image from 'next/image'
+import ThemeToggle from '@/components/theme-toggle'
 
 export default function InvitationsLayout({ children }) {
   return (
@@ -66,7 +67,8 @@ function InvitationsLayoutContent({ children }) {
       </div>
 
       {/* Right Side - Content */}
-      <div className="flex flex-col gap-4 p-6 md:p-10 overflow-y-auto max-h-svh">
+      <div className="relative flex flex-col gap-4 p-6 md:p-10 overflow-y-auto max-h-svh">
+        <div className="absolute right-4 top-4 z-10"><ThemeToggle /></div>
         {children}
       </div>
     </div>

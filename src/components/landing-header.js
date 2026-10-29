@@ -4,6 +4,7 @@ import Link from "next/link";
 import { X, Menu } from "lucide-react";
 import { Button } from "./ui/button";
 import Image from "next/image";
+import ThemeToggle from "@/components/theme-toggle";
 
 const LandingHeader = () => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,6 +42,7 @@ const LandingHeader = () => {
           <NavLink href="/pricing">Pricing</NavLink>
           <NavLink href="/about">About</NavLink>
           <NavLink href="/faqs">FAQs</NavLink>
+          <ThemeToggle />
           <Link href="/accounts/login">
             <Button
               size="sm"
@@ -53,6 +55,7 @@ const LandingHeader = () => {
 
         {/* MOBILE CONTROLS */}
         <div className="flex items-center gap-3 md:hidden">
+          <ThemeToggle />
           <Link href="/accounts/login">
             <Button
               variant="outline"
@@ -126,4 +129,3 @@ const NavLink = ({ href, children, onClick }) => (
 );
 
 export default LandingHeader;
-

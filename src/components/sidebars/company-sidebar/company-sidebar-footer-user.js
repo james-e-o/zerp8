@@ -7,6 +7,7 @@ import {  SidebarMenu,  SidebarMenuButton,  SidebarMenuItem,  useSidebar,} from 
 import { LogOut, ChevronsUpDown, Building2, Home } from "lucide-react"
 import  supabase  from "../../../config/supabaseClient"
 import { toast } from "sonner"
+import ThemeMenuItem from "@/components/theme-menu-item"
 
 export function CompanySidebarFooterUser({ user, u, company }) {
   const { isMobile } = useSidebar()
@@ -89,6 +90,10 @@ export function CompanySidebarFooterUser({ user, u, company }) {
                 <span>Back to User Dashboard</span>
               </DropdownMenuItem>
             </DropdownMenuGroup>
+
+            <DropdownMenuSeparator className={'text-army'}/>
+
+            <ThemeMenuItem />
 
             <DropdownMenuSeparator className={'text-army'}/>
 

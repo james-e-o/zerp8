@@ -117,7 +117,7 @@ export default function LoginPage() {
                 >
                   <div className="flex size-8 items-center justify-center rounded-md">
                     <div className="inline-flex pt-0 md:pt-0 size-8 justify-center">
-                        <Image className="dark:invert w-7/8 scale-75 " src="/zerp8-logo.png" alt="ZERP-8" width={200} height={200} priority />
+                        <Image className="w-7/8 scale-75 " src="/zerp8-logo.png" alt="ZERP-8" width={200} height={200} priority />
                     </div>
                   </div>
                  

@@ -170,6 +170,8 @@ function NewReceiptForm() {
   const [orders, setOrders] = useState([])
   const [ordersLoading, setOrdersLoading] = useState(true)
   const [excessHandling, setExcessHandling] = useState(null)
+  const [requireDeliveryNote, setRequireDeliveryNote] = useState(false)
+  const [allowedSources, setAllowedSources] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [draftLoaded, setDraftLoaded] = useState(!draftId)
@@ -218,16 +220,25 @@ function NewReceiptForm() {
     let cancelled = false
     async function loadRules() {
       if (!branchId) return
-      const { data, error: ruleError } = await supabase.rpc('get_effective_purchase_settings', { p_branch: branchId })
+      // Receiving rules live in Inventory settings > Receiving.
+      const { data, error: ruleError } = await supabase.rpc('get_effective_inventory_settings', { p_branch: branchId })
       if (cancelled || ruleError || !data) return
       const row = Array.isArray(data) ? data[0] : data
       setExcessHandling(row?.excess_handling ?? null)
+      setRequireDeliveryNote(row?.require_delivery_note === true)
+      setAllowedSources(Array.isArray(row?.allowed_receipt_sources) ? row.allowed_receipt_sources : null)
     }
     loadRules()
     return () => {
       cancelled = true
     }
   }, [branchId])
+
+  // A new receipt starts from a source this branch is allowed to receive from.
+  useEffect(() => {
+    if (draftId || !allowedSources || allowedSources.includes(source)) return
+    setSource(allowedSources[0])
+  }, [allowedSources, draftId, source])
 
   const warehouseKey = warehouses.map((entry) => entry.id).sort().join(',')
   useEffect(() => {
@@ -483,10 +494,11 @@ function NewReceiptForm() {
     if (isOrderReceipt && !orderId) return 'Choose the purchase order these goods are for.'
     if (source === 'other' && !sourceText.trim()) return 'Say where these goods came from.'
     if (!warehouseId) return 'Choose the warehouse the goods go into.'
+    if (requireDeliveryNote && !deliveryNote.trim()) return 'Enter the delivery note number. This branch requires one on every receipt.'
     if (countedLines.length === 0) return 'Count at least one item.'
     if (Object.keys(lineProblems).length > 0) return 'Fix the rows marked in red.'
     if (excessTotal > 0 && excessHandling === 'block') {
-      return 'Receiving Rules do not allow excess or unexpected goods. Reduce the counts or remove those items.'
+      return 'Receiving rules (Inventory settings > Receiving) do not allow excess or unexpected goods. Reduce the counts or remove those items.'
     }
     return ''
   }
@@ -569,7 +581,7 @@ function NewReceiptForm() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {RECEIPT_SOURCES.map((entry) => (
+              {RECEIPT_SOURCES.filter((entry) => !allowedSources || allowedSources.includes(entry.value) || entry.value === source).map((entry) => (
                 <SelectItem key={entry.value} value={entry.value} className="text-xs">
                   {entry.label}
                 </SelectItem>
@@ -619,7 +631,7 @@ function NewReceiptForm() {
           </Select>
         </Labelled>
 
-        <Labelled label="Delivery note no.">
+        <Labelled label={requireDeliveryNote ? 'Delivery note no. (required)' : 'Delivery note no.'}>
           <Input value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} className="h-7 text-xs" />
         </Labelled>
         <Labelled label="Counted on">
