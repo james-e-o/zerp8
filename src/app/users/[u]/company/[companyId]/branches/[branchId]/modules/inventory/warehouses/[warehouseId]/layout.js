@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import TabNav from '@/components/modules/sales/TabNav'
 
-// One warehouse: Overview, Shelves, Stock. This sits under the Warehouses
+// One warehouse: Overview, Shelves, Stock, Transfers. This sits under the Warehouses
 // layout, which already shows the page header, so it adds only a way back
 // and its own tabs. The warehouse's name and code are on the Overview tab.
 
@@ -9,6 +9,7 @@ const TABS = [
   { label: 'Overview', value: '' },
   { label: 'Shelves', value: 'shelves' },
   { label: 'Stock', value: 'stock' },
+  { label: 'Transfers', value: 'transfers' },
 ]
 
 export default async function WarehouseDetailLayout({ children, params }) {

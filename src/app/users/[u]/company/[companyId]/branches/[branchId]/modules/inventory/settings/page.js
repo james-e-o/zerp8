@@ -32,7 +32,7 @@ function preview(format) {
 
 export default function GeneralInventorySettingsPage() {
   const { companyId, branchId } = useParams()
-  const canEdit = useInventoryCan('edit')
+  const canEdit = useInventoryCan('edit','inventory_settings')
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -129,11 +129,11 @@ export default function GeneralInventorySettingsPage() {
     setEditing(false)
   }
 
-  if (loading && !editing) return <p className="text-xs text-gray-500">Loading settings...</p>
-  if (loadError) return <div><ErrorNote>{loadError}</ErrorNote></div>
+  if (loading && !editing) return <p className="p-6 text-xs text-gray-500">Loading settings...</p>
+  if (loadError) return <div className="p-6"><ErrorNote>{loadError}</ErrorNote></div>
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-2xl space-y-6 p-6">
       <div className="flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">How inventory documents are numbered.</p>
         {canEdit && !editing && (

@@ -1,5 +1,5 @@
-import TransfersListPage from "@/components/modules/inventory/transfers-list-page";
+import TransfersListPage from '@/components/modules/inventory/transfers-list-page'
 
-export default function InTransitTransfersPage() {
-  return <TransfersListPage title="Transfers In Transit" filter="in-transit" />;
+export default function Page() {
+  return <TransfersListPage view="in_transit" />
 }

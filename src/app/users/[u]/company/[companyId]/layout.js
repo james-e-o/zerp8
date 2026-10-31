@@ -75,7 +75,7 @@ export default async function CompanyLayout({ children, params }) {
 
   const { data: currenciesArray } = await supabase
     .from("currencies")
-    .select("name, code, flag")
+    .select("name, code, flag, symbol")
     .in("code", company.currencies || [])
 
   const { data: branchesData } = await supabase

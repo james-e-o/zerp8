@@ -51,7 +51,7 @@ const KEYS = Object.keys(DEFAULTS)
 
 export default function ReceivingSettingsPage() {
   const { companyId, branchId } = useParams()
-  const canEdit = useInventoryCan('edit')
+  const canEdit = useInventoryCan('edit','inventory_settings')
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -173,11 +173,11 @@ export default function ReceivingSettingsPage() {
     setEditing(false)
   }
 
-  if (loading && !editing) return <p className="text-xs text-gray-500">Loading receiving settings...</p>
-  if (loadError) return <div><ErrorNote>{loadError}</ErrorNote></div>
+  if (loading && !editing) return <p className="p-6 text-xs text-gray-500">Loading receiving settings...</p>
+  if (loadError) return <div className="p-6"><ErrorNote>{loadError}</ErrorNote></div>
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-2xl space-y-6 p-6">
       <div className="flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">
           The rules applied when goods are counted in: how much over an order is accepted, what happens to the extra, and

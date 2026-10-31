@@ -1,13 +1,15 @@
+import ApprovalSettingsSection from '@/components/modules/inventory/approval-settings-section'
+
 // Inventory > Settings > Transfers.
-// No settings yet: they follow the Transfers page.
+// Approval for moving stock between warehouses and branches.
 
 export default function TransfersSettingsPage() {
   return (
-    <div className="max-w-2xl space-y-3">
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6">
-        <h2 className="text-xs font-semibold text-gray-800">Transfers</h2>
-        <p className="mt-2 text-xs text-gray-600">Nothing to set here yet. Transfer rules, such as whether goods must be confirmed on arrival, are decided once the Transfers page is built.</p>
-      </div>
-    </div>
+    <ApprovalSettingsSection
+      action="post_transfer"
+      settingKey="require_transfer_approval"
+      noun="transfers"
+      description="Whether a transfer needs approval before stock leaves, and who may approve it."
+    />
   )
 }

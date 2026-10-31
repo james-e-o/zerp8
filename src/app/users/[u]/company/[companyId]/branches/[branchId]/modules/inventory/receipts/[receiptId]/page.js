@@ -155,7 +155,7 @@ export default function ReceiptDetailPage() {
   const order = receipt.order_ref
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-4 p-1">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link

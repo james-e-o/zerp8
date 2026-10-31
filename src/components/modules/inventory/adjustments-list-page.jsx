@@ -1,99 +1,140 @@
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { inventoryAdjustments } from "@/components/modules/inventory/inventory-demo-data";
+'use client'
 
-export default function AdjustmentsListPage({
-  title,
-  description,
-  filter = "all",
-}) {
-  const rows = inventoryAdjustments.filter(
-    (row) => filter === "all" || row.status.toLowerCase() === filter,
-  );
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+import { Input } from '@/components/ui/input'
+import supabase from '@/config/supabaseClient'
+import { PageControls } from '@/components/modules/inventory/inventory-shared'
+import { EmptyState, ErrorNote, Tone } from '@/components/modules/inventory/receipt-shared'
+import {
+  KIND,
+  STATUS,
+  formatDateTime,
+  signed,
+  useAdjustmentPaths,
+} from '@/components/modules/inventory/adjustment-shared'
+
+// Shared by the All, Counting, Pending and Posted tabs of Inventory >
+// Adjustments. Each tab's page.js passes `view`.
+
+const PAGE_SIZE = 50
+
+const COPY = {
+  all: { hint: 'Every count and adjustment for this branch, newest first.', empty: 'No adjustments yet.' },
+  counting: { hint: 'Open counts and adjustments, and any that were rejected and need fixing.', empty: 'Nothing is being counted right now.' },
+  pending: { hint: 'Submitted and waiting for approval, or approved and waiting to be posted.', empty: 'Nothing is waiting for approval.' },
+  posted: { hint: 'Posted. Each one changed stock and is in Movements.', empty: 'Nothing has been posted yet.' },
+}
+
+export default function AdjustmentsListPage({ view = 'all' }) {
+  const router = useRouter()
+  const { branchId, adjustments } = useAdjustmentPaths()
+
+  const [rows, setRows] = useState([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [search, setSearch] = useState('')
+  const [debounced, setDebounced] = useState('')
+  const [page, setPage] = useState(0)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    setPage(0)
+  }, [view, debounced])
+
+  const load = useCallback(async () => {
+    if (!branchId) return
+    setLoading(true)
+    setLoadError('')
+    const { data, error } = await supabase.rpc('list_inventory_adjustments', {
+      p_branch: branchId,
+      p_view: view,
+      p_search: debounced || null,
+      p_limit: PAGE_SIZE,
+      p_offset: page * PAGE_SIZE,
+    })
+    if (error) {
+      setLoadError(error.message)
+      setRows([])
+      setTotal(0)
+    } else {
+      setRows(data || [])
+      setTotal(Number(data?.[0]?.total_count || 0))
+    }
+    setLoading(false)
+  }, [branchId, view, debounced, page])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   return (
-    <div className="space-y-4">
-      {(title || description) && (
-        <div>
-          {title && (
-            <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
-          )}
-          {description && (
-            <p className="text-xs text-gray-500">{description}</p>
-          )}
-        </div>
-      )}
-      <p className="text-xs text-muted-foreground">
-        Sample inventory data · {rows.length} adjustment records.
-      </p>
-      <Card className="rounded-lg shadow-none">
-        <CardContent className="overflow-x-auto p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Adjustment</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Variance</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead>Warehouse</TableHead>
-                <TableHead>Created by</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.ref}>
-                  <TableCell>
-                    <div className="font-mono text-xs">{row.ref}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.date}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{row.product}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.sku}
-                    </div>
-                  </TableCell>
-                  <TableCell
-                    className={
-                      row.qty < 0
-                        ? "font-semibold text-red-700"
-                        : "font-semibold text-emerald-700"
-                    }
-                  >
-                    {row.qty > 0 ? "+" : ""}
-                    {row.qty}
-                  </TableCell>
-                  <TableCell>{row.reason}</TableCell>
-                  <TableCell>{row.warehouse}</TableCell>
-                  <TableCell>{row.by}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        row.status === "Posted"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-amber-200 bg-amber-50 text-amber-700"
-                      }
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-gray-500">{COPY[view]?.hint}</p>
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by number"
+          className="h-7 w-64 text-xs"
+        />
+      </div>
+
+      {loading && rows.length === 0 ? (
+        <p className="text-xs text-gray-500">Loading adjustments...</p>
+      ) : loadError ? (
+        <ErrorNote>{loadError}</ErrorNote>
+      ) : rows.length === 0 ? (
+        <EmptyState>{debounced ? 'No adjustment matches that search.' : COPY[view]?.empty}</EmptyState>
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full min-w-[820px] text-xs">
+              <thead className="bg-gray-50 text-[11px] font-medium text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Number</th>
+                  <th className="px-3 py-2 text-left">Type</th>
+                  <th className="px-3 py-2 text-left">Warehouse</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-right">Lines</th>
+                  <th className="px-3 py-2 text-right">Net change</th>
+                  <th className="px-3 py-2 text-left">Started by</th>
+                  <th className="px-3 py-2 text-left">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((row) => {
+                  const status = STATUS[row.display_status] || STATUS.counting
+                  const kind = KIND[row.kind] || KIND.adjustment
+                  return (
+                    <tr
+                      key={row.id}
+                      onClick={() => router.push(`${adjustments}/${row.id}`)}
+                      className="cursor-pointer hover:bg-gray-50"
                     >
-                      {row.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                      <td className="px-3 py-2 font-mono text-[11px] text-gray-800">{row.adjustment_number}</td>
+                      <td className="px-3 py-2"><Tone tone={kind.tone}>{kind.label}</Tone></td>
+                      <td className="px-3 py-2">{row.warehouse_name || '—'}</td>
+                      <td className="px-3 py-2"><Tone tone={status.tone}>{status.label}</Tone></td>
+                      <td className="px-3 py-2 text-right">{Number(row.line_count)}</td>
+                      <td className="px-3 py-2 text-right">{Number(row.line_count) ? signed(row.net_change) : '—'}</td>
+                      <td className="px-3 py-2">{row.created_by_name || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatDateTime(row.posted_at || row.submitted_at || row.created_at)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <PageControls page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
+        </>
+      )}
     </div>
-  );
+  )
 }

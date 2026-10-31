@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import supabase from '@/config/supabaseClient'
 import { PageControls, formatMoney, formatQty, useBranchCurrency } from '@/components/modules/inventory/inventory-shared'
 import { EmptyState, ErrorNote, Tone, useFlowPaths } from '@/components/modules/inventory/receipt-shared'
+import { useAdjustmentPaths } from '@/components/modules/inventory/adjustment-shared'
+import { useTransferPaths } from '@/components/modules/inventory/transfer-shared'
 
 // Shared by the All, Inbound, Outbound and Internal tabs of Inventory >
 // Movements. Read-only: rows come from list_stock_movements, which reads the
@@ -48,6 +50,8 @@ function formatDateTime(value) {
 
 export default function MovementsListPage({ view = 'all' }) {
   const { branchId, receipts: receiptsPath, purchaseReturns } = useFlowPaths()
+  const { adjustments: adjustmentsPath } = useAdjustmentPaths()
+  const { transfers: transfersPath } = useTransferPaths()
   const currency = useBranchCurrency()
 
   const [rows, setRows] = useState([])
@@ -99,11 +103,13 @@ export default function MovementsListPage({ view = 'all' }) {
     if (!row.document_id) return null
     if (row.document_kind === 'receipt') return `${receiptsPath}/${row.document_id}`
     if (row.document_kind === 'return') return `${purchaseReturns}/${row.document_id}`
+    if (row.document_kind === 'adjustment') return `${adjustmentsPath}/${row.document_id}`
+    if (row.document_kind === 'transfer') return `${transfersPath}/${row.document_id}`
     return null
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 p-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-gray-500">{COPY[view]?.hint}</p>
         <Input

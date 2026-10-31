@@ -157,27 +157,45 @@ export async function fetchReturnReserved(holdIds) {
 }
 
 // UI-only check; the database functions are the real enforcement.
-export function useInventoryCan(verb) {
+// scope: 'inventory' (default), 'inventory_operations', 'inventory_warehouses'
+// or 'inventory_settings'.
+//
+// useInventoryAccess says more than yes/no: it also says whether the answer
+// has arrived yet and, if the check itself failed, why. Use it where a page
+// would otherwise show "no permission" for a moment while it is still asking.
+export function useInventoryAccess(verb, scope = 'inventory') {
   const { branchId } = useParams()
-  const [allowed, setAllowed] = useState(false)
+  const [state, setState] = useState({ allowed: false, loading: true, error: '' })
 
   useEffect(() => {
     let cancelled = false
     async function check() {
       if (!branchId) return
-      const { data, error } = await supabase.rpc('can_access_inventory_resource', {
+      setState({ allowed: false, loading: true, error: '' })
+      const { data, error } = await supabase.rpc('inventory_can', {
         p_branch: branchId,
+        p_scope: scope,
         p_verb: verb,
       })
-      if (!cancelled) setAllowed(!error && data === true)
+      if (cancelled) return
+      if (error) {
+        console.error(`Permission check failed (${scope}:${verb}):`, error)
+        setState({ allowed: false, loading: false, error: error.message || 'The permission check failed.' })
+        return
+      }
+      setState({ allowed: data === true, loading: false, error: '' })
     }
     check()
     return () => {
       cancelled = true
     }
-  }, [branchId, verb])
+  }, [branchId, verb, scope])
 
-  return allowed
+  return state
+}
+
+export function useInventoryCan(verb, scope = 'inventory') {
+  return useInventoryAccess(verb, scope).allowed
 }
 
 export function EmptyState({ children }) {

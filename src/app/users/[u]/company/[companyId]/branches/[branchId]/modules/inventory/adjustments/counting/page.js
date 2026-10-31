@@ -1,5 +1,5 @@
-import CountsListPage from "@/components/modules/inventory/counts-list-page";
+import AdjustmentsListPage from '@/components/modules/inventory/adjustments-list-page'
 
-export default function CountingAdjustmentsPage() {
-  return <CountsListPage title="Stock Counts" />;
+export default function Page() {
+  return <AdjustmentsListPage view="counting" />
 }

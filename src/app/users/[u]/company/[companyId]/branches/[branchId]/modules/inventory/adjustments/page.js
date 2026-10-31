@@ -1,5 +1,5 @@
-import AdjustmentsListPage from "@/components/modules/inventory/adjustments-list-page";
+import AdjustmentsListPage from '@/components/modules/inventory/adjustments-list-page'
 
-export default function AdjustmentsPage() {
-  return <AdjustmentsListPage title="All Adjustments" />;
+export default function Page() {
+  return <AdjustmentsListPage view="all" />
 }

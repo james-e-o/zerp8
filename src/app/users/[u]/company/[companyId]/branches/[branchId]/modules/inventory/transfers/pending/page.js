@@ -1,5 +1,5 @@
-import TransfersListPage from "@/components/modules/inventory/transfers-list-page";
+import TransfersListPage from '@/components/modules/inventory/transfers-list-page'
 
-export default function PendingTransfersPage() {
-  return <TransfersListPage title="Pending Transfers" filter="Pending" />;
+export default function Page() {
+  return <TransfersListPage view="pending" />
 }

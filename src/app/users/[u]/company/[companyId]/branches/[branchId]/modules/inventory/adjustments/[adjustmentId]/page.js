@@ -1,6 +1,5 @@
-import InventorySectionPage from "@/components/modules/inventory/inventory-section-page";
+import AdjustmentDetailPage from '@/components/modules/inventory/adjustment-detail-page'
 
-export default async function AdjustmentDetailPage({ params }) {
-  const { adjustmentId } = await params;
-  return <InventorySectionPage title={`Adjustment · ${adjustmentId}`} />;
+export default function Page() {
+  return <AdjustmentDetailPage />
 }

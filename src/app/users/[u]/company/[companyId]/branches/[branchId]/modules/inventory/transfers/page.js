@@ -1,5 +1,5 @@
-import TransfersListPage from "@/components/modules/inventory/transfers-list-page";
+import TransfersListPage from '@/components/modules/inventory/transfers-list-page'
 
-export default function TransfersPage() {
-  return <TransfersListPage title="All Transfers" />;
+export default function Page() {
+  return <TransfersListPage view="all" />
 }

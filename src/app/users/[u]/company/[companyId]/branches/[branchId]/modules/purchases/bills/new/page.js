@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { X, Upload, FileText, Maximize2 } from 'lucide-react'
 
@@ -34,7 +34,8 @@ import {
 } from '@/components/ui/alert-dialog'
 
 import supabase from '@/config/supabaseClient'
-import { formatNaira } from '@/components/modules/sales/dummy-data'
+import { CompanyInfoContext } from '@/app/users/[u]/company/[companyId]/companyInfoProvider'
+import { useBranchCurrency } from '@/components/modules/inventory/inventory-shared'
 import {
   usePurchaseOrdersForBilling,
   useReceiptsForPurchaseOrder,
@@ -140,6 +141,17 @@ function FileMedia({ file }) {
 export default function BillForm() {
   const router = useRouter()
   const { u, companyId, branchId } = useParams()
+  const currency = useBranchCurrency()
+  const { currencies = [] } = useContext(CompanyInfoContext) || {}
+  const currencyMeta = currencies.find((entry) => entry.code === currency)
+  const formatBillMoney = (value) => {
+    const formattedNumber = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(value || 0))
+    const symbol = currencyMeta?.symbol || currencyMeta?.symbol_native
+    return symbol ? `${symbol}${formattedNumber}` : `${currency} ${formattedNumber}`.trim()
+  }
   const searchParams = useSearchParams()
   const draftParam = searchParams.get('draft') // open an existing draft: .../bills/new?draft=<id>
   const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills`
@@ -1135,23 +1147,23 @@ export default function BillForm() {
                   <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
                     <div>
                       <p className="text-[11px] text-gray-500">Ordered</p>
-                      <p className="text-sm font-medium text-gray-800">{formatNaira(balance.ordered_total)}</p>
+                      <p className="text-sm font-medium text-gray-800">{formatBillMoney(balance.ordered_total)}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-gray-500">Received</p>
-                      <p className="text-sm font-medium text-gray-800">{formatNaira(balance.received_total)}</p>
+                      <p className="text-sm font-medium text-gray-800">{formatBillMoney(balance.received_total)}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-gray-500">Already billed</p>
-                      <p className="text-sm font-medium text-gray-800">{formatNaira(balance.billed_total)}</p>
+                      <p className="text-sm font-medium text-gray-800">{formatBillMoney(balance.billed_total)}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-gray-500">Already paid</p>
-                      <p className="text-sm font-medium text-gray-800">{formatNaira(balance.paid_total)}</p>
+                      <p className="text-sm font-medium text-gray-800">{formatBillMoney(balance.paid_total)}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-gray-500">Received, not billed (GRNI)</p>
-                      <p className="text-sm font-medium text-amber-700">{formatNaira(balance.grni_total)}</p>
+                      <p className="text-sm font-medium text-amber-700">{formatBillMoney(balance.grni_total)}</p>
                     </div>
                   </div>
                 )}
@@ -1249,7 +1261,7 @@ export default function BillForm() {
                                 : 'text-gray-600'
                             }`}
                           >
-                            {formatNaira(line.unit_cost_snapshot || 0)}
+                            {formatBillMoney(line.unit_cost_snapshot || 0)}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <Input
@@ -1266,7 +1278,7 @@ export default function BillForm() {
                             />
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-gray-800">
-                            {line.isSelected ? formatNaira(line.lineTotal) : '—'}
+                            {line.isSelected ? formatBillMoney(line.lineTotal) : '—'}
                           </td>
                         </tr>
                       ))}
@@ -1358,7 +1370,7 @@ export default function BillForm() {
                               <p className="mt-0.5 text-[10px] text-red-600">Max {line.billable}</p>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-600">{formatNaira(line.receiptCost)}</td>
+                          <td className="px-3 py-2 text-right text-gray-600">{formatBillMoney(line.receiptCost)}</td>
                           <td className="px-3 py-2 text-right">
                             <Input
                               type="number"
@@ -1374,7 +1386,7 @@ export default function BillForm() {
                             />
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-gray-800">
-                            {line.isSelected ? formatNaira(line.lineTotal) : '—'}
+                            {line.isSelected ? formatBillMoney(line.lineTotal) : '—'}
                           </td>
                         </tr>
                       ))}
@@ -1404,7 +1416,7 @@ export default function BillForm() {
             >
               <div>
                 <p className="text-xs font-medium text-gray-700">Subtotal (from selected line items)</p>
-                <p className="mt-1 text-sm text-gray-800">{formatNaira(subtotal)}</p>
+                <p className="mt-1 text-sm text-gray-800">{formatBillMoney(subtotal)}</p>
               </div>
 
               <label className="text-xs font-medium text-gray-700">
@@ -1421,7 +1433,7 @@ export default function BillForm() {
 
               <div className="flex flex-col gap-0.5 border-t border-gray-200 pt-3 sm:border-t-0 sm:pt-0 sm:text-right">
                 <span className="text-xs font-medium text-gray-700">Total</span>
-                <span className="text-xl font-bold tracking-tight text-slate-900">{formatNaira(total)}</span>
+                <span className="text-xl font-bold tracking-tight text-slate-900">{formatBillMoney(total)}</span>
               </div>
             </div>
 
@@ -1505,7 +1517,7 @@ export default function BillForm() {
                         <td className="py-1 pr-2 text-gray-800">{line.displayName || 'Item'}</td>
                         <td className="py-1">{line.kind === 'excess' ? 'Excess' : 'Not on order'}</td>
                         <td className="py-1 text-right">{line.quantity}</td>
-                        <td className="py-1 text-right">{formatNaira(line.lineTotal)}</td>
+                        <td className="py-1 text-right">{formatBillMoney(line.lineTotal)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1534,11 +1546,11 @@ export default function BillForm() {
                       return (
                         <tr key={row.id}>
                           <td className="py-1 pr-2 text-gray-800">{row.name}</td>
-                          <td className="py-1 text-right">{formatNaira(row.estimated)}</td>
-                          <td className="py-1 text-right">{formatNaira(row.billed)}</td>
+                          <td className="py-1 text-right">{formatBillMoney(row.estimated)}</td>
+                          <td className="py-1 text-right">{formatBillMoney(row.billed)}</td>
                           <td className={`py-1 text-right font-medium ${higher ? 'text-red-600' : 'text-emerald-600'}`}>
                             {higher ? '+' : '-'}
-                            {formatNaira(Math.abs(row.difference))}
+                            {formatBillMoney(Math.abs(row.difference))}
                             {row.percent === null
                               ? ''
                               : ` (${higher ? '+' : '-'}${Math.abs(row.percent).toFixed(2)}%)`}

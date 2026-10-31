@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 import { Input } from '@/components/ui/input'
 import supabase from '@/config/supabaseClient'
@@ -33,6 +33,7 @@ const COPY = {
 }
 
 export default function ReceiptsListPage({ view = 'all' }) {
+  const router = useRouter()
   const { branchId, receipts: receiptsPath } = useFlowPaths()
 
   const [rows, setRows] = useState([])
@@ -162,19 +163,34 @@ export default function ReceiptsListPage({ view = 'all' }) {
                   <th className="px-3 py-2 text-left">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody
+                className="divide-y divide-gray-100"
+                onClick={(event) => {
+                  const row = event.target.closest('[data-receipt-id]')
+                  if (row) router.push(`${receiptsPath}/${row.dataset.receiptId}`)
+                }}
+              >
                 {pageRows.map((row) => {
                   const state = receiptState(row, holdsByReceipt[row.id] || [])
                   const units = (row.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0), 0)
                   return (
-                    <tr key={row.id} className="hover:bg-gray-50">
+                    <tr
+                      key={row.id}
+                      data-receipt-id={row.id}
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          router.push(`${receiptsPath}/${row.id}`)
+                        }
+                      }}
+                      className="cursor-pointer hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-core"
+                    >
                       <td className="px-3 py-2">
-                        <Link
-                          href={`${receiptsPath}/${row.id}`}
-                          className="font-medium text-core hover:underline"
-                        >
+                        <span className="font-medium text-core hover:underline">
                           {row.receipt_number}
-                        </Link>
+                        </span>
                         {row.delivery_note && (
                           <span className="block text-[10px] text-gray-500">Note {row.delivery_note}</span>
                         )}

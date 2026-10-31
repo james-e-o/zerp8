@@ -1,5 +1,5 @@
-import AdjustmentsListPage from "@/components/modules/inventory/adjustments-list-page";
+import AdjustmentsListPage from '@/components/modules/inventory/adjustments-list-page'
 
-export default function PendingAdjustmentsPage() {
-  return <AdjustmentsListPage title="Pending Adjustments" filter="pending" />;
+export default function Page() {
+  return <AdjustmentsListPage view="pending" />
 }
