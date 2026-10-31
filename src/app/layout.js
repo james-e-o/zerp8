@@ -6,6 +6,9 @@ export const metadata = {
   title: "ZERP-8 | Connected business operations",
   description:
     "Connect products, purchasing, inventory, and sales in one business operations platform built for growing, multi-branch businesses.",
+  icons: {
+    icon: "/zerp8-logo.png",
+  },
   openGraph: {
     title: "ZERP-8 | Connected business operations",
     description:
