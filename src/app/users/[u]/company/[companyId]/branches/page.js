@@ -91,7 +91,7 @@ export default function BranchesPage() {
     <ReusableCompanySidebar>
         <div className="px-5 font-WixMade">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs font-semibold">Branch Management</h2>
+            <h2 className="text-xs font-semibold">Branches</h2>
             <div className="flex items-center gap-2">
               {accessLevelScope === "company" && (
                 <Button className="h-7 inline-flex items-center bg-army hover:bg-army/85 gap-2" onClick={() => router.push(`/users/${params.u}/company/${companyParam}/branches/new`)}>

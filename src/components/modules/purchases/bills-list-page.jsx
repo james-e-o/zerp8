@@ -56,7 +56,7 @@ export default function BillsListPage({ title, description, status }) {
       {(title || description) && (
         <div>
           {title && (
-            <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
+            <h2 className="text-sm tracking-tight font-semibold text-gray-800">{title}</h2>
           )}
           {description && (
             <p className="text-xs text-gray-500">{description}</p>

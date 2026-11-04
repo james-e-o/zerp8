@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -70,6 +71,7 @@ const COPY = {
 }
 
 export default function QuarantineQueuePage({ view = 'all' }) {
+  const router = useRouter()
   const { branchId, receipts: receiptsPath } = useFlowPaths()
   const canEditStock = useInventoryCan('edit')
 
@@ -237,7 +239,7 @@ export default function QuarantineQueuePage({ view = 'all' }) {
   }[action || 'accept']
 
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="max-w-2xl text-xs text-gray-500">{COPY[view]?.hint}</p>
         <Input
@@ -340,7 +342,14 @@ export default function QuarantineQueuePage({ view = 'all' }) {
                 <th className="px-3 py-2 text-right">Quantity to act on</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody
+              className="divide-y divide-gray-100"
+              onClick={(event) => {
+                if (event.target.closest('a, button, input, textarea, select, [role="button"], [role="checkbox"]')) return
+                const row = event.target.closest('[data-receipt-id]')
+                if (row) router.push(`${receiptsPath}/${row.dataset.receiptId}`)
+              }}
+            >
               {visible.map((hold) => {
                 const receipt = hold.receipt_line?.purchase_receipt
                 const batch = batches[hold.batch]
@@ -348,7 +357,23 @@ export default function QuarantineQueuePage({ view = 'all' }) {
                 const kind = HOLD_KIND[hold.kind] || { label: hold.kind, tone: 'gray' }
                 const status = HOLD_STATUS[hold.status] || { label: hold.status, tone: 'gray' }
                 return (
-                  <tr key={hold.id} className={selected[hold.id] ? 'bg-core_light/40' : ''}>
+                  <tr
+                    key={hold.id}
+                    data-receipt-id={receipt?.id}
+                    tabIndex={receipt?.id ? 0 : undefined}
+                    aria-label={receipt?.id ? `Open receipt ${receipt.receipt_number}` : undefined}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === 'Enter' &&
+                        receipt?.id &&
+                        !event.target.closest('a, button, input, textarea, select, [role="button"], [role="checkbox"]')
+                      ) {
+                        event.preventDefault()
+                        router.push(`${receiptsPath}/${receipt.id}`)
+                      }
+                    }}
+                    className={`cursor-pointer hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-core ${selected[hold.id] ? 'bg-core_light/40' : ''}`}
+                  >
                     <td className="px-3 py-2">
                       <input
                         type="checkbox"

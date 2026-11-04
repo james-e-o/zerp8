@@ -113,7 +113,7 @@ export default function PurchaseOrdersListPage({
       {(title || description) && (
         <div>
           {title && (
-            <h2 className="text-base tracking-tight font-semibold text-gray-800">{title}</h2>
+            <h2 className="text-sm tracking-tight font-semibold text-gray-800">{title}</h2>
           )}
           {description && (
             <p className="text-xs text-gray-500">{description}</p>

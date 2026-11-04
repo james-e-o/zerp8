@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { Plus, CirclePlus, CircleX, Check, ChevronsUpDown, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -9,15 +9,15 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { emptyQuotationLine } from '@/components/modules/sales/dummy-product-variants'
-import { formatNaira } from '@/components/modules/sales/dummy-data'
+import { emptyQuotationLine, getAvailableStock, getLineTotal, useMoney } from '@/components/modules/sales/quotation-shared'
 import { resolveQuotationPrice } from '@/components/modules/sales/quotation-catalog'
 
-// `items` is the flat array of { variantId, qty, unitPrice } the parent
-// page owns as state. This component only ever calls `setItems` with a
+// `items` is the flat array of line objects (variantId, qty, unitPrice, discount...) the
+// parent page owns as state. This component only ever calls `setItems` with a
 // full new array — it never mutates in place — so the parent's existing
 // `useState`/`total` logic keeps working unchanged.
-export default function QuotationLineItemsTable({ items, setItems, catalog, contexts = [], pricingContextId, pricingRules }) {
+export default function QuotationLineItemsTable({ items, setItems, catalog, contexts = [], pricingContextId, pricingRules, warehouseId = '', warehouseLabel = 'this branch' }) {
+  const money = useMoney()
   const [detailsVariant, setDetailsVariant] = useState(null)
   const updateRow = (index, patch) => {
     setItems((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
@@ -48,7 +48,7 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
   }
 
   const removeRow = (index) => {
-    setItems((current) => (current.length > 1 ? current.filter((_, rowIndex) => rowIndex !== index) : current))
+    setItems((current) => (current.length > 1 ? current.filter((_, rowIndex) => rowIndex !== index) : [emptyQuotationLine()]))
   }
 
   const columns = useMemo(
@@ -72,7 +72,7 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
         header: 'Qty',
         cell: ({ row }) => {
           const variant = catalog.find((entry) => entry.id === row.original.variantId)
-          const stock = Number(variant?.availableQuantity ?? variant?.stock ?? variant?.quantity ?? 0)
+          const stock = getAvailableStock(variant, warehouseId)
           const updateQuantity = (qty) => updateRow(row.index, {
             qty,
             unitPrice: resolveQuotationPrice(variant, row.original.pricingContextId || pricingContextId, pricingRules, qty),
@@ -82,6 +82,8 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
             <QuantityControl
               quantity={row.original.qty}
               stock={stock}
+              hasProduct={Boolean(variant)}
+              warehouseLabel={warehouseLabel}
               onChange={updateQuantity}
             />
           )
@@ -146,7 +148,7 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
         id: 'amount',
         header: 'Line total',
         cell: ({ row }) => (
-          <span className="text-xs font-semibold text-gray-700">{formatNaira(getLineTotal(row.original))}</span>
+          <span className="text-xs font-semibold text-gray-700">{money(getLineTotal(row.original))}</span>
         ),
       },
       {
@@ -185,7 +187,7 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalog, contexts, pricingContextId, pricingRules]
+    [catalog, contexts, pricingContextId, pricingRules, money, warehouseId, warehouseLabel]
   )
 
   const table = useReactTable({
@@ -198,7 +200,7 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-gray-200">
       <div className="min-h-0 flex-1 overflow-auto">
-      <table className="min-w-[900px] w-full border-collapse text-left text-xs">
+      <table className="min-w-225 w-full border-collapse text-left text-xs">
         <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-500">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
@@ -242,10 +244,10 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
           {detailsVariant ? (
             <div className="space-y-4 text-sm text-gray-700">
               <div className="grid grid-cols-2 gap-3">
-                <div><span className="text-xs text-gray-500">Unit price</span><p className="font-semibold">{formatNaira(resolveQuotationPrice(detailsVariant, pricingContextId, pricingRules))}</p></div>
+                <div><span className="text-xs text-gray-500">Unit price</span><p className="font-semibold">{money(resolveQuotationPrice(detailsVariant, pricingContextId, pricingRules))}</p></div>
                 <div><span className="text-xs text-gray-500">SKU</span><p className="font-semibold">{detailsVariant.sku || 'Not set'}</p></div>
                 <div><span className="text-xs text-gray-500">Product type</span><p className="font-semibold capitalize">{detailsVariant.type || detailsVariant.productType || 'Product'}</p></div>
-                <div><span className="text-xs text-gray-500">Available stock</span><p className="font-semibold">{detailsVariant.availableQuantity ?? detailsVariant.stock ?? detailsVariant.quantity ?? 'Not available'}</p></div>
+                <div><span className="text-xs text-gray-500">Available stock</span><p className="font-semibold">{(() => { const free = getAvailableStock(detailsVariant, warehouseId); return free === Infinity ? 'Not tracked' : `${free} in ${warehouseLabel}` })()}</p></div>
               </div>
               {(detailsVariant.description || detailsVariant.productDescription) && <p className="leading-6 text-gray-600">{detailsVariant.description || detailsVariant.productDescription}</p>}
             </div>
@@ -258,53 +260,95 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
   )
 }
 
-function getLineTotal(item) {
-  const subtotal = Number(item.qty || 0) * Number(item.unitPrice || 0)
-  const discount = item.discountType === 'percentage'
-    ? subtotal * Math.min(100, Math.max(0, Number(item.discountValue || 0))) / 100
-    : Math.min(subtotal, Math.max(0, Number(item.discountValue || 0)))
-  return Math.max(0, subtotal - discount)
-}
+// The black box is the free stock (on hand minus reserved) of the chosen warehouse. The
+// quantity starts at 0 and can never be pushed above that stock: an attempt keeps the
+// number where it is, turns it red for a moment and says why. If the warehouse is changed
+// so the quantity is now above its stock, the number stays red until it is reduced.
+function QuantityControl({ quantity, stock, hasProduct, warehouseLabel, onChange }) {
+  const [notice, setNotice] = useState('')
+  const [flash, setFlash] = useState(false)
+  const timer = useRef(null)
+  const unlimited = stock === Infinity
+  const current = Number(quantity) || 0
+  const exceedsStock = !unlimited && current > stock
 
-function QuantityControl({ quantity, stock, onChange }) {
-  const exceedsStock = Number(quantity) > stock
+  useEffect(() => () => clearTimeout(timer.current), [])
+
+  const warn = (message) => {
+    setNotice(message)
+    setFlash(true)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      setNotice('')
+      setFlash(false)
+    }, 2500)
+  }
+
+  const request = (next) => {
+    let value = Math.max(0, Number(next) || 0)
+    if (!hasProduct) {
+      if (value > 0) warn('Choose a product first.')
+      return
+    }
+    if (!unlimited && value > stock && value > current) {
+      warn(stock <= 0 ? `Out of stock in ${warehouseLabel}.` : `Only ${stock} available in ${warehouseLabel}.`)
+      value = Math.max(current, stock)
+    }
+    onChange(value)
+  }
+
+  const red = flash || exceedsStock
 
   return (
-    <div className="flex h-8 w-32 items-stretch overflow-hidden rounded border border-gray-200 bg-white">
-      <div
-        className="flex w-8 shrink-0 items-center justify-center bg-black text-xs font-semibold text-white"
-        title="Available stock"
-        aria-label={`Available stock: ${stock}`}
+    <Popover open={Boolean(notice)}>
+      <PopoverTrigger asChild>
+        <div className={`flex h-8 w-32 items-stretch overflow-hidden rounded border bg-white ${red ? 'border-red-400' : 'border-gray-200'}`}>
+          <div
+            className="flex min-w-8 shrink-0 items-center justify-center bg-black px-1 text-xs font-semibold text-white"
+            title={`Available in ${warehouseLabel}`}
+            aria-label={`Available stock: ${hasProduct ? (unlimited ? 'not tracked' : stock) : 'none selected'}`}
+          >
+            {!hasProduct ? '—' : unlimited ? '∞' : stock}
+          </div>
+          <Input
+            type="number"
+            min="0"
+            value={quantity}
+            onChange={(event) => request(event.target.value)}
+            className={`h-full min-w-0 flex-1 rounded-none border-0 px-2 text-center text-xs shadow-none focus-visible:ring-0 ${red ? 'text-red-600' : 'text-gray-800'}`}
+            aria-label="Quantity"
+          />
+          <div className="flex w-7 shrink-0 flex-col border-l border-gray-200">
+            <button
+              type="button"
+              onClick={() => request(current + 1)}
+              className="flex min-h-0 flex-1 items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+              aria-label="Increase quantity"
+            >
+              <ChevronUp className="size-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => request(Math.max(0, current - 1))}
+              className="flex min-h-0 flex-1 items-center justify-center border-t border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+              aria-label="Decrease quantity"
+            >
+              <ChevronDown className="size-3" />
+            </button>
+          </div>
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        className="w-auto max-w-56 px-2 py-1 text-[11px] text-red-600"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
       >
-        {stock}
-      </div>
-      <Input
-        type="number"
-        min="1"
-        value={quantity}
-        onChange={(event) => onChange(Math.max(1, Number(event.target.value) || 1))}
-        className={`h-full min-w-0 flex-1 rounded-none border-0 px-2 text-center text-xs shadow-none focus-visible:ring-0 ${exceedsStock ? 'text-red-600' : 'text-gray-800'}`}
-        aria-label="Quantity"
-      />
-      <div className="flex w-7 shrink-0 flex-col border-l border-gray-200">
-        <button
-          type="button"
-          onClick={() => onChange(Number(quantity) + 1)}
-          className="flex min-h-0 flex-1 items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-          aria-label="Increase quantity"
-        >
-          <ChevronUp className="size-3" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(1, Number(quantity) - 1))}
-          className="flex min-h-0 flex-1 items-center justify-center border-t border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-          aria-label="Decrease quantity"
-        >
-          <ChevronDown className="size-3" />
-        </button>
-      </div>
-    </div>
+        {notice}
+      </PopoverContent>
+    </Popover>
   )
 }
 

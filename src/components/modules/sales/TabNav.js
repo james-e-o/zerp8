@@ -9,7 +9,7 @@ export default function TabNav({ tabs, basePath }) {
   const current = pathname === basePath ? "all" : pathname.slice(basePath.length + 1).split("/")[0];
 
   return (
-    <nav className="flex h-11 shrink-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden border-line pt-1 pb-3.5">
+    <nav className="flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden border-line pb-2.5">
       {tabs.map((tab) => {
         const value = tab.path || tab.value || "all";
         const active = current === value;

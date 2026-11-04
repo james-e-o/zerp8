@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +18,9 @@ import { useVariantNames } from '@/components/modules/purchases/purchase-catalog
 // What can be changed depends on the bill's state (the database enforces the
 // same rules, this page just doesn't offer what it would refuse):
 //
-//   unpaid / overdue, nothing paid, no credit applied
+//   unpaid / overdue / pending approval, nothing paid, no credit applied
+//        (saving a pending bill withdraws its old approval request; if the
+//        price is still outside tolerance a fresh request is opened)
 //        -> everything: reference, dates, tax, notes, and each line's
 //           quantity and price (lines can also be removed).
 //   partially paid, or any credit applied
@@ -29,7 +32,7 @@ import { useVariantNames } from '@/components/modules/purchases/purchase-catalog
 // Lines come in two kinds: lines on the purchase order, and accepted extras
 // (excess / unexpected goods). Neither kind can bill more than what is left.
 
-const EDITABLE = ['unpaid', 'overdue', 'partially_paid']
+const EDITABLE = ['unpaid', 'overdue', 'partially_paid', 'pending_approval']
 
 const toDateInput = (value) => (value ? String(value).slice(0, 10) : '')
 
@@ -165,14 +168,17 @@ export default function EditBillPage() {
     if (!amountsLocked) {
       if (activeLines.length === 0) {
         setSubmitError('A bill needs at least one line. To remove the whole bill, cancel it instead.')
+        toast.error('A bill needs at least one line. To remove the whole bill, cancel it instead.')
         return
       }
       if (activeLines.some((line) => !(line.q > 0))) {
         setSubmitError('Every line needs a quantity above zero. Remove the line if it is not on this bill.')
+        toast.error('Every line needs a quantity above zero. Remove the line if it is not on this bill.')
         return
       }
       if (hasOver) {
         setSubmitError('One or more lines bill more than what is left to bill. Fix the lines shown in red.')
+        toast.error('One or more lines bill more than what is left to bill. Fix the lines shown in red.')
         return
       }
     }
@@ -199,12 +205,21 @@ export default function EditBillPage() {
           })),
     }
 
-    const { error } = await supabase.rpc('update_purchase_bill', payload)
+    const { data, error } = await supabase.rpc('update_purchase_bill', payload)
     setSaving(false)
 
     if (error) {
-      setSubmitError(error.message || 'Could not save this bill.')
+      const message = error.message || 'Could not save this bill.'
+      console.error('update_purchase_bill failed:', error)
+      setSubmitError(message)
+      toast.error(message)
       return
+    }
+
+    if (data?.needs_approval) {
+      toast.warning('Bill saved and sent for approval. Its price is outside the allowed tolerance, so it cannot be paid until it is approved.')
+    } else {
+      toast.success('Bill saved.')
     }
     router.push(`${base}/${billId}`)
   }

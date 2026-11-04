@@ -72,10 +72,36 @@ const attachStandardPrices = (catalog, priceRows) => catalog.map((variant) => {
   }
 })
 
+// Free stock = on hand minus reserved. Kept per warehouse (stockByWarehouse) so the form can
+// show the stock of the warehouse the user picked, and summed over this branch's warehouses
+// (availableQuantity) for the "all warehouses" view.
+const attachStock = (catalog, levelRows) => {
+  const byVariant = {}
+  ;(levelRows || []).forEach((row) => {
+    const free = Number(row.quantity_on_hand || 0) - Number(row.quantity_reserved || 0)
+    byVariant[row.variant] = byVariant[row.variant] || {}
+    byVariant[row.variant][row.warehouse] = (byVariant[row.variant][row.warehouse] || 0) + free
+  })
+  return catalog.map((variant) => {
+    const perWarehouse = Object.fromEntries(Object.entries(byVariant[variant.id] || {}).map(([id, free]) => [id, Math.max(0, free)]))
+    return {
+      ...variant,
+      stockByWarehouse: perWarehouse,
+      availableQuantity: Object.values(perWarehouse).reduce((sum, free) => sum + free, 0),
+    }
+  })
+}
+
+// NOTE: products and product_variants are company-wide now (products.branch became
+// created_by_branch; product_variants.branch was dropped). Which products a branch can see
+// is enforced by RLS, so this hook does NOT filter them by branch. Selling prices
+// (standard_prices), pricing contexts and pricing rules are still per branch, and stock is
+// read from this branch's own warehouses.
 export function useQuotationCatalog(branchId) {
   const [contexts, setContexts] = useState([])
   const [catalog, setCatalog] = useState([])
   const [pricingRules, setPricingRules] = useState([])
+  const [warehouses, setWarehouses] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [warning, setWarning] = useState('')
@@ -89,37 +115,47 @@ export function useQuotationCatalog(branchId) {
       setError('')
       setWarning('')
       try {
-        const [{ data: contextRows, error: contextError }, { data: productRows, error: productError }] = await Promise.all([
+        const [
+          { data: contextRows, error: contextError },
+          { data: productRows, error: productError },
+          { data: variantRows, error: variantError },
+          { data: standardPrices, error: standardPricesError },
+          { data: warehouseRows, error: warehouseError },
+        ] = await Promise.all([
           supabase.from('pricing_contexts').select('*').eq('branch', branchId).eq('is_active', true).order('is_default', { ascending: false }).order('priority', { ascending: false }),
-          supabase.from('products').select('id,title,handle,sub_title,description,type,brand').eq('branch', branchId).eq('status', 'active').order('created_at', { ascending: false }),
+          supabase.from('products').select('id,title,handle,sub_title,description,type,brand').eq('status', 'active').order('created_at', { ascending: false }),
+          supabase.from('product_variants').select('*').eq('is_active', true),
+          supabase.from('standard_prices').select('*').eq('branch', branchId),
+          supabase.from('warehouses').select('*').eq('home_branch', branchId).is('archived_at', null).order('is_default', { ascending: false }),
         ])
 
         if (contextError) throw contextError
         if (productError) throw productError
+        if (variantError) throw variantError
 
-        const productIds = (productRows || []).map((product) => product.id)
         const contextIds = (contextRows || []).map((context) => context.id)
-        const [{ data: variantRows, error: variantError }, { data: rules, error: rulesError }, { data: standardPrices, error: standardPricesError }] = await Promise.all([
-          productIds.length
-            ? supabase.from('product_variants').select('*').in('product', productIds).eq('branch', branchId).eq('is_active', true)
-            : Promise.resolve({ data: [], error: null }),
+        const warehouseIds = (warehouseRows || []).map((warehouse) => warehouse.id)
+        const [{ data: rules, error: rulesError }, { data: levelRows, error: levelsError }] = await Promise.all([
           contextIds.length
             ? supabase.from('pricing_rules').select('*').in('pricing_context', contextIds)
             : Promise.resolve({ data: [], error: null }),
-          supabase.from('standard_prices').select('*').eq('branch', branchId),
+          warehouseIds.length
+            ? supabase.from('inventory_levels').select('variant, warehouse, quantity_on_hand, quantity_reserved').in('warehouse', warehouseIds)
+            : Promise.resolve({ data: [], error: null }),
         ])
-
-        if (variantError) throw variantError
 
         const warnings = []
         if (rulesError) { console.warn('Quotation pricing rules could not be loaded:', rulesError); warnings.push('pricing rules') }
         if (standardPricesError) { console.warn('Quotation standard prices could not be loaded:', standardPricesError); warnings.push('standard prices') }
+        if (warehouseError || levelsError) { console.warn('Quotation stock levels could not be loaded:', warehouseError || levelsError); warnings.push('stock levels') }
 
         if (!mounted) return
+        const flat = attachStandardPrices(flattenProducts(productRows || [], variantRows || []), standardPrices || [])
         setContexts(contextRows || [])
-        setCatalog(attachStandardPrices(flattenProducts(productRows || [], variantRows || []), standardPrices || []))
+        setCatalog(attachStock(flat, levelRows || []))
         setPricingRules(rules || [])
-        if (warnings.length) setWarning(`Could not load ${warnings.join(' and ')} — prices shown may be incomplete.`)
+        setWarehouses((warehouseRows || []).map((row) => ({ id: row.id, label: row.name || row.label || row.code || 'Warehouse', is_default: Boolean(row.is_default) })))
+        if (warnings.length) setWarning(`Could not load ${warnings.join(' and ')} — what is shown may be incomplete.`)
       } catch (loadError) {
         console.error('Failed to load quotation catalog:', loadError)
         if (mounted) setError('Products or pricing contexts could not be loaded for this branch.')
@@ -137,5 +173,5 @@ export function useQuotationCatalog(branchId) {
     [contexts]
   )
 
-  return { contexts, defaultContext, catalog, pricingRules, loading, error, warning }
+  return { contexts, defaultContext, catalog, pricingRules, warehouses, loading, error, warning }
 }

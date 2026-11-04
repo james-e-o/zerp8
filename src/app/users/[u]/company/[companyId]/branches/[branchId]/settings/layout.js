@@ -1,9 +1,11 @@
 
 
+import { ReusableBranchSidebar } from "../branchLayoutClient"
+
 export default function BranchSettingsLayout({ children }) {
   return (
-    <div>
+    <ReusableBranchSidebar>
       {children}
-    </div>
+    </ReusableBranchSidebar>
   )
 }

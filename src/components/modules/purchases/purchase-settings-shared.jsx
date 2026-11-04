@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -76,6 +77,7 @@ export const SETTINGS_DEFAULTS = {
   returns_require_authorization_before_completing: true,
   returns_require_credit_note: false,
   bills_tolerance_action: 'warn',
+  bills_require_receipt: false,
 }
 
 // Only real values replace the placeholder: a null/undefined field in the
@@ -189,7 +191,11 @@ export function usePurchaseSettingsEditor({ withLimits = false } = {}) {
         }
       } catch (err) {
         console.error('Failed to load Purchase Settings:', err)
-        if (!cancelled) setLoadError(err.message || 'Could not load Purchase Settings.')
+        if (!cancelled) {
+          const message = err.message || 'Could not load Purchase Settings.'
+          setLoadError(message)
+          toast.error(message)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -257,6 +263,7 @@ export function usePurchaseSettingsEditor({ withLimits = false } = {}) {
         setPendingRequestId(requestId)
         setEditing(false)
         setSaving(false)
+        toast.info('Your change was submitted for approval and is not saved yet.')
         return
       } else {
         const { data, error } = await supabase.rpc('upsert_purchase_settings_company_default', {
@@ -270,9 +277,12 @@ export function usePurchaseSettingsEditor({ withLimits = false } = {}) {
       }
 
       setEditing(false)
+      toast.success('Purchase Settings saved.')
     } catch (err) {
       console.error('Error saving Purchase Settings:', err)
-      setSubmitError(err.message || 'Something went wrong saving these settings.')
+      const message = err.message || 'Something went wrong saving these settings.'
+      setSubmitError(message)
+      toast.error(message)
     } finally {
       setSaving(false)
     }
@@ -312,9 +322,12 @@ export function usePurchaseSettingsEditor({ withLimits = false } = {}) {
           setDraftLimits(limits)
         }
       }
+      toast.success(checked ? 'This branch now has its own settings.' : 'This branch follows the company settings again.')
     } catch (err) {
       console.error('Error changing branch override:', err)
-      setSubmitError(err.message || 'Could not change the branch override.')
+      const message = err.message || 'Could not change the branch override.'
+      setSubmitError(message)
+      toast.error(message)
     } finally {
       setSaving(false)
     }

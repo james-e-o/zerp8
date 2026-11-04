@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Settings, Building2, Shield, Globe, DollarSign, GitBranch } from "lucide-react";
+import { Settings, Building2, Shield, Globe, DollarSign } from "lucide-react";
 
 export default function CompanySettingsPage() {
   const params = useParams()
@@ -28,12 +28,6 @@ export default function CompanySettingsPage() {
       description: "Change default currency, country, and timezone.",
       icon: <Globe className="w-5 h-5 text-gray-600" />,
       route: "country&currency",
-    },
-    {
-      title: "Branch Management",
-      description: "Manage Branches, configure, and delete branches.",
-      icon: <GitBranch className="w-5 h-5 text-gray-600" />,
-      route: "branch-management",
     },
     {
       title: "Security & Ownership",

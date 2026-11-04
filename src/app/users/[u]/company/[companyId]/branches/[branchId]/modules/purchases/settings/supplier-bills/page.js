@@ -10,35 +10,28 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-// ASSUMPTION: adjust this path to wherever purchase-settings-shared.jsx is placed.
 import {
   SettingsPageShell,
   usePurchaseSettingsEditor,
 } from '@/components/modules/purchases/purchase-settings-shared'
 
-// Goes at modules/purchases/settings/supplier-bills/page.js.
-// Wired to purchase_settings through the shared editor.
-//
-// Supplier Bills now exists, and create_purchase_bill() reads these
-// settings (after purchase-bills-hardening-migration.sql):
-//   - matching mode + quantity/price tolerances + what to do when a bill
-//     is outside them (warn / block / require approval)
-//   - require supplier invoice number; prevent duplicate invoice numbers
-// "Allow bills with no Purchase Order" is shown off and locked: a bill
-// always starts from a Purchase Order (settled design), so it isn't a
-// choice.
+// Goes at modules/purchases/settings/supplier-bills/page.js (replaces the old
+// placeholder page). Wired to purchase_settings through the shared editor.
+// The rules are enforced by create_purchase_bill / update_purchase_bill in
+// the database (purchase-bill-approval-migration.sql).
 
-const MATCHING_OPTIONS = [
-  { value: 'none', label: 'None — bills are not matched against anything' },
-  { value: 'two_way', label: '2-way — Purchase Order + Bill' },
-  { value: 'three_way', label: '3-way — Purchase Order + Receipt + Bill' },
+const ACTION_OPTIONS = [
+  { value: 'warn', label: 'Warn: save the bill and flag it' },
+  { value: 'block', label: 'Block: do not allow the bill to be saved' },
+  { value: 'require_approval', label: 'Require approval: save it as Pending approval' },
 ]
 
-const TOLERANCE_ACTION_OPTIONS = [
-  { value: 'warn', label: 'Warn — save the bill, flag it for review' },
-  { value: 'block', label: 'Block — refuse to save the bill' },
-  { value: 'require_approval', label: 'Require approval — needs an approved request first' },
-]
+const ACTION_HELP = {
+  warn: 'The bill is saved normally and the price difference is shown to whoever entered it.',
+  block: 'A bill priced outside the tolerance cannot be saved. The price has to be corrected first.',
+  require_approval:
+    'The bill is saved as Pending approval. It cannot be paid or have credit applied until an approver approves it and it is confirmed. The company owner is never held up by this.',
+}
 
 export default function SupplierBillsSettingsPage() {
   const editor = usePurchaseSettingsEditor()
@@ -48,7 +41,7 @@ export default function SupplierBillsSettingsPage() {
     <SettingsPageShell
       editor={editor}
       title="Supplier Bills"
-      description="Require supplier invoice numbers, prevent duplicate supplier invoices, configure PO-and-receipt matching, and set what happens when a bill's price or quantity is outside tolerance."
+      description="Supplier invoice rules, how a bill's price is checked against its purchase order, and whether goods must be received before a bill can be entered."
     >
       <section className="space-y-4 rounded-lg border border-gray-200 p-4">
         <div className="flex items-center justify-between gap-4">
@@ -61,13 +54,7 @@ export default function SupplierBillsSettingsPage() {
         </div>
 
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium text-gray-800">Prevent duplicate supplier invoices</p>
-            <p className="mt-0.5 text-[11px] text-gray-500">
-              The same invoice number can't be billed twice for one supplier (cancelled bills
-              don't count).
-            </p>
-          </div>
+          <p className="text-xs font-medium text-gray-800">Prevent duplicate supplier invoices</p>
           <Switch
             checked={view.prevent_duplicate_invoice_numbers}
             disabled={!editing}
@@ -77,73 +64,42 @@ export default function SupplierBillsSettingsPage() {
 
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-medium text-gray-800">Allow bills with no Purchase Order</p>
-            <p className="mt-0.5 text-[11px] text-gray-500">
-              Always off — a bill always starts from a Purchase Order.
+            <p className="text-xs font-medium text-gray-800">Require goods to be received before billing</p>
+            <p className="text-[11px] text-gray-500">
+              Off (default): a bill can be entered before delivery, for example when a supplier asks to
+              be paid first. On: a bill line cannot be for more than has been received on that order
+              line so far. Either way, a bill can never be for more than was ordered.
             </p>
           </div>
-          <Switch checked={false} disabled />
+          <Switch
+            checked={view.bills_require_receipt}
+            disabled={!editing}
+            onCheckedChange={(checked) => patch('bills_require_receipt', checked)}
+          />
         </div>
       </section>
 
       <section className="space-y-4 rounded-lg border border-gray-200 p-4">
-        <h2 className="text-xs font-semibold text-gray-800">Matching</h2>
+        <h2 className="text-xs font-semibold text-gray-800">Price check</h2>
 
         <label className="block text-xs font-medium text-gray-700">
-          PO-and-receipt matching
-          <Select
-            value={view.bills_matching_mode}
+          Price tolerance (%)
+          <Input
+            type="number"
+            min="0"
+            value={view.bills_price_tolerance_percent}
             disabled={!editing}
-            onValueChange={(value) => patch('bills_matching_mode', value)}
-          >
-            <SelectTrigger className="mt-1 h-auto w-full text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MATCHING_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onChange={(e) => patch('bills_price_tolerance_percent', e.target.value)}
+            className="mt-1 h-auto text-sm disabled:opacity-100"
+          />
+          <span className="mt-1 block text-[11px] font-normal text-gray-500">
+            How far a billed price may differ from the purchase order price, up or down, before the
+            action below applies.
+          </span>
         </label>
 
-        <div className="grid grid-cols-2 gap-4">
-          <label className="block text-xs font-medium text-gray-700">
-            Price discrepancy tolerance (%)
-            <Input
-              type="number"
-              min="0"
-              value={view.bills_price_tolerance_percent ?? ''}
-              disabled={!editing}
-              onChange={(e) => patch('bills_price_tolerance_percent', e.target.value)}
-              className="mt-1 h-auto text-sm disabled:opacity-100"
-            />
-            <span className="mt-1 block text-[11px] font-normal text-gray-500">
-              How far a billed price may differ from the Purchase Order price.
-            </span>
-          </label>
-
-          <label className="block text-xs font-medium text-gray-700">
-            Quantity discrepancy tolerance (%)
-            <Input
-              type="number"
-              min="0"
-              value={view.bills_quantity_tolerance_percent ?? ''}
-              disabled={!editing}
-              onChange={(e) => patch('bills_quantity_tolerance_percent', e.target.value)}
-              className="mt-1 h-auto text-sm disabled:opacity-100"
-            />
-            <span className="mt-1 block text-[11px] font-normal text-gray-500">
-              How far billed quantity may run ahead of what's been received (3-way only).
-              Billing more than was ordered is never allowed.
-            </span>
-          </label>
-        </div>
-
         <label className="block text-xs font-medium text-gray-700">
-          When a bill is outside tolerance
+          When a bill is outside the tolerance
           <Select
             value={view.bills_tolerance_action}
             disabled={!editing}
@@ -153,7 +109,7 @@ export default function SupplierBillsSettingsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TOLERANCE_ACTION_OPTIONS.map((option) => (
+              {ACTION_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -161,9 +117,7 @@ export default function SupplierBillsSettingsPage() {
             </SelectContent>
           </Select>
           <span className="mt-1 block text-[11px] font-normal text-gray-500">
-            "Require approval" uses an approval policy for (module, purchase_bills,
-            create_over_tolerance) — until the company owner sets one up, only the owner can
-            save an out-of-tolerance bill.
+            {ACTION_HELP[view.bills_tolerance_action]}
           </span>
         </label>
       </section>

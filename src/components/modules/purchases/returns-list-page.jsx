@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
 import supabase from '@/config/supabaseClient'
+import { toast } from 'sonner'
 import {
   RESOLUTION_LABELS,
   ReturnStatusPill,
@@ -80,6 +81,7 @@ export default function ReturnsListPage({ status = 'all' }) {
       if (error) {
         console.error('Failed to load returns:', error)
         setErrorMessage(error.message || 'Could not load returns.')
+        toast.error(error.message || 'Could not load returns.')
       } else {
         setRows(data || [])
         setRecovery(Object.fromEntries((recoveryRows || []).map((row) => [row.purchase_return, row])))

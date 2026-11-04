@@ -29,13 +29,14 @@ export default function BranchHeader({ children }) {
 
   const userId = segments[1];
   const companyId = segments[3]; // raw id — stays in every href
+  const branchId = params?.branchId || segments[5];
   const companyLabel = info?.slug || companyId; // NEW: what renders
 
   const isInBranch = segments.includes("branches");
   const isInModule = segments.includes("modules");
 
   const baseCompany = `/users/${userId}/company/${companyId}`;
-  const branchBase = `${baseCompany}/branches/${params.branch}`; // href still uses the id
+  const branchBase = branchId ? `${baseCompany}/branches/${branchId}` : null;
   const branchLabel = currentBranch?.slug || currentBranch?.name; // NEW: slug, not name
   const isAtCompanyRoot = segments.length === 4;
 
@@ -47,7 +48,7 @@ export default function BranchHeader({ children }) {
   } else {
     breadcrumbItems.push({ label: companyLabel, href: baseCompany }); // CHANGED
 
-    if (isInBranch && currentBranch) {
+    if (isInBranch && currentBranch && branchBase) {
       breadcrumbItems.push({ label: branchLabel, href: branchBase }); // CHANGED
 
       if (isInModule) {

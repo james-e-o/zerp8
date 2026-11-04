@@ -1,13 +1,5 @@
-'use client'
+import QuotationsListPage from '@/components/modules/sales/quotations-list-page'
 
-import { useParams } from 'next/navigation'
-import QuotationsFilteredList from '@/components/modules/sales/quotations-filtered-list'
-import { DUMMY_QUOTATIONS } from '@/components/modules/sales/dummy-data'
-
-export default function SentQuotationsPage() {
-  const { u, companyId, branchId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/quotations`
-  const quotations = DUMMY_QUOTATIONS.filter((quotation) => quotation.status === 'sent')
-
-  return <QuotationsFilteredList title="Sent" base={base} quotations={quotations} emptyMessage="No sent quotations yet." />
+export default function Page() {
+  return <QuotationsListPage status="sent" />
 }

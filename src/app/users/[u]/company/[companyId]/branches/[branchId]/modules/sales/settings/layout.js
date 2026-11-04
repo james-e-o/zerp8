@@ -1,23 +1,23 @@
-import PageHeader from "@/components/PageHeader";
-import TabNav from "@/components/modules/sales/TabNav";
+import PageHeader from '@/components/PageHeader'
+import TabNav from '@/components/modules/sales/TabNav'
 
 const TABS = [
-  { label: "General", value: "all" },
-  { label: "Document Numbering", value: "numbering" },
-  { label: "Taxes", value: "taxes" },
-  { label: "Payment Terms", value: "terms" },
-  { label: "Invoicing Rules", value: "invoicing" },
-];
+  { label: 'General', value: '' },
+  { label: 'Documents', value: 'documents' },
+]
 
-export default function SettingsLayout({ children }) {
+export default async function SalesSettingsLayout({ children, params }) {
+  const { u, companyId, branchId } = await params
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/sales/settings`
+
   return (
-    <div>
+    <div className="flex h-full flex-col overflow-hidden">
       <PageHeader
         title="Sales Settings"
-        description="Configuration that governs how quotations, orders, and invoices behave on this branch."
+        description="Defaults and printed details for this branch's sales documents."
       />
-      <TabNav tabs={TABS} basePath="/settings" />
+      <TabNav tabs={TABS} basePath={basePath} />
       {children}
     </div>
-  );
+  )
 }
