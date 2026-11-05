@@ -16,7 +16,7 @@ import { resolveQuotationPrice } from '@/components/modules/sales/quotation-cata
 // parent page owns as state. This component only ever calls `setItems` with a
 // full new array — it never mutates in place — so the parent's existing
 // `useState`/`total` logic keeps working unchanged.
-export default function QuotationLineItemsTable({ items, setItems, catalog, contexts = [], pricingContextId, pricingRules, warehouseId = '', warehouseLabel = 'this branch' }) {
+export default function QuotationLineItemsTable({ items, setItems, catalog, contexts = [], pricingContextId, pricingRules, warehouseId = '', warehouseLabel = 'this branch', restrictToStock = false }) {
   const money = useMoney()
   const [detailsVariant, setDetailsVariant] = useState(null)
   const updateRow = (index, patch) => {
@@ -25,14 +25,21 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
 
   const onVariantChange = (index, variantId) => {
     const variant = catalog.find((entry) => entry.id === variantId)
+    // A line starts at quantity 1 so the line and document totals move as soon as a product is
+    // chosen. Quotations never limit the quantity; orders keep it within the stock.
+    const stock = getAvailableStock(variant, warehouseId)
+    const currentQty = Number(items[index]?.qty) || 0
+    let qty = currentQty > 0 ? currentQty : 1
+    if (restrictToStock && stock !== Infinity) qty = Math.min(qty, Math.max(0, stock))
     updateRow(index, {
+      qty,
       variantId,
       productId: variant?.productId || '',
       productTitle: variant?.productTitle || '',
       variantLabel: variant?.variantLabel || '',
       sku: variant?.sku || '',
       pricingContextId,
-      unitPrice: resolveQuotationPrice(variant, pricingContextId, pricingRules, 1),
+      unitPrice: resolveQuotationPrice(variant, pricingContextId, pricingRules, Math.max(qty, 1)),
     })
   }
 
@@ -82,6 +89,7 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
             <QuantityControl
               quantity={row.original.qty}
               stock={stock}
+              restrictToStock={restrictToStock}
               hasProduct={Boolean(variant)}
               warehouseLabel={warehouseLabel}
               onChange={updateQuantity}
@@ -187,7 +195,7 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalog, contexts, pricingContextId, pricingRules, money, warehouseId, warehouseLabel]
+    [catalog, contexts, pricingContextId, pricingRules, money, warehouseId, warehouseLabel, restrictToStock, items]
   )
 
   const table = useReactTable({
@@ -260,17 +268,17 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
   )
 }
 
-// The black box is the free stock (on hand minus reserved) of the chosen warehouse. The
-// quantity starts at 0 and can never be pushed above that stock: an attempt keeps the
-// number where it is, turns it red for a moment and says why. If the warehouse is changed
-// so the quantity is now above its stock, the number stays red until it is reduced.
-function QuantityControl({ quantity, stock, hasProduct, warehouseLabel, onChange }) {
+// The black box is the free stock (on hand minus reserved). On a QUOTATION it is only
+// information: any quantity can be quoted, even more than is in stock. On a SALES ORDER
+// (restrictToStock) the quantity can never be pushed above that stock: an attempt keeps the
+// number where it is, turns it red for a moment and says why.
+function QuantityControl({ quantity, stock, restrictToStock = false, hasProduct, warehouseLabel, onChange }) {
   const [notice, setNotice] = useState('')
   const [flash, setFlash] = useState(false)
   const timer = useRef(null)
   const unlimited = stock === Infinity
   const current = Number(quantity) || 0
-  const exceedsStock = !unlimited && current > stock
+  const exceedsStock = restrictToStock && !unlimited && current > stock
 
   useEffect(() => () => clearTimeout(timer.current), [])
 
@@ -290,7 +298,7 @@ function QuantityControl({ quantity, stock, hasProduct, warehouseLabel, onChange
       if (value > 0) warn('Choose a product first.')
       return
     }
-    if (!unlimited && value > stock && value > current) {
+    if (restrictToStock && !unlimited && value > stock && value > current) {
       warn(stock <= 0 ? `Out of stock in ${warehouseLabel}.` : `Only ${stock} available in ${warehouseLabel}.`)
       value = Math.max(current, stock)
     }
@@ -305,7 +313,7 @@ function QuantityControl({ quantity, stock, hasProduct, warehouseLabel, onChange
         <div className={`flex h-8 w-32 items-stretch overflow-hidden rounded border bg-white ${red ? 'border-red-400' : 'border-gray-200'}`}>
           <div
             className="flex min-w-8 shrink-0 items-center justify-center bg-black px-1 text-xs font-semibold text-white"
-            title={`Available in ${warehouseLabel}`}
+            title={restrictToStock ? `Available in ${warehouseLabel}` : `In stock in ${warehouseLabel} (not a limit on a quotation)`}
             aria-label={`Available stock: ${hasProduct ? (unlimited ? 'not tracked' : stock) : 'none selected'}`}
           >
             {!hasProduct ? '—' : unlimited ? '∞' : stock}

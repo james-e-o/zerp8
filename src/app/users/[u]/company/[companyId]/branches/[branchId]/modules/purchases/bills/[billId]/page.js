@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { ExternalLink, FileText } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -171,6 +172,8 @@ export default function PurchaseBillDetailPage() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
+  const [approval, setApproval] = useState(null)
+  const [releasing, setReleasing] = useState(false)
 
   // The supplier's uploaded documents, oldest first so the first one uploaded
   // is the one shown when the page opens.
@@ -196,7 +199,7 @@ export default function PurchaseBillDetailPage() {
           .from('purchase_bills_view')
           .select(
             `id, bill_number, effective_status, issued_at, due_date, total, subtotal, tax, paid, credit_applied,
-             supplier_reference, notes,
+             supplier_reference, notes, approval_request,
              supplier:suppliers(id, name),
              purchase_order:purchase_orders(id, order_number),
              purchase_receipt:purchase_receipts(id, receipt_number)`
@@ -216,6 +219,7 @@ export default function PurchaseBillDetailPage() {
       ])
 
     if (billError) {
+      toast.error(billError.message || 'Could not load this bill.')
       setLoadError(billError.message || 'Could not load this bill.')
       setLoading(false)
       return
@@ -287,6 +291,17 @@ export default function PurchaseBillDetailPage() {
       })
     )
     setPayments(paymentData || [])
+
+    if (billData?.approval_request) {
+      const { data: approvalRow } = await supabase
+        .from('approval_requests')
+        .select('id, status, consumed_at')
+        .eq('id', billData.approval_request)
+        .maybeSingle()
+      setApproval(approvalRow || null)
+    } else {
+      setApproval(null)
+    }
     setLoading(false)
   }, [billId, branchId])
 
@@ -315,13 +330,30 @@ export default function PurchaseBillDetailPage() {
 
     if (error) {
       setPaymentError(error.message || 'Could not record this payment.')
+      toast.error(error.message || 'Could not record this payment.')
       return
     }
+
+    toast.success('Payment recorded')
 
     setPaymentAmount('')
     setPaymentDate('')
     setPaymentMethod('')
     setPaymentReference('')
+    load()
+  }
+
+  const handleRelease = async () => {
+    setReleasing(true)
+    const { error } = await supabase.rpc('release_purchase_bill', { p_bill: billId })
+    setReleasing(false)
+
+    if (error) {
+      toast.error(error.message || 'Could not confirm this bill.')
+      return
+    }
+
+    toast.success('Bill confirmed')
     load()
   }
 
@@ -334,8 +366,11 @@ export default function PurchaseBillDetailPage() {
 
     if (error) {
       setCancelError(error.message || 'Could not cancel this bill.')
+      toast.error(error.message || 'Could not cancel this bill.')
       return
     }
+
+    toast.success('Bill cancelled')
 
     load()
   }
@@ -348,6 +383,7 @@ export default function PurchaseBillDetailPage() {
     return <p className="p-6 text-xs text-red-600">{loadError || 'Bill not found.'}</p>
   }
 
+  const isPending = bill.effective_status === 'pending_approval'
   const creditApplied = Number(bill.credit_applied || 0)
   const balance = Number(bill.total || 0) - Number(bill.paid || 0) - creditApplied
   const creditsBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers/${bill.supplier?.id}/credits`
@@ -364,8 +400,10 @@ export default function PurchaseBillDetailPage() {
     setApplyingCredit(false)
     if (error) {
       setCreditError(error.message || 'Could not apply the credit.')
+      toast.error(error.message || 'Could not apply the credit.')
       return
     }
+    toast.success('Credit applied')
     setCreditId('')
     setCreditAmount('')
     load()
@@ -509,6 +547,36 @@ export default function PurchaseBillDetailPage() {
 
         {/* RIGHT - the only scrollable region on desktop, kept compact */}
         <section className="flex flex-col gap-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+          {isPending && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-xs font-medium text-amber-900">
+                {approval?.status === 'approved' && !approval?.consumed_at
+                  ? 'Approved: confirm this bill'
+                  : approval?.status === 'rejected'
+                    ? 'The approval request was rejected'
+                    : approval
+                      ? 'Waiting for approval'
+                      : 'This bill needs approval'}
+              </p>
+              <p className="text-[11px] text-amber-800">
+                {approval?.status === 'approved' && !approval?.consumed_at
+                  ? 'An approver has approved this bill. Confirm it to make it payable.'
+                  : approval?.status === 'rejected'
+                    ? 'Edit the bill to bring the price within tolerance, or cancel it.'
+                    : 'The price is outside the allowed tolerance. The bill cannot be paid or have credit applied until it is approved and confirmed.'}
+              </p>
+              {approval?.status === 'approved' && !approval?.consumed_at && (
+                <Button
+                  type="button"
+                  className="h-6 bg-core text-xs text-white"
+                  disabled={releasing}
+                  onClick={handleRelease}
+                >
+                  {releasing ? 'Confirming...' : 'Confirm bill'}
+                </Button>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 rounded-lg border border-gray-200 px-3 py-2 sm:grid-cols-5">
             <div>
               <p className="text-[10px] text-gray-500">Issued</p>
@@ -602,7 +670,7 @@ export default function PurchaseBillDetailPage() {
             {bill.notes && <p className="text-[11px] text-gray-500">Notes: {bill.notes}</p>}
           </div>
 
-          {(appliedCredits.length > 0 || (creditOptions.length > 0 && balance > 0 && bill.effective_status !== 'cancelled')) && (
+          {(appliedCredits.length > 0 || (creditOptions.length > 0 && balance > 0 && bill.effective_status !== 'cancelled' && !isPending)) && (
             <div className="space-y-1">
               <h2 className="text-xs font-semibold text-gray-800">Supplier credit</h2>
               {appliedCredits.length > 0 && (
@@ -634,7 +702,7 @@ export default function PurchaseBillDetailPage() {
                   </table>
                 </div>
               )}
-              {creditOptions.length > 0 && balance > 0 && bill.effective_status !== 'cancelled' && (
+              {creditOptions.length > 0 && balance > 0 && bill.effective_status !== 'cancelled' && !isPending && (
                 <div className="flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 p-2.5">
                   <label className="block text-[10px] text-gray-500">
                     Apply a credit
@@ -722,7 +790,7 @@ export default function PurchaseBillDetailPage() {
             )}
           </div>
 
-          {balance > 0 && bill.effective_status !== 'cancelled' && (
+          {balance > 0 && bill.effective_status !== 'cancelled' && !isPending && (
             <form onSubmit={handleRecordPayment} className="space-y-2 rounded-lg border border-gray-200 p-3">
               <h2 className="text-xs font-semibold text-gray-800">Record a payment</h2>
 

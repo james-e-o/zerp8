@@ -388,7 +388,7 @@ export default function EditQuotationPage() {
           )}
         </div>
 
-        <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="sales-document-summary flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-gray-800">
               <span>Document discount</span>

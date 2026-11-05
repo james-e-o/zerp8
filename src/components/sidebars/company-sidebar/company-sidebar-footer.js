@@ -6,6 +6,7 @@ import { CompanySidebarFooterUser } from "./company-sidebar-footer-user";
 import { Settings, Users, LayoutDashboard, CreditCard } from "lucide-react";
 import { NoCollapsibleButton } from "./company-sidebar";
 import { AccessGate } from "@/components/access-gate";
+import SidebarThemeToggle from "../sidebar-theme-toggle";
 
 export default function CompanySidebarFooter({ params, profile, company }) {
   const { u, companyId } = params;
@@ -30,6 +31,7 @@ export default function CompanySidebarFooter({ params, profile, company }) {
           </AccessGate>
 
       </div>
+      <SidebarThemeToggle />
       <CompanySidebarFooterUser user={profile} u={u} company={company} />
     </SidebarFooter>
   )

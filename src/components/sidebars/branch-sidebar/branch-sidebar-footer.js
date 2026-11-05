@@ -4,6 +4,7 @@ import { BranchSidebarFooterUser } from "./branch-sidebar-footer-user";
 import { Settings, Users, Sparkles } from "lucide-react";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { NoCollapsibleButton,CollapsibleButton } from "./branch-sidebar";
+import SidebarThemeToggle from "../sidebar-theme-toggle";
 
 export default function BranchSidebarFooter({ params, profile, branch, onAssistantClick }) {
   const { u, companyId,branchId } = params 
@@ -26,10 +27,10 @@ export default function BranchSidebarFooter({ params, profile, branch, onAssista
         <NoCollapsibleButton className={``} url={`/users/${u}/company/${companyId}/branches/${branchId}/staff`} title={'Staff'} icon={Users} active={false} name={'Staff'} badge={'branch'}/>
         <NoCollapsibleButton className={``} url={`/users/${u}/company/${companyId}/branches/${branchId}/settings`} title={'Settings'} icon={Settings} active={false} name={'Settings'} badge={'branch'}/>
       </div>
+      <SidebarThemeToggle />
       <BranchSidebarFooterUser user={profile} u={u} companyId={companyId} branch={branch} />
     </SidebarFooter>
   )
 }
-
 
 

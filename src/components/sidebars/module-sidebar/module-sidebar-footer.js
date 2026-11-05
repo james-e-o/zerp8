@@ -6,6 +6,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui
 import { Settings, Sparkles } from "lucide-react"
 import { NoCollapsibleButton } from "./module-sidebar"
 import { BranchSidebarFooterUser } from "../branch-sidebar/branch-sidebar-footer-user"
+import SidebarThemeToggle from "../sidebar-theme-toggle"
 
 export default function ModuleSidebarFooter({ profile, company, branch, onAssistantClick }) {
   const params = useParams()
@@ -26,6 +27,7 @@ export default function ModuleSidebarFooter({ profile, company, branch, onAssist
         </SidebarMenuItem>
       </div>
 
+      <SidebarThemeToggle />
       <BranchSidebarFooterUser user={profile} u={params.u} companyId={params.companyId} branch={branch} />
     </SidebarFooter>
   )

@@ -147,9 +147,9 @@ export function rowsToItems(rows) {
   }))
 }
 
-// "Expired" is never stored: a sent quotation whose valid-until date has passed.
+// "Expired" is never stored: a saved or sent quotation whose valid-until date has passed.
 export function isQuotationExpired(quotation) {
-  if (!quotation || quotation.status !== 'sent' || !quotation.valid_until) return false
+  if (!quotation || !['saved', 'sent'].includes(quotation.status) || !quotation.valid_until) return false
   const end = new Date(quotation.valid_until)
   if (Number.isNaN(end.getTime())) return false
   end.setHours(23, 59, 59, 999)
@@ -158,6 +158,7 @@ export function isQuotationExpired(quotation) {
 
 const STATUS_STYLES = {
   draft: ['Draft', 'bg-muted text-muted-foreground'],
+  saved: ['Saved', 'bg-slate-100 text-slate-700'],
   sent: ['Sent', 'bg-blue-50 text-blue-700'],
   accepted: ['Accepted', 'bg-emerald-50 text-emerald-700'],
   rejected: ['Rejected', 'bg-red-50 text-red-700'],
@@ -169,5 +170,31 @@ export function QuotationStatusPill({ quotation, status }) {
   const [label, style] = STATUS_STYLES[key] || [key || '—', 'bg-muted text-muted-foreground']
   return (
     <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${style}`}>{label}</span>
+  )
+}
+
+const ORDER_STATUS_STYLES = {
+  draft: ['Draft', 'bg-muted text-muted-foreground'],
+  open: ['Open', 'bg-blue-50 text-blue-700'],
+  partially_fulfilled: ['Partially fulfilled', 'bg-amber-50 text-amber-700'],
+  fulfilled: ['Completed', 'bg-emerald-50 text-emerald-700'],
+  cancelled: ['Cancelled', 'bg-red-50 text-red-700'],
+  cancelled_partial: ['Cancelled - Partially fulfilled', 'bg-red-50 text-red-700'],
+}
+
+export function OrderStatusPill({ status }) {
+  const [label, style] = ORDER_STATUS_STYLES[status] || [status || '—', 'bg-muted text-muted-foreground']
+  return (
+    <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${style}`}>{label}</span>
+  )
+}
+
+// Secondary, informational: never changes the order's fulfilment status.
+export function ReturnPill({ status }) {
+  if (!status || status === 'none') return null
+  return (
+    <span className="inline-flex items-center rounded-sm bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+      {status === 'full' ? 'Fully returned' : 'Partially returned'}
+    </span>
   )
 }

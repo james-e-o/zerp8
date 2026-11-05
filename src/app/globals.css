@@ -110,42 +110,56 @@
 
 .dark {
   color-scheme: dark;
-  --core_light: #29284b;
-  --background: var(--navy);
+  --navy: #0d0d0d;
+  --core_light: #2a004d;
+  --background: #0d0d0d;
   --foreground: oklch(0.985 0 0);
-  --card: #1d2033;
+  --card: #111111;
   --card-foreground: oklch(0.985 0 0);
-  --popover: #1d2033;
+  --popover: #161616;
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
-  --primary-foreground: var(--navy);
-  --secondary: #282b40;
+  --primary-foreground: #0d0d0d;
+  --secondary: #1b1b1b;
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: #282b40;
+  --muted: #191919;
   --muted-foreground: oklch(0.708 0 0);
-  --accent: #30334a;
-  --accent-foreground: oklch(0.985 0 0);
+  --accent: #2a004d;
+  --accent-foreground: #f5eaff;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: #383b50;
-  --input: #383b50;
-  --ring: oklch(0.556 0 0);
+  --border: #303030;
+  --input: #303030;
+  --ring: #8b5cf6;
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #191b2e;
+  --sidebar: #141414;
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: #2a004d;
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: #282b40;
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: #383b50;
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-accent: #2a004d;
+  --sidebar-accent-foreground: #f5eaff;
+  --sidebar-border: #303030;
+  --sidebar-ring: #8b5cf6;
 }
 
 html.dark {
   color-scheme: dark;
+}
+
+.dark .sales-document-summary {
+  background-color: #171717 !important;
+  border-color: var(--border) !important;
+}
+
+.dark [data-slot="sidebar-menu-button"]:hover,
+.dark [data-slot="sidebar-menu-button"][data-active="true"],
+.dark [data-slot="sidebar-menu-sub-button"]:hover,
+.dark [data-slot="sidebar-menu-sub-button"][data-active="true"] {
+  background-color: var(--sidebar-accent) !important;
+  color: var(--sidebar-accent-foreground) !important;
 }
 
 .dark [class~="bg-white"],
@@ -296,6 +310,33 @@ html.dark {
 .dark [class~="bg-pink-200"],
 .dark [class~="bg-rose-200"] {
   background-color: var(--secondary) !important;
+}
+
+.dark [class~="bg-amber-50"],
+.dark [class~="bg-amber-100"],
+.dark [class~="bg-amber-200"],
+.dark [class~="bg-yellow-50"],
+.dark [class~="bg-yellow-100"],
+.dark [class~="bg-yellow-200"] {
+  background-color: #3b2a0a !important;
+}
+
+.dark [class~="text-amber-600"],
+.dark [class~="text-amber-700"],
+.dark [class~="text-amber-800"],
+.dark [class~="text-amber-900"],
+.dark [class~="text-yellow-600"],
+.dark [class~="text-yellow-700"],
+.dark [class~="text-yellow-800"],
+.dark [class~="text-yellow-900"] {
+  color: #fbbf24 !important;
+}
+
+.dark [class~="border-amber-200"],
+.dark [class~="border-amber-300"],
+.dark [class~="border-yellow-200"],
+.dark [class~="border-yellow-300"] {
+  border-color: #78520f !important;
 }
 
 

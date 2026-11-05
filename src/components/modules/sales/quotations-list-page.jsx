@@ -10,10 +10,11 @@ import { Input } from '@/components/ui/input'
 import { QuotationStatusPill, formatDate, isQuotationExpired, useMoney } from '@/components/modules/sales/quotation-shared'
 
 // One list for every Quotations tab. Drafts are a different table, so the Draft tab uses
-// QuotationDraftsListPage. "Sent" means sent and still valid; "Expired" is a sent
+// QuotationDraftsListPage. "Saved" / "Sent" mean still valid; "Expired" is a saved or sent
 // quotation whose valid-until date has passed (worked out here, never stored).
 const EMPTY_TEXT = {
   all: 'No quotations yet.',
+  saved: 'No saved quotations. A saved quotation is complete but has not been sent yet.',
   sent: 'No quotations are waiting for an answer.',
   accepted: 'No accepted quotations.',
   rejected: 'No rejected quotations.',
@@ -45,7 +46,9 @@ export default function QuotationsListPage({ status = 'all' }) {
         .eq('branch', branchId)
         .order('created_at', { ascending: false })
 
-      if (status === 'sent' || status === 'expired') query = query.eq('status', 'sent')
+      if (status === 'sent') query = query.eq('status', 'sent')
+      else if (status === 'saved') query = query.eq('status', 'saved')
+      else if (status === 'expired') query = query.in('status', ['saved', 'sent'])
       else if (status === 'accepted' || status === 'rejected') query = query.eq('status', status)
 
       const { data, error } = await query
@@ -68,7 +71,7 @@ export default function QuotationsListPage({ status = 'all' }) {
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase()
     return rows.filter((row) => {
-      if (status === 'sent' && isQuotationExpired(row)) return false
+      if ((status === 'sent' || status === 'saved') && isQuotationExpired(row)) return false
       if (status === 'expired' && !isQuotationExpired(row)) return false
       if (!term) return true
       return `${row.quote_number} ${row.customer?.name || ''} ${row.customer?.customer_number || ''}`.toLowerCase().includes(term)
@@ -76,7 +79,7 @@ export default function QuotationsListPage({ status = 'all' }) {
   }, [rows, status, search])
 
   return (
-    <div className="flex flex-col gap-3 px-1 py-3 text-xs">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 py-3 text-xs">
       <Input
         value={search}
         onChange={(event) => setSearch(event.target.value)}

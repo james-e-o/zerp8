@@ -4,6 +4,7 @@ import { useContext, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Pencil, Printer, FileDown, Send } from 'lucide-react'
+import { toast } from 'sonner'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -34,6 +35,8 @@ import { OrderStatusBadge } from '@/components/modules/purchases/purchase-orders
 // 'create' permission as raising the order in the first place (no
 // separate 'cancel' permission key - reusing create was the explicit
 // decision made for this app).
+const ADJUSTMENT_LABELS = { excess: 'Excess', wrong_item: 'Wrong item' }
+
 const CANCEL_ELIGIBLE_STATUSES = ['open', 'sent']
 const EDITABLE_STATUSES = ['open', 'sent']
 
@@ -97,7 +100,7 @@ export default function PurchaseOrderDetailPage() {
 
         const { data: lineRows, error: lineError } = await supabase
           .from('purchase_order_line_items')
-          .select('id, variant, quantity_ordered, quantity_received, quantity_returned, unit_cost_snapshot, line_total')
+          .select('id, variant, quantity_ordered, quantity_received, quantity_returned, unit_cost_snapshot, line_total, adjustment_kind')
           .eq('purchase_order', orderId)
 
         if (lineError) throw lineError
@@ -192,7 +195,11 @@ export default function PurchaseOrderDetailPage() {
         setMergedSources(mergedRows)
       } catch (loadError) {
         console.error('Failed to load purchase order:', loadError)
-        if (!cancelled) setErrorMessage(loadError.message || 'Could not load this purchase order.')
+        if (!cancelled) {
+          const message = loadError.message || 'Could not load this purchase order.'
+          setErrorMessage(message)
+          toast.error(message)
+        }
       } finally {
         if (!cancelled) setIsLoading(false)
       }
@@ -238,6 +245,13 @@ export default function PurchaseOrderDetailPage() {
 
   const canTransitionToSent = order?.status === 'open'
 
+  // What was ordered stays in Order items; accepted excess / wrong items are
+  // their own lines, shown separately under Adjustments.
+  const orderItems = items.filter((item) => !item.adjustment_kind)
+  const adjustments = items.filter((item) => item.adjustment_kind)
+  const total = orderItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+  const adjustmentsTotal = adjustments.reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+
   const buildMailtoHref = () => {
     const recipients = [sendEmail, sendAltEmail].filter(Boolean).join(',')
     const subject = encodeURIComponent(`Purchase order ${order.order_number}`)
@@ -263,9 +277,11 @@ export default function PurchaseOrderDetailPage() {
 
       if (error) throw error
       setOrder((current) => (current ? { ...current, status: 'sent' } : current))
+      toast.success('Order marked as sent')
     } catch (err) {
       console.error('Failed to mark purchase order as sent:', err)
       setSendError(err.message || 'Could not mark this order as sent.')
+      toast.error(err.message || 'Could not mark this order as sent.')
     } finally {
       setIsMarkingSent(false)
     }
@@ -300,18 +316,41 @@ export default function PurchaseOrderDetailPage() {
     autoTable(doc, {
       startY: 59,
       head: [['Product', 'SKU', 'Qty', 'Unit cost', 'Line total']],
-      body: items.map((item) => [
+      body: orderItems.map((item) => [
         item.variantLabel !== 'Default variant' ? `${item.productTitle} · ${item.variantLabel}` : item.productTitle,
         item.sku || '—',
         Number(item.quantity_ordered || 0).toLocaleString(),
         formatCurrency(item.unit_cost_snapshot, currency),
         formatCurrency(item.line_total, currency),
       ]),
-      foot: [['', '', '', 'Total', formatCurrency(total, currency)]],
+      foot: [['', '', '', adjustments.length > 0 ? 'Ordered total' : 'Total', formatCurrency(total, currency)]],
       styles: { fontSize: 9 },
       headStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59] },
       footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
     })
+
+    if (adjustments.length > 0) {
+      doc.setFontSize(10)
+      doc.text('Adjustments (excess / wrong items accepted)', 14, (doc.lastAutoTable?.finalY || 59) + 10)
+      autoTable(doc, {
+        startY: (doc.lastAutoTable?.finalY || 59) + 13,
+        head: [['Product', 'SKU', 'Qty', 'Unit cost (est.)', 'Line total']],
+        body: adjustments.map((item) => [
+          `${item.variantLabel !== 'Default variant' ? `${item.productTitle} · ${item.variantLabel}` : item.productTitle} (${ADJUSTMENT_LABELS[item.adjustment_kind] || 'Adjustment'})`,
+          item.sku || '—',
+          Number(item.quantity_ordered || 0).toLocaleString(),
+          formatCurrency(item.unit_cost_snapshot, currency),
+          formatCurrency(item.line_total, currency),
+        ]),
+        foot: [
+          ['', '', '', 'Adjustments total', formatCurrency(adjustmentsTotal, currency)],
+          ['', '', '', 'Order total', formatCurrency(total + adjustmentsTotal, currency)],
+        ],
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59] },
+        footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
+      })
+    }
 
     if (order.notes) {
       const finalY = doc.lastAutoTable?.finalY || 59
@@ -336,15 +375,16 @@ export default function PurchaseOrderDetailPage() {
       })
 
       if (error) throw error
+      toast.success('Purchase order cancelled')
       router.push(base)
     } catch (err) {
       console.error('Failed to cancel purchase order:', err)
       setCancelError(err.message || 'Could not cancel this order.')
+      toast.error(err.message || 'Could not cancel this order.')
       setIsCancelling(false)
     }
   }
 
-  const total = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0)
 
   if (isLoading) {
     return <p className="p-4 text-xs text-muted-foreground">Loading purchase order...</p>
@@ -552,7 +592,7 @@ export default function PurchaseOrderDetailPage() {
         <h2 className="border-b border-border bg-muted px-4 py-3 text-xs font-semibold text-foreground">
           Order items
         </h2>
-        {items.length === 0 ? (
+        {orderItems.length === 0 ? (
           <p className="p-4 text-xs text-muted-foreground">This order has no line items.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -570,7 +610,7 @@ export default function PurchaseOrderDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {items.map((item) => (
+                {orderItems.map((item) => (
                   <tr key={item.id}>
                     <td className="px-4 py-2 font-medium text-foreground">
                       {item.productTitle}
@@ -612,6 +652,81 @@ export default function PurchaseOrderDetailPage() {
           </div>
         )}
       </section>
+
+      {adjustments.length > 0 && (
+        <section className="overflow-hidden border border-border rounded-sm bg-card">
+          <h2 className="border-b border-border bg-muted px-4 py-3 text-xs font-semibold text-foreground">
+            Adjustments
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-xs">
+              <thead className="bg-muted/50 text-[10px] text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Product</th>
+                  <th className="px-4 py-2 text-left font-medium">SKU</th>
+                  <th className="px-4 py-2 text-right font-medium">Accepted</th>
+                  <th className="px-4 py-2 text-right font-medium">Received</th>
+                  <th className="px-4 py-2 text-right font-medium">In quarantine</th>
+                  <th className="px-4 py-2 text-right font-medium">Returned</th>
+                  <th className="px-4 py-2 text-right font-medium">Unit cost (est.)</th>
+                  <th className="px-4 py-2 text-right font-medium">Line total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {adjustments.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-2 font-medium text-foreground">
+                      {item.productTitle}
+                      {item.variantLabel !== 'Default variant' && (
+                        <span className="ml-1 text-muted-foreground">· {item.variantLabel}</span>
+                      )}
+                      <span className="mt-0.5 block text-[9px] font-normal text-muted-foreground">
+                        {ADJUSTMENT_LABELS[item.adjustment_kind] || 'Adjustment'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-muted-foreground">{item.sku || '—'}</td>
+                    <td className="px-4 py-2 text-right text-foreground">{Number(item.quantity_ordered || 0).toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right text-foreground">{Number(item.quantity_received || 0).toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right text-foreground">
+                      {item.inQuarantine > 0 ? (
+                        <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          {item.inQuarantine.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right text-foreground">{Number(item.quantity_returned || 0).toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right text-foreground">
+                      {formatCurrency(item.unit_cost_snapshot, currentBranch?.base_currency || '')}
+                    </td>
+                    <td className="px-4 py-2 text-right font-medium text-foreground">
+                      {formatCurrency(item.line_total, currentBranch?.base_currency || '')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t border-border bg-muted/30">
+                <tr>
+                  <th colSpan={7} className="px-4 py-2 text-right text-xs font-semibold text-foreground">Adjustments total</th>
+                  <td className="px-4 py-2 text-right text-xs font-semibold text-foreground">
+                    {formatCurrency(adjustmentsTotal, currentBranch?.base_currency || '')}
+                  </td>
+                </tr>
+                <tr>
+                  <th colSpan={7} className="px-4 py-2 text-right text-xs font-semibold text-foreground">Order total incl. adjustments</th>
+                  <td className="px-4 py-2 text-right text-xs font-semibold text-foreground">
+                    {formatCurrency(total + adjustmentsTotal, currentBranch?.base_currency || '')}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p className="border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
+            Costs here are estimates until the supplier bills for these goods.
+          </p>
+        </section>
+      )}
 
       <Sheet open={printSheetOpen} onOpenChange={setPrintSheetOpen}>
         <SheetContent side="right" className="text-xs">
