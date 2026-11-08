@@ -36,7 +36,7 @@ function SupplierCreditsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const money = useMoney()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers/${supplierId}`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers/${supplierId}`
 
   const requested = searchParams.get('type')
   const filter = FILTERS.some((item) => item.key === requested) ? requested : 'all'

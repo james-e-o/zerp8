@@ -16,7 +16,7 @@ import {
   usePurchaseSettingsEditor,
 } from '@/components/modules/procurement/purchase-settings-shared'
 
-// Goes at modules/purchases/settings/purchase-returns/page.js.
+// Goes at modules/procurement/settings/purchase-returns/page.js.
 // Wired to purchase_settings through the shared editor. These rules are
 // enforced by the returns functions in the database (purchase-returns-
 // migration.sql and supplier-credits-migration.sql).

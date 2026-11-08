@@ -73,6 +73,8 @@ export default function PurchaseOrderLineItemsTable({
   branchCurrencySymbol,
   warehouses = [],
   orderWarehouseId = '',
+  onClearAll,
+  clearAllDisabled = false,
 }) {
   const [detailsVariant, setDetailsVariant] = useState(null)
 
@@ -155,7 +157,7 @@ export default function PurchaseOrderLineItemsTable({
       {
         id: 'standardCostPrice',
         header: (
-          <span className="block text-[11px] leading-tight">
+          <span className="block whitespace-nowrap text-[10px] leading-tight">
             Standard estimated
             <br />
             cost price
@@ -167,7 +169,7 @@ export default function PurchaseOrderLineItemsTable({
           )
 
           return (
-            <span className="text-xs font-semibold text-gray-700">
+            <span className="text-[10px] font-semibold text-gray-700">
               {variant
                 ? formatCurrency(
                     row.original.standardCostPrice,
@@ -182,7 +184,7 @@ export default function PurchaseOrderLineItemsTable({
       {
         id: 'unitCost',
         header: (
-          <span className="block text-[11px] leading-tight">
+          <span className="block text-[10px] leading-tight">
             Current estimated
             <br />
             cost price
@@ -190,7 +192,7 @@ export default function PurchaseOrderLineItemsTable({
         ),
         cell: ({ row }) => (
           <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500">
+            <span className="text-[10px] text-gray-500">
               {branchCurrencySymbol || branchCurrencyCode || ''}
             </span>
             <Input
@@ -203,7 +205,7 @@ export default function PurchaseOrderLineItemsTable({
                   unitCost: Number(event.target.value) || 0,
                 })
               }
-              className="h-8 w-24 text-right text-xs"
+              className="h-8 w-24 text-right text-[10px]"
               aria-label="Unit cost"
             />
           </div>
@@ -212,18 +214,21 @@ export default function PurchaseOrderLineItemsTable({
       {
         id: 'amount',
         header: (
-          <span className="block leading-tight">
+          <span className="block text-[10px] leading-tight">
             Line
             <br />
             amount
           </span>
         ),
-        cell: ({ row }) =>
-          formatCurrency(
-            Number(row.original.qty || 0) * Number(row.original.unitCost || 0),
-            branchCurrencyCode,
-            branchCurrencySymbol
-          ),
+        cell: ({ row }) => (
+          <span className="text-[10px]">
+            {formatCurrency(
+              Number(row.original.qty || 0) * Number(row.original.unitCost || 0),
+              branchCurrencyCode,
+              branchCurrencySymbol
+            )}
+          </span>
+        ),
       },
       {
         id: 'deliverTo',
@@ -277,7 +282,19 @@ export default function PurchaseOrderLineItemsTable({
       },
       {
         id: 'actions',
-        header: '',
+        header: (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-6 px-2 text-[10px] normal-case"
+              disabled={clearAllDisabled}
+              onClick={onClearAll}
+            >
+              Clear all
+            </Button>
+          </div>
+        ),
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-2">
             <button
@@ -316,7 +333,7 @@ export default function PurchaseOrderLineItemsTable({
         ),
       },
     ],
-    [catalog, warehouses, orderWarehouseId]
+    [catalog, warehouses, orderWarehouseId, clearAllDisabled, onClearAll]
   )
 
   const table = useReactTable({
@@ -350,7 +367,9 @@ export default function PurchaseOrderLineItemsTable({
                             ? 'w-32'
                             : header.column.id === 'deliverTo'
                               ? 'w-28'
-                              : ''
+                              : header.column.id === 'actions'
+                                ? 'w-36'
+                                : ''
                     }`}
                   >
                     {flexRender(

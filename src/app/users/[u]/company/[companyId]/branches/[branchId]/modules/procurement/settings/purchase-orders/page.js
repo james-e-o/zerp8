@@ -9,7 +9,7 @@ import {
   usePurchaseSettingsEditor,
 } from '@/components/modules/procurement/purchase-settings-shared'
 
-// Goes at modules/purchases/settings/purchase-orders/page.js.
+// Goes at modules/procurement/settings/purchase-orders/page.js.
 // Wired to purchase_settings through the shared editor - same branch-
 // override / approval rules as the General tab.
 //

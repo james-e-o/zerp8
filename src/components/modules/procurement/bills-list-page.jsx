@@ -11,7 +11,7 @@ import StatusBadge from '@/components/modules/sales/status-badge'
 
 export default function BillsListPage({ title, description, status }) {
   const { u, companyId, branchId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/bills`
 
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)

@@ -78,7 +78,7 @@ const CONFIRM_TEXT = {
 export default function Page() {
   const { u, companyId, branchId, returnId } = useParams()
   const money = useMoney()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement`
 
   const [ret, setRet] = useState(null)
   const [lines, setLines] = useState([])

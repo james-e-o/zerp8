@@ -19,7 +19,7 @@ import { COMPANY_FILES_BUCKET } from '@/components/company-files'
 
 export default function BillDraftsListPage({ title, description }) {
   const { u, companyId, branchId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/bills`
 
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)

@@ -146,7 +146,7 @@ function DeliveryChip({ line }) {
 export default function PurchaseBillDetailPage() {
   const router = useRouter()
   const { u, companyId, branchId, billId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/bills`
 
   const [bill, setBill] = useState(null)
   const [lineItems, setLineItems] = useState([])
@@ -386,7 +386,7 @@ export default function PurchaseBillDetailPage() {
   const isPending = bill.effective_status === 'pending_approval'
   const creditApplied = Number(bill.credit_applied || 0)
   const balance = Number(bill.total || 0) - Number(bill.paid || 0) - creditApplied
-  const creditsBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers/${bill.supplier?.id}/credits`
+  const creditsBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers/${bill.supplier?.id}/credits`
   const pickedCredit = creditOptions.find((credit) => credit.id === creditId)
 
   const applyCredit = async () => {
@@ -409,7 +409,7 @@ export default function PurchaseBillDetailPage() {
     load()
   }
   const canCancel = Number(bill.paid || 0) <= 0 && bill.effective_status !== 'cancelled'
-  const orderHref = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders/${bill.purchase_order?.id}`
+  const orderHref = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders/${bill.purchase_order?.id}`
 
   const openActiveFile = async () => {
     if (!activeFile) return
@@ -445,7 +445,7 @@ export default function PurchaseBillDetailPage() {
               <>
                 {' · '}
                 <Link
-                  href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/receipts/${bill.purchase_receipt.id}`}
+                  href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/receipts/${bill.purchase_receipt.id}`}
                   className="text-core hover:underline"
                 >
                   {bill.purchase_receipt.receipt_number}

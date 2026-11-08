@@ -65,7 +65,7 @@ export default function NewPurchaseOrderPage() {
 
   const { currentBranch } = useContext(BranchContext) || {}
   const branchCurrencyCode = currentBranch?.base_currency || ''
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders`
 
   const [title, setTitle] = useState('')
   const [orderNumber, setOrderNumber] = useState('')
@@ -688,7 +688,7 @@ export default function NewPurchaseOrderPage() {
   }
 
   return (
-    <div className="flex w-full max-w-none grow flex-col space-y-4 overflow-hidden">
+    <div className="flex w-full max-w-none grow flex-col space-y-0 overflow-hidden">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-sm font-bold tracking-tight text-slate-900">
@@ -744,11 +744,11 @@ export default function NewPurchaseOrderPage() {
       <form
         id="purchase-order-form"
         onSubmit={handleSubmit}
-        className="flex min-h-0 justify-between grow flex-col gap-4 overflow-hidden"
+        className="flex min-h-0 mt-4 justify-between grow flex-col gap-1.5 overflow-hidden"
       >
         {/* Header fields: 3 columns on desktop, 2 on tablet, 1 (stacked, tighter
             spacing, smaller text) on mobile. */}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 lg:gap-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3">
           <label className="text-xs font-medium text-gray-800">
             Title <span className="text-red-500">*</span>
             <Input
@@ -864,32 +864,20 @@ export default function NewPurchaseOrderPage() {
                   : 'Loading products...'}
             </p>
           ) : (
-            <>
-              <div className="mb-1 flex shrink-0 justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-6 text-xs"
-                  disabled={isAlreadyBlank}
-                  onClick={clearAllLines}
-                >
-                  Clear all
-                </Button>
-              </div>
-
-              <PurchaseOrderLineItemsTable
-                items={items}
-                setItems={setItemsKeepingOneLine}
-                catalog={catalog}
-                branchCurrencyCode={branchCurrencyCode}
-                branchCurrencySymbol={branchCurrencySymbol}
-                warehouses={branchWarehouses}
-                orderWarehouseId={deliveryWarehouse}
-              />
-            </>
+            <PurchaseOrderLineItemsTable
+              items={items}
+              setItems={setItemsKeepingOneLine}
+              catalog={catalog}
+              branchCurrencyCode={branchCurrencyCode}
+              branchCurrencySymbol={branchCurrencySymbol}
+              warehouses={branchWarehouses}
+              orderWarehouseId={deliveryWarehouse}
+              onClearAll={clearAllLines}
+              clearAllDisabled={isAlreadyBlank}
+            />
           )}
           {unresolvedCurrencies.length > 0 && (
-            <div className="mt-2 space-y-2 rounded border border-red-200 bg-red-50 p-3">
+            <div className="mt-1 space-y-1 rounded border border-red-200 bg-red-50 p-3">
               <p className="text-xs text-red-700">
                 No exchange rate on file for: {unresolvedCurrencies.join(', ')} → {orderCurrency || branchCurrencyCode}.
                 {!canOverrideCurrency && ' Ask someone with currency-override permission to enter a rate.'}
@@ -925,7 +913,7 @@ export default function NewPurchaseOrderPage() {
           )}
         </div>
 
-        <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-gray-50/60 p-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="sales-document-summary flex flex-col gap-4 rounded-lg border border-gray-200 bg-gray-50/60 p-5 sm:flex-row sm:items-start sm:justify-between">
           <label className="flex-1 text-xs font-medium text-gray-700">
             Notes
 

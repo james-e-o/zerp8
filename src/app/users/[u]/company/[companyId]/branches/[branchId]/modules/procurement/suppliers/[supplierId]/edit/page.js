@@ -20,7 +20,7 @@ import supabase from '@/config/supabaseClient'
 export default function EditSupplierPage() {
   const router = useRouter()
   const { u, companyId, branchId, supplierId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers`
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')

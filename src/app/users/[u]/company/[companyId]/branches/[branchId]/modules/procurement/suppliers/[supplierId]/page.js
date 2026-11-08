@@ -16,7 +16,7 @@ import { RESOLUTION_LABELS, Stat } from '@/components/modules/procurement/suppli
 export default function SupplierDetailPage() {
   const { u, companyId, branchId, supplierId } = useParams()
   const { currentBranch } = useContext(BranchContext) || {}
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement`
   const money = (amount) => formatCurrency(Number(amount || 0), currentBranch?.base_currency || '')
 
   const [supplier, setSupplier] = useState(null)

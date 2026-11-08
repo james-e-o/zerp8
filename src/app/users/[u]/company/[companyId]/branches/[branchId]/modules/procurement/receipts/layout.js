@@ -14,7 +14,7 @@ const TABS = [
 
 export default async function ReceiptsLayout({ children, params }) {
   const { u, companyId, branchId } = await params
-  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/receipts`
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/receipts`
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

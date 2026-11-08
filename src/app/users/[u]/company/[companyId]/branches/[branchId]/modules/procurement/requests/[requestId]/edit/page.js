@@ -36,7 +36,7 @@ export default function EditPurchaseRequestPage() {
   const { u, companyId, branchId, requestId } = useParams()
   const { currentBranch } = useContext(BranchContext) || {}
   const branchCurrencyCode = currentBranch?.base_currency || ''
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests`
 
   const [request, setRequest] = useState(null)
   const [title, setTitle] = useState('')

@@ -7,17 +7,17 @@ import { Button } from "@/components/ui/button"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import ModuleSidebar from "@/components/sidebars/module-sidebar/module-sidebar"
 import ModuleHeader from "@/components/headers/module-header"
-import { PurchasesProvider } from "./purchases-context"
+import { ProcurementProvider } from "./procurement-context"
 import { BranchAssistantOverlay } from "@/components/ai/branch-assistant-context"
 
-export default function PurchasesLayoutClient({ params, title, items, basePath, profile, company, branch, children }) {
-  // branchId comes straight from the URL, same way PurchasesOverviewPage
+export default function ProcurementLayoutClient({ params, title, items, basePath, profile, company, branch, children }) {
+  // branchId comes straight from the URL, same way ProcurementOverviewPage
   // already reads it - no new prop plumbing needed from the server layout.
   const { branchId } = useParams()
 
   return (
     <ParamsProvider params={params}>
-      <PurchasesProvider branchId={branchId}>
+      <ProcurementProvider branchId={branchId}>
         <SidebarProvider className="relative">
           <ModuleSidebar title={title} items={items} basePath={basePath} profile={profile} company={company} branch={branch} />
 
@@ -43,7 +43,7 @@ export default function PurchasesLayoutClient({ params, title, items, basePath, 
             </div>
           </SidebarInset>
         </SidebarProvider>
-      </PurchasesProvider>
+      </ProcurementProvider>
     </ParamsProvider>
   )
 }

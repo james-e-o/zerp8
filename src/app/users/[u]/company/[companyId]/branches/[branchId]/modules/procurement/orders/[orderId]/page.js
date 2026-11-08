@@ -44,7 +44,7 @@ export default function PurchaseOrderDetailPage() {
   const { u, companyId, branchId, orderId } = useParams()
   const router = useRouter()
   const { currentBranch } = useContext(BranchContext) || {}
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders`
 
   const [order, setOrder] = useState(null)
   const [items, setItems] = useState([])
@@ -527,7 +527,7 @@ export default function PurchaseOrderDetailPage() {
                         <ul className="ml-4 list-disc">
                           {blocker.bills.map((bill) => (
                             <li key={bill.id}>
-                              <Link href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills/${bill.id}`} className="font-medium underline">{bill.number}</Link>
+                              <Link href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/bills/${bill.id}`} className="font-medium underline">{bill.number}</Link>
                               {bill.status ? ` (${bill.status.replace(/_/g, ' ')})` : ''}
                             </li>
                           ))}
@@ -650,7 +650,7 @@ export default function PurchaseOrderDetailPage() {
               <dt className="text-[10px] text-muted-foreground">Converted from</dt>
               <dd className="mt-1 font-medium text-foreground">
                 <Link
-                  href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests/${sourceRequest.id}`}
+                  href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests/${sourceRequest.id}`}
                   className="text-core hover:underline"
                 >
                   {sourceRequest.title || sourceRequest.request_number}
@@ -665,7 +665,7 @@ export default function PurchaseOrderDetailPage() {
                 {mergedSources.map((request, index) => (
                   <span key={request.id}>
                     <Link
-                      href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests/${request.id}`}
+                      href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests/${request.id}`}
                       className="text-core hover:underline"
                     >
                       {request.title || request.request_number}

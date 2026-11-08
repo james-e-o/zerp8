@@ -12,7 +12,7 @@ import supabase from '@/config/supabaseClient'
 // One shared editor for every Purchase Settings tab, so the five tabs
 // that save to purchase_settings don't each carry their own copy of the
 // load / override / approval-gate / save logic. Suggested location:
-//   components/modules/purchases/purchase-settings-shared.jsx
+//   components/modules/procurement/purchase-settings-shared.jsx
 // (requires purchase-settings-defaults-migration.sql to be run).
 //
 // A tab page is then just its fields:

@@ -13,7 +13,7 @@ import supabase from '@/config/supabaseClient'
 import { formatNaira } from '@/components/modules/sales/dummy-data'
 import { useVariantNames } from '@/components/modules/procurement/purchase-catalog'
 
-// Edit a supplier bill: route .../purchases/bills/[billId]/edit
+// Edit a supplier bill: route .../procurement/bills/[billId]/edit
 //
 // What can be changed depends on the bill's state (the database enforces the
 // same rules, this page just doesn't offer what it would refuse):
@@ -39,7 +39,7 @@ const toDateInput = (value) => (value ? String(value).slice(0, 10) : '')
 export default function EditBillPage() {
   const router = useRouter()
   const { u, companyId, branchId, billId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/bills`
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')

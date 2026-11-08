@@ -49,7 +49,7 @@ export default function OutgoingReturnsPage() {
   const { branchId } = useParams()
   const { root } = useFlowPaths()
   const canEditStock = useInventoryCan('edit')
-  const returnsPath = root.replace('/inventory', '/purchases') + '/returns'
+  const returnsPath = root.replace('/inventory', '/procurement') + '/returns'
 
   const [waiting, setWaiting] = useState([])
   const [sent, setSent] = useState([])

@@ -19,14 +19,14 @@ import { StaffContext } from '@/components/contexts/staff-context'
 const MODULE_SUB_TABS = [
   { key: 'products', label: 'Products' },
   { key: 'sales', label: 'Sales' },
-  { key: 'purchases', label: 'Purchases' },
+  { key: 'procurement', label: 'Procurement' },
   { key: 'inventory', label: 'Inventory' },
 ]
 
 const MODULE_GROUP_PATTERNS = {
   products: /\b(products?|catalog|variants?|categories|brands|attributes|pricing|promotions)\b/,
   sales: /\b(sales|customers?|quotations?|discounts?|deliveries|pos|sales[_ -]?invoices?)\b/,
-  purchases: /\b(purchases?|procurement|suppliers?|vendors?|receipts?|purchase[_ -]?(requests?|orders?|bills?|returns?))\b/,
+  procurement: /\b(purchases?|procurement|suppliers?|vendors?|receipts?|purchase[_ -]?(requests?|orders?|bills?|returns?))\b/,
   inventory: /\b(inventory|stock|warehouses?|movements?|transfers?|adjustments?|counts?)\b/,
 }
 
@@ -80,7 +80,7 @@ export default function PermissionsTab() {
   // in case a single resource group ever mixes core + module permissions.
   const [activeTab, setActiveTab] = useState('core')
 
-  // Which sub-tab is active inside "Modules" (Products / Sales / Purchases /
+  // Which sub-tab is active inside "Modules" (Products / Sales / Procurement /
   // Inventory). Display-only, same as activeTab above - doesn't affect
   // fetch/merge/save logic.
   const [activeModuleTab, setActiveModuleTab] = useState('products')
@@ -698,7 +698,7 @@ export default function PermissionsTab() {
         </TabsList>
       </Tabs>
 
-        {/* Modules -> Products / Sales / Purchases / Inventory sub-tabs. */}
+        {/* Modules -> Products / Sales / Procurement / Inventory sub-tabs. */}
       {activeTab === 'module' && (
         <Tabs value={activeModuleTab} onValueChange={setActiveModuleTab} className="mb-3 shrink-0">
           <TabsList className="h-8 w-fit gap-1 rounded-sm bg-muted px-1 ">

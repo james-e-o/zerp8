@@ -36,8 +36,8 @@ export function RequestStatusBadge({ status }) {
 export default function PurchaseRequestsListPage({ title, description, status = 'all' }) {
   const { u, companyId, branchId } = useParams()
   const router = useRouter()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
-  const ordersBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests`
+  const ordersBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders`
   const isDraftTab = status === 'draft'
   // Merging (combining several approved requests into one purchase
   // order) only ever makes sense on the Approved tab - a request has to

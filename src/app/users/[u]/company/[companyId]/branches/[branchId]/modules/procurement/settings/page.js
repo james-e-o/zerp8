@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 
 // This is the "General" tab's content - goes at the SETTINGS ROOT:
-// modules/purchases/settings/page.js (not a general/ subfolder - see
+// modules/procurement/settings/page.js (not a general/ subfolder - see
 // the note in settings-layout.jsx on why the General tab has no path
 // suffix).
 //
@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch'
 // this batch. Edit is in-place (view <-> edit on this one page), not
 // a separate route.
 //
-// PageHeader (title "Purchases Settings" + the tab nav) already
+// PageHeader (title "Procurement Settings" + the tab nav) already
 // renders above this via the shared layout, so this page does NOT
 // repeat a big page title - it only shows this tab's own description
 // and content, matching what TabNav's active tab already tells the

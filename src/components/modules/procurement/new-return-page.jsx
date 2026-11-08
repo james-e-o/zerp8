@@ -50,7 +50,7 @@ export default function NewReturnPage() {
   const { u, companyId, branchId } = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/returns`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/returns`
 
   const [suppliers, setSuppliers] = useState([])
   const [supplierId, setSupplierId] = useState(searchParams.get('supplier') || '')

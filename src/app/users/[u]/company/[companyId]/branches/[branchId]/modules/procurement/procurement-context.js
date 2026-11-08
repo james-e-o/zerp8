@@ -1,11 +1,11 @@
 'use client'
 
 // ----------------------------------------------------------------------
-// PurchasesProvider / usePurchasesContext
+// ProcurementProvider / useProcurementContext
 //
-// All Supabase fetching for the purchases module lives HERE now, not in
-// individual page.js files. This is mounted once in PurchasesLayoutClient,
-// which wraps every purchases subroute (overview, suppliers, orders,
+// All Supabase fetching for the procurement module lives HERE now, not in
+// individual page.js files. This is mounted once in ProcurementLayoutClient,
+// which wraps every procurement subroute (overview, suppliers, orders,
 // receipts, bills, returns, requests, settings) - since Next's app router
 // does not remount a layout when navigating between sibling subroutes,
 // this fetch runs once per branch visit, not once per page.
@@ -31,9 +31,9 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import supabase from '@/config/supabaseClient'
 
-const PurchasesContext = createContext(null)
+const ProcurementContext = createContext(null)
 
-export function PurchasesProvider({ branchId, children }) {
+export function ProcurementProvider({ branchId, children }) {
   const [loading, setLoading] = useState(true)
   const [requests, setRequests] = useState([])
   const [orders, setOrders] = useState([])
@@ -104,7 +104,7 @@ export function PurchasesProvider({ branchId, children }) {
       setReceipts(receiptRows || [])
       setBills(billsWithBalance)
     } catch (err) {
-      console.error('Error loading purchases context data:', err)
+      console.error('Error loading procurement context data:', err)
     } finally {
       setLoading(false)
     }
@@ -115,18 +115,18 @@ export function PurchasesProvider({ branchId, children }) {
   }, [fetchAll])
 
   return (
-    <PurchasesContext.Provider
+    <ProcurementContext.Provider
       value={{ loading, requests, orders, receipts, bills, refetch: fetchAll }}
     >
       {children}
-    </PurchasesContext.Provider>
+    </ProcurementContext.Provider>
   )
 }
 
-export function usePurchasesContext() {
-  const ctx = useContext(PurchasesContext)
+export function useProcurementContext() {
+  const ctx = useContext(ProcurementContext)
   if (!ctx) {
-    throw new Error('usePurchasesContext must be used within a PurchasesProvider')
+    throw new Error('useProcurementContext must be used within a ProcurementProvider')
   }
   return ctx
 }

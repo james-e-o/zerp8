@@ -158,7 +158,7 @@ export default function BranchAssistant({ isOpen, branchName, onClose }) {
             <div>
               <dt className="text-[10px] text-muted-foreground">Coverage</dt>
               <dd className="mt-1 leading-5 text-muted-foreground">
-                Branch pages and enabled modules, including Inventory, Products, Purchases, Sales, Orders, and Invoices.
+                Branch pages and enabled modules, including Inventory, Products, Procurement, Sales, Orders, and Invoices.
               </dd>
             </div>
           </dl>

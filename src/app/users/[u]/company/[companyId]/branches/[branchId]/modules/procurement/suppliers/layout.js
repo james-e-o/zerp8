@@ -3,7 +3,7 @@ import PageHeader from '@/components/PageHeader'
 
 export default async function SuppliersLayout({ children, params }) {
   const { u, companyId, branchId } = await params
-  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers`
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers`
 
   return (
     <div>

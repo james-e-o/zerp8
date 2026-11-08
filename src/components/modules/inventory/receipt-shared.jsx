@@ -19,10 +19,10 @@ export function useFlowPaths() {
     root,
     receipts: `${root}/receipts`,
     outgoing: `${root}/outgoing`,
-    orders: `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders`,
-    purchaseReceipts: `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/receipts`,
-    purchaseReturns: `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/returns`,
-    bills: `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills`,
+    orders: `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders`,
+    purchaseReceipts: `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/receipts`,
+    purchaseReturns: `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/returns`,
+    bills: `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/bills`,
   }
 }
 

@@ -39,7 +39,7 @@ function SupplierCreditFormContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const money = useMoney()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers/${supplierId}`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers/${supplierId}`
 
   const [kind, setKind] = useState(searchParams.get('type') === 'debit_note' ? 'debit_note' : 'credit_note')
   const [number, setNumber] = useState('')

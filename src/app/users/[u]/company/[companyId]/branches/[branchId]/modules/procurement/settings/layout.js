@@ -9,7 +9,7 @@ import TabNav from '@/components/modules/sales/TabNav'
 // the general/ folder isn't needed at all anymore - see the note on
 // the General tab's value below).
 //
-// Goes at modules/purchases/settings/layout.js.
+// Goes at modules/procurement/settings/layout.js.
 //
 // TABS: 'General' uses value 'all', matching how the Sales settings
 // example you pasted handled its own first tab - the assumption
@@ -32,12 +32,12 @@ const TABS = [
 
 export default async function PurchasesSettingsLayout({ children, params }) {
   const { u, companyId, branchId } = await params
-  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/settings`
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/settings`
 
   return (
     <div>
       <PageHeader
-        title="Purchases Settings"
+        title="Procurement Settings"
         description="Configuration that governs purchase requests, orders, receiving, bills, and returns."
         navigation={<TabNav tabs={TABS} basePath={basePath} />}
       />

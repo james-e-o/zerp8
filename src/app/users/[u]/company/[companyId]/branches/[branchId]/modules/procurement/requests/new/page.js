@@ -46,7 +46,7 @@ export default function PurchaseRequestForm() {
   const { currentBranch } = useContext(BranchContext) || {}
   const branchCurrencyCode = currentBranch?.base_currency || ''
 
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests`
 
   const [title, setTitle] = useState('')
   const [requestNumber, setRequestNumber] = useState('')

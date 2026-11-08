@@ -41,7 +41,7 @@ export default function ReturnsListPage({ status = 'all' }) {
   const { u, companyId, branchId } = useParams()
   const router = useRouter()
   const money = useMoney()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/returns`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/returns`
 
   const [rows, setRows] = useState([])
   const [recovery, setRecovery] = useState({})

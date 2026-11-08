@@ -37,7 +37,7 @@ function SupplierRefundFormContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const money = useMoney()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers/${supplierId}`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers/${supplierId}`
 
   const [supplier, setSupplier] = useState(null)
   const [credits, setCredits] = useState([])

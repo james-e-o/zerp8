@@ -143,7 +143,7 @@ export default function BillForm() {
   const { u, companyId, branchId } = useParams()
   const searchParams = useSearchParams()
   const draftParam = searchParams.get('draft') // open an existing draft: .../bills/new?draft=<id>
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/bills`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/bills`
 
   const [purchaseOrderId, setPurchaseOrderId] = useState('')
   const [receiptId, setReceiptId] = useState('') // optional, informational

@@ -15,7 +15,7 @@ import {
   usePurchaseSettingsEditor,
 } from '@/components/modules/procurement/purchase-settings-shared'
 
-// Goes at modules/purchases/settings/supplier-bills/page.js (replaces the old
+// Goes at modules/procurement/settings/supplier-bills/page.js (replaces the old
 // placeholder page). Wired to purchase_settings through the shared editor.
 // The rules are enforced by create_purchase_bill / update_purchase_bill in
 // the database (purchase-bill-approval-migration.sql).

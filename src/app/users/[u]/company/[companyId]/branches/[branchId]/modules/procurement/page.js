@@ -5,10 +5,10 @@ import Link from 'next/link'
 import PageHeader from '@/components/PageHeader'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 import { useParams } from 'next/navigation'
-import { usePurchasesContext } from './purchases-context'
+import { useProcurementContext } from './procurement-context'
 
 // ----------------------------------------------------------------------
-// Purchases Overview
+// Procurement Overview
 //
 // BRANCH-SPECIFIC:
 //   - Purchase requests
@@ -17,8 +17,8 @@ import { usePurchasesContext } from './purchases-context'
 //   - Supplier bills
 //   - Purchase returns
 //
-// Data fetching no longer happens here - it lives in PurchasesProvider
-// (mounted in PurchasesLayoutClient) and is read via usePurchasesContext().
+// Data fetching no longer happens here - it lives in ProcurementProvider
+// (mounted in ProcurementLayoutClient) and is read via useProcurementContext().
 // This page only derives its own stats/activity presentation from that
 // shared data.
 // ----------------------------------------------------------------------
@@ -41,14 +41,14 @@ const ACTIVITY_TABS = [
   { key: 'bills', label: 'Bills' },
 ]
 
-export default function PurchasesOverviewPage() {
+export default function ProcurementOverviewPage() {
   const { u, companyId, branchId } = useParams()
   const { currentBranch } = useContext(BranchContext)
-  const { loading, requests, orders, receipts, bills } = usePurchasesContext()
+  const { loading, requests, orders, receipts, bills } = useProcurementContext()
 
   const [activeTab, setActiveTab] = useState('requests')
 
-  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases`
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement`
 
   const startOfMonth = useMemo(() => {
     const d = new Date()

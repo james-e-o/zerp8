@@ -23,7 +23,7 @@ const EDITABLE_STATUSES = ['open', 'sent']
 export default function EditPurchaseOrderPage() {
   const router = useRouter()
   const { u, companyId, branchId, orderId } = useParams()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders`
 
   const [title, setTitle] = useState('')
   const [notes, setNotes] = useState('')

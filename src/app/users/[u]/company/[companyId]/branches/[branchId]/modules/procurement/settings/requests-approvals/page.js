@@ -22,7 +22,7 @@ import {
   usePurchaseSettingsEditor,
 } from '@/components/modules/procurement/purchase-settings-shared'
 
-// Goes at modules/purchases/settings/requests-approvals/page.js.
+// Goes at modules/procurement/settings/requests-approvals/page.js.
 // Wired to purchase_settings + purchase_approval_limits through the
 // shared editor (withLimits): the settings and the limit list are saved
 // together, under one approval check.

@@ -58,7 +58,7 @@ export default function PurchaseRequestDetailPage() {
   const [cancelError, setCancelError] = useState('')
   const [cancelReason, setCancelReason] = useState('')
 
-  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests`
 
   useEffect(() => {
     let cancelled = false
@@ -307,7 +307,7 @@ export default function PurchaseRequestDetailPage() {
 
       if (draftError) throw draftError
 
-      router.push(`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders/new?draft=${draft.id}`)
+      router.push(`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders/new?draft=${draft.id}`)
     } catch (err) {
       console.error('Failed to start purchase order from request:', err)
       setConvertError(err.message || 'Could not start a purchase order from this request.')

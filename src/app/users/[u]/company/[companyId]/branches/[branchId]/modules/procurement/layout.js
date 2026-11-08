@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { isModuleEnabledServer } from "@/lib/module-access-server";
 import { createSupabaseServerClient } from "@/config/supabaseServer";
-import PurchasesLayoutClient from "./purchasesLayoutClient";
+import ProcurementLayoutClient from "./procurementLayoutClient";
 
-export default async function PurchasesLayout({ params, children }) {
+export default async function ProcurementLayout({ params, children }) {
   const { u, companyId, branchId } = await params;
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -12,10 +12,10 @@ export default async function PurchasesLayout({ params, children }) {
 
   await supabase.from("branches").select("id").eq("id", branchId).maybeSingle();
 
-  const isPurchasesEnabled = await isModuleEnabledServer(companyId, "purchases");
+  const isProcurementEnabled = await isModuleEnabledServer(companyId, "procurement");
 
-  if (!isPurchasesEnabled) {
-    redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?module=purchases`);
+  if (!isProcurementEnabled) {
+    redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?module=procurement`);
   }
 
   const navigationItems = [
@@ -30,14 +30,13 @@ export default async function PurchasesLayout({ params, children }) {
   ];
 
   return (
-    <PurchasesLayoutClient
+    <ProcurementLayoutClient
       params={params}
-      title="Purchases"
+      title="Procurement"
       items={navigationItems}
-      basePath={`/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases`}
+      basePath={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement`}
     >
       {children}
-    </PurchasesLayoutClient>
+    </ProcurementLayoutClient>
   );
 }
-

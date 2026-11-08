@@ -199,7 +199,7 @@ export function useBillableReceipts(branchId) {
  */
 /**
  * Product name + variant label for a list of variant ids, shared by every
- * purchases page that shows line items (Bills, Receipts...), so none of
+ * procurement page that shows line items (Bills, Receipts...), so none of
  * them has to show a raw variant id or a bare variant label again.
  *
  * product_variants.product -> products.id, and the name lives in

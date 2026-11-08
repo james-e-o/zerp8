@@ -40,7 +40,7 @@ export default function PurchaseOrdersListPage({
   const { u, companyId, branchId } = useParams()
   const { currentBranch } = useContext(BranchContext) || {}
   const router = useRouter()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/orders`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/orders`
   const isDraftTab = status === 'draft'
 
   const [orders, setOrders] = useState([])

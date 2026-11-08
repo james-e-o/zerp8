@@ -10,7 +10,7 @@ import { useParams, usePathname } from 'next/navigation'
 export default function SupplierLayout({ children }) {
   const { u, companyId, branchId, supplierId } = useParams()
   const pathname = (usePathname() || '').replace(/\/$/, '')
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/suppliers/${supplierId}`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers/${supplierId}`
 
   const tabs = [
     { label: 'Overview', href: base },

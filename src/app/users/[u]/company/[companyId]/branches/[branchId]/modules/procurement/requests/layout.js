@@ -15,7 +15,7 @@ const TABS = [
 export default async function RequestsLayout({ children, params }) {
   const { u, companyId, branchId } = await params
 
-  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/requests`
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests`
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

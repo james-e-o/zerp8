@@ -41,7 +41,7 @@ import {
 export default function SupplierCreditDetailPage() {
   const { u, companyId, branchId, supplierId, creditId } = useParams()
   const money = useMoney()
-  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases`
+  const base = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement`
 
   const [credit, setCredit] = useState(null)
   const [allocations, setAllocations] = useState([])

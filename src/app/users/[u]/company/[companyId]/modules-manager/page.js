@@ -27,7 +27,7 @@ const MODULE_ICONS = {
   customers: Users,
   sales: ChartCandlestick,
   orders: Boxes,
-  purchases: Boxes,
+  procurement: Boxes,
   services: Settings,
   bookings: Users,
   projects: Settings,

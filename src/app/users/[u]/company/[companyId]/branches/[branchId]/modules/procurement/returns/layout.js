@@ -20,7 +20,7 @@ const TABS = [
 
 export default async function ReturnsLayout({ children, params }) {
   const { u, companyId, branchId } = await params
-  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/purchases/returns`
+  const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/returns`
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
