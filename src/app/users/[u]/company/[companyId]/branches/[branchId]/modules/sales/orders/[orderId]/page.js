@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { OrderStatusPill, ReturnPill, formatDate, useMoney } from '@/components/modules/sales/quotation-shared'
+import { InvoiceStatusPill } from '@/components/modules/sales/invoice-shared'
 import { DeliveryStatusPill } from '@/components/modules/sales/delivery-shared'
 
 // A created sales order. It starts Open and its lines are locked. What can still happen here:
@@ -34,6 +35,8 @@ export default function SalesOrderDetailPage({ orderId }) {
   const [order, setOrder] = useState(null)
   const [reserved, setReserved] = useState({})
   const [deliveries, setDeliveries] = useState([])
+  const [invoices, setInvoices] = useState([])
+  const [orderMoney, setOrderMoney] = useState(null)
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [working, setWorking] = useState(false)
@@ -110,6 +113,25 @@ export default function SalesOrderDetailPage({ orderId }) {
     } else {
       setDeliveries(deliveryRows || [])
     }
+
+    const { data: invoiceRows, error: invoiceError } = await supabase
+      .from('sales_invoices')
+      .select('id, invoice_number, status, issued_at, due_date, total, paid')
+      .eq('sales_order', orderId)
+      .order('created_at', { ascending: false })
+    if (invoiceError) {
+      console.error('Could not read invoices:', invoiceError)
+      setInvoices([])
+    } else {
+      setInvoices(invoiceRows || [])
+    }
+    const { data: moneyRow, error: moneyError } = await supabase.rpc('sales_order_money', { p_order: orderId })
+    if (moneyError || moneyRow?.success === false) {
+      console.error('Could not read order money:', moneyError || moneyRow)
+      setOrderMoney(null)
+    } else {
+      setOrderMoney(moneyRow)
+    }
     setLoading(false)
   }, [orderId, branchId])
 
@@ -140,6 +162,12 @@ export default function SalesOrderDetailPage({ orderId }) {
       toast.success('Stock reserved.')
     }
     load()
+  }
+
+  // Credit notes for goods the customer was billed for but no longer keeps (returns, or a cancelled order).
+  const handleCredit = async () => {
+    const data = await run('issue_credit_notes', { p_order: orderId, p_return: null, p_note: null }, 'Credit note issued.', 'Could not issue the credit note.')
+    if (data) load()
   }
 
   const handleRelease = async () => {
@@ -212,6 +240,10 @@ export default function SalesOrderDetailPage({ orderId }) {
   const anyReserved = Object.values(reserved).some((qty) => qty > 0)
   const isCancelledState = ['cancelled', 'cancelled_partial'].includes(order.status)
   const canCancel = isLive
+  const leftToInvoice = lines.some(
+    (line) => Number(line.quantity_ordered) - Number(line.quantity_cancelled) - Number(line.quantity_invoiced) > 0
+  )
+  const canInvoice = ['open', 'partially_fulfilled', 'fulfilled', 'cancelled_partial'].includes(order.status) && leftToInvoice
   const anyDelivered = lines.some((line) => Number(line.quantity_delivered) > 0)
 
   return (
@@ -227,6 +259,11 @@ export default function SalesOrderDetailPage({ orderId }) {
           {isLive && (
             <Button asChild className="h-8 bg-core text-xs text-white">
               <Link href={`${salesBase}/deliveries/new?order=${orderId}`}>Create delivery</Link>
+            </Button>
+          )}
+          {canInvoice && (
+            <Button asChild variant="outline" className="h-8 text-xs">
+              <Link href={`${salesBase}/invoices/sales-invoices/new?order=${orderId}`}>Create invoice</Link>
             </Button>
           )}
           {isLive && (
@@ -366,6 +403,48 @@ export default function SalesOrderDetailPage({ orderId }) {
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{entry.delivered_at ? `Delivered ${formatDate(entry.delivered_at)}` : `Planned ${formatDate(entry.planned_date)}`}</td>
                   <td className="px-4 py-2 text-right"><DeliveryStatusPill status={entry.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {orderMoney && (Number(orderMoney.invoiced) > 0 || Number(orderMoney.paid) > 0) && (
+        <div className="rounded-sm border border-border bg-card p-3 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
+              <div><p className="text-[10px] text-muted-foreground">Invoiced</p><p className="font-medium">{money(orderMoney.invoiced)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Credited</p><p className="font-medium">{money(orderMoney.credited)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Paid</p><p className="font-medium">{money(orderMoney.paid)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Still to pay</p><p className="font-medium">{money(orderMoney.balance_due)}</p></div>
+            </div>
+            {Number(orderMoney.credit_units_due) > 0 && (
+              <Button type="button" className="h-8 bg-core text-xs text-white" disabled={working} onClick={handleCredit}>Issue credit notes</Button>
+            )}
+          </div>
+          {Number(orderMoney.credit_units_due) > 0 && (
+            <p className="mt-2 text-amber-800">The customer was invoiced for {orderMoney.credit_units_due} unit(s) they will not keep. Issue a credit note to correct it.</p>
+          )}
+          {Number(orderMoney.refund_due) > 0 && (
+            <p className="mt-2 text-red-700">The customer has paid {money(orderMoney.refund_due)} more than they owe. Record the refund from the invoice.</p>
+          )}
+        </div>
+      )}
+
+      {invoices.length > 0 && (
+        <div className="rounded-sm border border-border bg-card print:hidden">
+          <h3 className="border-b border-border bg-muted px-4 py-2 text-xs font-semibold text-foreground">Invoices</h3>
+          <table className="w-full text-xs">
+            <tbody className="divide-y divide-border">
+              {invoices.map((entry) => (
+                <tr key={entry.id} className="hover:bg-muted/40">
+                  <td className="px-4 py-2">
+                    <Link href={`${salesBase}/invoices/sales-invoices/${entry.id}`} className="font-medium text-foreground hover:text-core">{entry.invoice_number}</Link>
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">{entry.status === 'draft' ? 'Draft' : `Issued ${formatDate(entry.issued_at)}`}</td>
+                  <td className="px-4 py-2 text-right">{money(entry.total)}</td>
+                  <td className="px-4 py-2 text-right"><InvoiceStatusPill invoice={entry} /></td>
                 </tr>
               ))}
             </tbody>

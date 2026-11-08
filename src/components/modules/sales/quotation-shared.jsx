@@ -4,7 +4,7 @@ import { useContext, useEffect, useState } from 'react'
 
 import supabase from '@/config/supabaseClient'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
-import { formatCurrency } from '@/components/modules/purchases/dummy-data'
+import { formatCurrency } from '@/components/modules/procurement/dummy-data'
 
 // Small pieces shared by the quotation pages, the customer pages and (later) sales orders,
 // so money, dates, totals and status labels are done one way everywhere.

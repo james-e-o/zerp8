@@ -13,6 +13,8 @@ import { EmptyState, ErrorNote, Tone, fetchBatches } from '@/components/modules/
 import {
   KIND,
   REASONS,
+  OUTGOING_REASONS,
+  outgoingTypeLabel,
   STATUS,
   formatDateTime,
   fromLocalInput,
@@ -56,9 +58,9 @@ function lineFromRow(row) {
   }
 }
 
-export default function Page() {
+export default function AdjustmentDetailPage() {
   const { adjustmentId } = useParams()
-  const { adjustments } = useAdjustmentPaths()
+  const { adjustments: adjustmentsPath, writeOffs } = useAdjustmentPaths()
 
   const [doc, setDoc] = useState(null)
   const [lines, setLines] = useState([])
@@ -70,25 +72,27 @@ export default function Page() {
   const [batchOptions, setBatchOptions] = useState({})
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setErrorState] = useState('')
   const [message, setMessage] = useState('')
+
+  // Every error and every success also shows as a toast.
+  function setError(text) {
+    setErrorState(text)
+    if (text) {
+      console.error('Adjustment action failed:', text)
+      toast.error(text)
+    }
+  }
+  function notify(text) {
+    setMessage(text)
+    if (text) toast.success(text)
+  }
   const [voteNote, setVoteNote] = useState('')
   const [cancelReason, setCancelReason] = useState('')
   const [showCancel, setShowCancel] = useState(false)
 
   const [search, setSearch] = useState('')
   const [results, setResults] = useState([])
-
-  // Every result is shown inline and as a toast.
-  function showError(text) {
-    setError(text)
-    if (text) toast.error(text)
-  }
-
-  function showMessage(text) {
-    setMessage(text)
-    if (text) toast.success(text)
-  }
 
   const load = useCallback(async () => {
     if (!adjustmentId) return
@@ -101,7 +105,6 @@ export default function Page() {
     const failure = docResult.error || lineResult.error
     if (failure || !docResult.data) {
       setLoadError(failure?.message || 'Adjustment not found.')
-      toast.error(failure?.message || 'Adjustment not found.')
       setLoading(false)
       return
     }
@@ -214,6 +217,9 @@ export default function Page() {
   }, [search])
 
   const isCount = doc?.kind === 'count'
+  const isOutgoing = doc?.kind === 'outgoing'
+  const adjustments = isOutgoing ? writeOffs : adjustmentsPath
+  const allowedReasons = isOutgoing ? OUTGOING_REASONS[doc.outgoing_type] || [] : null
   const editable = Boolean(doc && doc.status === 'counting' && approval?.can_edit)
 
   function patchLine(key, changes) {
@@ -234,7 +240,7 @@ export default function Page() {
         counted_at: '',
         counted_at_dirty: false,
         quantity_change: '',
-        reason: isCount ? 'count_variance' : 'correction',
+        reason: isCount ? 'count_variance' : isOutgoing ? allowedReasons[0] : 'correction',
         note: '',
         unit_cost: '',
         expected: null,
@@ -289,9 +295,9 @@ export default function Page() {
     setMessage('')
     const problem = await saveLines()
     if (problem) {
-      showError(problem)
+      setError(problem)
     } else {
-      showMessage('Saved.')
+      notify('Saved.')
       await load()
     }
     setBusy(false)
@@ -304,17 +310,17 @@ export default function Page() {
     if (dirty) {
       const problem = await saveLines()
       if (problem) {
-        showError(problem)
+        setError(problem)
         setBusy(false)
         return
       }
     }
     const { data, error: rpcError } = await supabase.rpc('submit_inventory_adjustment', { p_adjustment: adjustmentId })
-    if (rpcError) showError(rpcError.message)
-    else if (!data?.success) showError(data?.error || 'Could not submit.')
+    if (rpcError) setError(rpcError.message)
+    else if (!data?.success) setError(data?.error || 'Could not submit.')
     else if (data.outcome === 'posted') {
-      showMessage(data.moved > 0 ? `Posted. ${data.moved} line${data.moved === 1 ? '' : 's'} changed stock.` : 'Posted. Everything matched the books, so stock did not change.')
-    } else showMessage('Sent for approval.')
+      notify(data.moved > 0 ? `Posted. ${data.moved} line${data.moved === 1 ? '' : 's'} changed stock.` : 'Posted. Everything matched the books, so stock did not change.')
+    } else notify('Sent for approval.')
     await load()
     setBusy(false)
   }
@@ -324,9 +330,9 @@ export default function Page() {
     setError('')
     setMessage('')
     const { data, error: rpcError } = await promise
-    if (rpcError) showError(rpcError.message)
-    else if (data && data.success === false) showError(data.error || 'That did not work.')
-    else if (done) showMessage(done)
+    if (rpcError) setError(rpcError.message)
+    else if (data && data.success === false) setError(data.error || 'That did not work.')
+    else if (done) notify(done)
     await load()
     setBusy(false)
   }
@@ -359,15 +365,15 @@ export default function Page() {
   const rejection = (approval?.votes || []).find((entry) => entry.decision === 'rejected')
 
   return (
-    <div className="max-w-6xl space-y-2 p-1">
+    <div className="max-w-6xl space-y-5 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href={adjustments} className="text-[11px] text-gray-500 hover:underline">
-            &larr; Adjustments
+            &larr; {isOutgoing ? 'Write-offs & gifts' : 'Adjustments'}
           </Link>
           <h2 className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-900">
             <span className="font-mono">{doc.adjustment_number}</span>
-            <Tone tone={kind.tone}>{kind.label}</Tone>
+            <Tone tone={kind.tone}>{isOutgoing ? outgoingTypeLabel(doc.outgoing_type) : kind.label}</Tone>
             <Tone tone={status.tone}>{status.label}</Tone>
           </h2>
           <p className="mt-1 text-xs text-gray-500">
@@ -496,7 +502,7 @@ export default function Page() {
         <EmptyState>{editable ? 'Add the products you counted or want to change.' : 'This document has no lines.'}</EmptyState>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full min-w-245 text-xs">
+          <table className="w-full min-w-[980px] text-xs">
             <thead className="bg-gray-50 text-[11px] font-medium text-gray-600">
               <tr>
                 <th className="px-3 py-2 text-left">Product</th>
@@ -606,8 +612,14 @@ export default function Page() {
                           <Input
                             type="number"
                             step="any"
-                            value={line.quantity_change}
-                            onChange={(event) => patchLine(line.key, { quantity_change: event.target.value })}
+                            value={isOutgoing && line.quantity_change !== '' ? String(Math.abs(Number(line.quantity_change))) : line.quantity_change}
+                            min={isOutgoing ? '0' : undefined}
+                            placeholder={isOutgoing ? 'Quantity out' : undefined}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              // An outgoing only takes stock out: typed as a positive number, stored below zero.
+                              patchLine(line.key, { quantity_change: isOutgoing && value !== '' ? String(-Math.abs(Number(value))) : value })
+                            }}
                             className="ml-auto h-7 w-24 text-right text-xs"
                           />
                         ) : (
@@ -623,7 +635,7 @@ export default function Page() {
                           onChange={(event) => patchLine(line.key, { reason: event.target.value })}
                           className="h-7 rounded-md border border-gray-300 bg-white px-1 text-xs"
                         >
-                          {REASONS.filter((entry) => (isCount ? true : entry.value !== 'count_variance')).map((entry) => (
+                          {REASONS.filter((entry) => (isOutgoing ? allowedReasons.includes(entry.value) : isCount ? true : entry.value !== 'count_variance')).map((entry) => (
                             <option key={entry.value} value={entry.value}>
                               {entry.label}
                             </option>

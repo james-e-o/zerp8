@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 import { Input } from '@/components/ui/input'
 import supabase from '@/config/supabaseClient'
@@ -10,13 +11,15 @@ import { EmptyState, ErrorNote, Tone } from '@/components/modules/inventory/rece
 import {
   KIND,
   STATUS,
+  outgoingTypeLabel,
   formatDateTime,
   signed,
   useAdjustmentPaths,
 } from '@/components/modules/inventory/adjustment-shared'
 
 // Shared by the All, Counting, Pending and Posted tabs of Inventory >
-// Adjustments. Each tab's page.js passes `view`.
+// Adjustments, and by Inventory > Outgoing > Write-offs & gifts (scope "outgoing").
+// Each page.js passes `view` and `scope`.
 
 const PAGE_SIZE = 50
 
@@ -27,9 +30,11 @@ const COPY = {
   posted: { hint: 'Posted. Each one changed stock and is in Movements.', empty: 'Nothing has been posted yet.' },
 }
 
-export default function AdjustmentsListPage({ view = 'all' }) {
+export default function AdjustmentsListPage({ view = 'all', scope = 'adjustments' }) {
   const router = useRouter()
-  const { branchId, adjustments } = useAdjustmentPaths()
+  const { branchId, adjustments, writeOffs } = useAdjustmentPaths()
+  const isOutgoing = scope === 'outgoing'
+  const detailBase = isOutgoing ? writeOffs : adjustments
 
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
@@ -58,8 +63,11 @@ export default function AdjustmentsListPage({ view = 'all' }) {
       p_search: debounced || null,
       p_limit: PAGE_SIZE,
       p_offset: page * PAGE_SIZE,
+      p_scope: scope,
     })
     if (error) {
+      console.error('Failed to load adjustments:', error)
+      toast.error(error.message)
       setLoadError(error.message)
       setRows([])
       setTotal(0)
@@ -68,16 +76,16 @@ export default function AdjustmentsListPage({ view = 'all' }) {
       setTotal(Number(data?.[0]?.total_count || 0))
     }
     setLoading(false)
-  }, [branchId, view, debounced, page])
+  }, [branchId, view, debounced, page, scope])
 
   useEffect(() => {
     load()
   }, [load])
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 p-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-gray-500">{COPY[view]?.hint}</p>
+        <p className="text-xs text-gray-500">{isOutgoing ? 'Write-offs, samples and gifts: stock leaving without a sale or a return to a supplier.' : COPY[view]?.hint}</p>
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -91,7 +99,7 @@ export default function AdjustmentsListPage({ view = 'all' }) {
       ) : loadError ? (
         <ErrorNote>{loadError}</ErrorNote>
       ) : rows.length === 0 ? (
-        <EmptyState>{debounced ? 'No adjustment matches that search.' : COPY[view]?.empty}</EmptyState>
+        <EmptyState>{debounced ? 'No document matches that search.' : isOutgoing ? 'No write-offs, samples or gifts yet.' : COPY[view]?.empty}</EmptyState>
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -115,11 +123,11 @@ export default function AdjustmentsListPage({ view = 'all' }) {
                   return (
                     <tr
                       key={row.id}
-                      onClick={() => router.push(`${adjustments}/${row.id}`)}
+                      onClick={() => router.push(`${detailBase}/${row.id}`)}
                       className="cursor-pointer hover:bg-gray-50"
                     >
                       <td className="px-3 py-2 font-mono text-[11px] text-gray-800">{row.adjustment_number}</td>
-                      <td className="px-3 py-2"><Tone tone={kind.tone}>{kind.label}</Tone></td>
+                      <td className="px-3 py-2"><Tone tone={kind.tone}>{row.kind === 'outgoing' ? outgoingTypeLabel(row.outgoing_type) : kind.label}</Tone></td>
                       <td className="px-3 py-2">{row.warehouse_name || '—'}</td>
                       <td className="px-3 py-2"><Tone tone={status.tone}>{status.label}</Tone></td>
                       <td className="px-3 py-2 text-right">{Number(row.line_count)}</td>

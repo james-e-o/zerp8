@@ -19,9 +19,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 import supabase from '@/config/supabaseClient'
-import { useRequestCatalog } from '@/components/modules/purchases/request-catalog'
-import { useVariantNames } from '@/components/modules/purchases/purchase-catalog'
-import { useBranchWarehouses } from '@/components/modules/purchases/use-branch-warehouses'
+import { useRequestCatalog } from '@/components/modules/procurement/request-catalog'
+import { useVariantNames } from '@/components/modules/procurement/purchase-catalog'
+import { useBranchWarehouses } from '@/components/modules/procurement/use-branch-warehouses'
 import { formatDate, formatMoney, formatQty, useBranchCurrency } from '@/components/modules/inventory/inventory-shared'
 import {
   ErrorNote,
@@ -492,7 +492,7 @@ function NewReceiptForm() {
 
   const headerProblem = () => {
     if (isOrderReceipt && !orderId) return 'Choose the purchase order these goods are for.'
-    if (source === 'other' && !sourceText.trim()) return 'Say where these goods came from.'
+    if (source === 'gift' && !sourceText.trim()) return 'Say who gave these goods or why they are being received.'
     if (!warehouseId) return 'Choose the warehouse the goods go into.'
     if (requireDeliveryNote && !deliveryNote.trim()) return 'Enter the delivery note number. This branch requires one on every receipt.'
     if (countedLines.length === 0) return 'Count at least one item.'
@@ -512,7 +512,7 @@ function NewReceiptForm() {
       warehouse: warehouseId,
       delivery_note: deliveryNote.trim() || null,
       received_on: receivedOn || null,
-      source_label: source === 'other' ? sourceText.trim() : null,
+      source_label: source === 'gift' ? sourceText.trim() : null,
       notes: notes.trim() || null,
     },
     lines: countedLines.map((line) => ({
@@ -608,9 +608,9 @@ function NewReceiptForm() {
               </SelectContent>
             </Select>
           </Labelled>
-        ) : source === 'other' ? (
+        ) : source === 'gift' ? (
           <Labelled label="Where it came from" className="lg:col-span-2">
-            <Input value={sourceText} onChange={(event) => setSourceText(event.target.value)} className="h-7 text-xs" placeholder="e.g. Sample from a supplier visit" />
+            <Input value={sourceText} onChange={(event) => setSourceText(event.target.value)} className="h-7 text-xs" placeholder="Who gave these goods, or why are they being received?" />
           </Labelled>
         ) : (
           <div className="lg:col-span-2" />

@@ -32,12 +32,11 @@ export const RECEIPT_SOURCES = [
   { value: 'purchase_order', label: 'Purchase order' },
   { value: 'gift', label: 'Gift or donation' },
   { value: 'opening_stock', label: 'Opening stock' },
-  { value: 'other', label: 'Other' },
 ]
 
 export function sourceLabel(receipt) {
-  const value = receipt?.source || (receipt?.purchase_order ? 'purchase_order' : 'other')
-  return RECEIPT_SOURCES.find((entry) => entry.value === value)?.label || 'Other'
+  const value = receipt?.source || (receipt?.purchase_order ? 'purchase_order' : 'gift')
+  return RECEIPT_SOURCES.find((entry) => entry.value === value)?.label || 'Gift or donation'
 }
 
 const TONES = {
@@ -157,33 +156,21 @@ export async function fetchReturnReserved(holdIds) {
 }
 
 // UI-only check; the database functions are the real enforcement.
-// scope: 'inventory' (default), 'inventory_operations', 'inventory_warehouses'
-// or 'inventory_settings'.
-//
-// useInventoryAccess says more than yes/no: it also says whether the answer
-// has arrived yet and, if the check itself failed, why. Use it where a page
-// would otherwise show "no permission" for a moment while it is still asking.
-export function useInventoryAccess(verb, scope = 'inventory') {
+// scope: 'inventory' (default), 'inventory_operations', 'inventory_warehouses' or 'inventory_settings'.
+export function useInventoryCan(verb, scope = 'inventory') {
   const { branchId } = useParams()
-  const [state, setState] = useState({ allowed: false, loading: true, error: '' })
+  const [allowed, setAllowed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     async function check() {
       if (!branchId) return
-      setState({ allowed: false, loading: true, error: '' })
       const { data, error } = await supabase.rpc('inventory_can', {
         p_branch: branchId,
         p_scope: scope,
         p_verb: verb,
       })
-      if (cancelled) return
-      if (error) {
-        console.error(`Permission check failed (${scope}:${verb}):`, error)
-        setState({ allowed: false, loading: false, error: error.message || 'The permission check failed.' })
-        return
-      }
-      setState({ allowed: data === true, loading: false, error: '' })
+      if (!cancelled) setAllowed(!error && data === true)
     }
     check()
     return () => {
@@ -191,11 +178,7 @@ export function useInventoryAccess(verb, scope = 'inventory') {
     }
   }, [branchId, verb, scope])
 
-  return state
-}
-
-export function useInventoryCan(verb, scope = 'inventory') {
-  return useInventoryAccess(verb, scope).allowed
+  return allowed
 }
 
 export function EmptyState({ children }) {

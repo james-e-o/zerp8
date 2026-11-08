@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import PageHeader from '@/components/PageHeader'
 import TabNav from '@/components/modules/sales/TabNav'
 
@@ -9,6 +10,7 @@ const TABS = [
   { label: 'Picking', value: 'picking' },
   { label: 'Ready', value: 'ready' },
   { label: 'Returns', value: 'returns' },
+  { label: 'Write-offs & gifts', value: 'write-offs' },
   { label: 'Done', value: 'done' },
   { label: 'POS', value: 'pos' },
 ]
@@ -22,6 +24,14 @@ export default async function OutgoingLayout({ children, params }) {
       <PageHeader
         title="Outgoing"
         description="Pick, hand over and confirm everything that leaves the branch."
+        action={
+          <Link
+            href={`${basePath}/new`}
+            className="h-7 rounded-md bg-core px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-core/90"
+          >
+            New outgoing
+          </Link>
+        }
       />
       <TabNav tabs={TABS} basePath={basePath} />
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>

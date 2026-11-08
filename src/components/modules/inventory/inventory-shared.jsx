@@ -33,11 +33,23 @@ export function formatQty(value) {
 
 export function formatMoney(value, currency) {
   const number = Number(value || 0)
-  const text = number.toLocaleString(undefined, {
+  const options = {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })
-  return currency ? `${currency} ${text}` : text
+  }
+
+  if (!currency) return number.toLocaleString(undefined, options)
+
+  try {
+    return new Intl.NumberFormat('en-US', {
+      ...options,
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+    }).format(number)
+  } catch {
+    return `${currency} ${number.toLocaleString('en-US', options)}`
+  }
 }
 
 export function formatDate(value) {

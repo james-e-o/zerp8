@@ -149,6 +149,21 @@ html.dark {
   color-scheme: dark;
 }
 
+.dark [class~="hover:bg-white"]:hover,
+.dark [class~="hover:bg-gray-50"]:hover,
+.dark [class~="hover:bg-gray-100"]:hover,
+.dark [class~="hover:bg-gray-200"]:hover,
+.dark [class~="hover:bg-zinc-50"]:hover,
+.dark [class~="hover:bg-zinc-100"]:hover,
+.dark [class~="hover:bg-slate-50"]:hover,
+.dark [class~="hover:bg-slate-100"]:hover,
+.dark [class~="hover:bg-neutral-50"]:hover,
+.dark [class~="hover:bg-neutral-100"]:hover,
+.dark [class~="hover:bg-stone-50"]:hover,
+.dark [class~="hover:bg-stone-100"]:hover {
+  background-color: var(--secondary) !important;
+}
+
 .dark .sales-document-summary {
   background-color: #171717 !important;
   border-color: var(--border) !important;
@@ -482,6 +497,20 @@ label.rcp-field-label{
   padding: 0 1rem;
   margin: 1rem 1rem 1rem 0.4rem;
   list-style: disc;
+}
+
+.receipt-decision-panel {
+  background-color: rgb(255 251 235 / 40%);
+}
+
+.dark .receipt-decision-panel {
+  border-color: #78520f !important;
+  background-color: #171717 !important;
+}
+
+.dark .receipt-held-items {
+  border-color: #4a3917 !important;
+  background-color: #111111 !important;
 }
 .tiptap ol {
   padding: 0 1rem;

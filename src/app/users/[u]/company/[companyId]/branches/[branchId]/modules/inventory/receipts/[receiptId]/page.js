@@ -388,12 +388,12 @@ export default function ReceiptDetailPage() {
       )}
 
       {heldPiles.length > 0 && (
-        <section className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+        <section className="receipt-decision-panel space-y-2 rounded-lg border border-amber-200 p-3">
           <div>
             <h3 className="text-xs font-semibold text-gray-800">Needs a decision</h3>
             {hint && <p className="mt-0.5 text-[11px] text-gray-600">{hint}</p>}
           </div>
-          <div className="divide-y divide-amber-100 rounded-md border border-amber-100 bg-white">
+          <div className="receipt-held-items divide-y divide-amber-100 rounded-md border border-amber-100 bg-white">
             {heldPiles.map((hold) => {
               const line = lines.find((row) => row.id === hold.purchase_receipt_line_item)
               const info = nameOf(line?.variant || hold.variant)

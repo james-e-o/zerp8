@@ -22,9 +22,8 @@ import { ErrorNote, useInventoryCan } from '@/components/modules/inventory/recei
 
 const SOURCES = [
   { value: 'purchase_order', label: 'Purchase order', text: 'Goods ordered from a supplier.' },
-  { value: 'gift', label: 'Gift or donation', text: 'Goods given to you, with no order behind them.' },
+  { value: 'gift', label: 'Gift or donation', text: 'Goods given to you, with no order behind them; the person says who gave them or why.' },
   { value: 'opening_stock', label: 'Opening stock', text: 'Stock counted in when you start using the system. Switch off once that is done.' },
-  { value: 'other', label: 'Other', text: 'Anything else; the person says where it came from.' },
 ]
 
 const EXCESS = [

@@ -1,1 +1,5 @@
-export { default } from "../page";
+import ReturnsList from '@/components/modules/sales/returns-list'
+
+export default function Page() {
+  return <ReturnsList view="requested" />
+}
