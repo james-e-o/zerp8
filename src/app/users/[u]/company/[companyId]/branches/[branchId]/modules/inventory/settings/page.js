@@ -129,11 +129,11 @@ export default function GeneralInventorySettingsPage() {
     setEditing(false)
   }
 
-  if (loading && !editing) return <p className="p-6 text-xs text-gray-500">Loading settings...</p>
-  if (loadError) return <div className="p-6"><ErrorNote>{loadError}</ErrorNote></div>
+  if (loading && !editing) return <p className="p-1 text-xs text-gray-500">Loading settings...</p>
+  if (loadError) return <div className="p-1"><ErrorNote>{loadError}</ErrorNote></div>
 
   return (
-    <div className="max-w-2xl space-y-6 p-6">
+    <div className="max-w-2xl space-y-3 p-1">
       <div className="flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">How inventory documents are numbered.</p>
         {canEdit && !editing && (

@@ -114,7 +114,7 @@ export default function PurchaseOrderDetailPage() {
         const lineIds = (lineRows || []).map((row) => row.id)
         if (lineIds.length > 0) {
           const { data: holdRows } = await supabase
-            .from('purchase_receipt_holds')
+            .from('quarantine_holds')
             .select('purchase_order_line_item, quantity')
             .in('purchase_order_line_item', lineIds)
             .in('status', ['awaiting_review', 'damaged'])

@@ -774,6 +774,7 @@ const CreateProductPage = () => {
           upc: variant.upc || null,
           ean: variant.ean || null,
           isbn: variant.isbn || null,
+          barcode: (variant.barcode || '').trim() || null,
         };
       });
 
@@ -786,6 +787,9 @@ const CreateProductPage = () => {
         standardPrices[sku] = {
           selling_price: parseFloat(variant.sellingPrice || standardPricing.sellingPrice) || 0,
           margin_percentage: parseFloat(standardPricing.marginPercentage) || null,
+          min_margin_percentage: standardPricing.minMarginPercentage !== '' && standardPricing.minMarginPercentage != null
+            ? parseFloat(standardPricing.minMarginPercentage)
+            : null,
         };
       });
 

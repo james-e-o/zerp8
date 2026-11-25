@@ -113,7 +113,7 @@ export default function Page() {
          supplier_row:suppliers ( id, name ),
          purchase_return_line_items (
            id, source, variant, quantity, unit_cost_snapshot, line_total, hold,
-           holds:purchase_receipt_holds ( kind ),
+           holds:quarantine_holds ( hold_type ),
            receipt_line:purchase_receipt_line_items ( purchase_receipt:purchase_receipts ( receipt_number ) )
          )`
       )

@@ -171,7 +171,7 @@ export default function CostingSettingsPage() {
   const policy = NEGATIVE_POLICIES.find((entry) => entry.value === draft.negative_stock_policy)
 
   return (
-    <div className="max-w-2xl space-y-6 p-6">
+    <div className="max-w-2xl space-y-3 p-1">
       <p className="text-xs text-gray-500">
         How stock is valued, which cost prices are based on, and what happens when stock runs out.
       </p>

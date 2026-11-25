@@ -7,7 +7,11 @@ import { toast } from 'sonner'
 
 import supabase from '@/config/supabaseClient'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,13 +22,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { OrderStatusPill, ReturnPill, formatDate, useMoney } from '@/components/modules/sales/quotation-shared'
+import { ReturnPill, formatDate, useMoney } from '@/components/modules/sales/quotation-shared'
+import { OrderStatusBadge, OrderTags } from '@/components/modules/sales/order-status-tags'
 import { InvoiceStatusPill } from '@/components/modules/sales/invoice-shared'
 import { DeliveryStatusPill } from '@/components/modules/sales/delivery-shared'
+import { useQuotationCatalog, resolveQuotationPrice } from '@/components/modules/sales/quotation-catalog'
 
-// A created sales order. It starts Open and its lines are locked. What can still happen here:
-// reserve / release stock, cancel (while nothing is delivered or invoiced), print, and
-// duplicate a cancelled order into a new draft (the way to change a price).
+// A created sales order. It starts Open and stays editable (with a reason, kept in the change history):
+//  - a line's price is locked while a live pro forma or invoice includes it (cancel that document first);
+//  - quantities can change but never below what was delivered / invoiced; lines that were not delivered
+//    or invoiced and are on no document can be removed; new lines can be added;
+//  - the order cannot be cancelled once a delivery exists;
+//  - "Complete order" seals it for good (leftover items that were never supplied are written off).
+// Also: reserve / release stock, print, and duplicate a cancelled order into a new draft.
 export default function SalesOrderDetailPage({ orderId }) {
   const router = useRouter()
   const { u, companyId, branchId } = useParams()
@@ -33,6 +43,7 @@ export default function SalesOrderDetailPage({ orderId }) {
   const base = `${salesBase}/orders`
 
   const [order, setOrder] = useState(null)
+  const [tags, setTags] = useState(null) // Delivery / Invoicing / Payment tags
   const [reserved, setReserved] = useState({})
   const [deliveries, setDeliveries] = useState([])
   const [invoices, setInvoices] = useState([])
@@ -42,9 +53,16 @@ export default function SalesOrderDetailPage({ orderId }) {
   const [working, setWorking] = useState(false)
   const [action, setAction] = useState(null) // 'cancel' | 'release'
   const [cancelReason, setCancelReason] = useState('')
-  const [keepDelivered, setKeepDelivered] = useState(false)
   const [check, setCheck] = useState(null) // result of order_cancellation_check
   const [checking, setChecking] = useState(false)
+  const [changes, setChanges] = useState([])
+  const [locks, setLocks] = useState({}) // order line id -> number of the pro forma / invoice that locks its price
+  const [completion, setCompletion] = useState(null) // result of sales_order_completion_check
+  const [completeNote, setCompleteNote] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editLines, setEditLines] = useState([])
+  const [editReason, setEditReason] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -54,7 +72,7 @@ export default function SalesOrderDetailPage({ orderId }) {
       .select(
         `id, order_number, status, order_date, requested_delivery_date, promised_delivery_date, notes, currency,
          discount_type, discount_value, apply_vat, vat_rate, subtotal, discount_total, vat_total, total,
-         reserve_stock, return_status, cancel_reason, cancelled_at, confirmed_at, quotation, duplicated_from,
+         reserve_stock, return_status, cancel_reason, cancelled_at, confirmed_at, completed_at, completion_note, quotation, duplicated_from,
          customer:customers!sales_orders_customer_fkey ( id, name, customer_number, email, phone, address ),
          warehouse:warehouses!sales_orders_warehouse_fkey ( * ),
          sales_order_line_items ( id, description_snapshot, variant_label_snapshot, sku_snapshot, quantity_ordered,
@@ -132,6 +150,34 @@ export default function SalesOrderDetailPage({ orderId }) {
     } else {
       setOrderMoney(moneyRow)
     }
+    const { data: lockData, error: lockError } = await supabase.rpc('sales_order_line_locks', { p_order: orderId })
+    if (lockError || lockData?.success === false) {
+      console.error('Could not read price locks:', lockError || lockData)
+      toast.error(lockError?.message || lockData?.error || 'Could not read price locks.')
+      setLocks({})
+    } else {
+      setLocks(lockData?.locks || {})
+    }
+    const { data: tagRows, error: tagError } = await supabase.rpc('sales_order_status_tags', { p_branch: branchId, p_order: orderId })
+    if (tagError) {
+      console.error('Could not read the order tags:', tagError)
+      toast.error(tagError.message || 'Could not read the order tags.')
+      setTags(null)
+    } else {
+      setTags((tagRows || [])[0] || null)
+    }
+    const { data: changeRows, error: changeError } = await supabase
+      .from('sales_order_changes')
+      .select('id, changed_at, reason, before_lines, after_lines')
+      .eq('sales_order', orderId)
+      .order('changed_at', { ascending: false })
+    if (changeError) {
+      console.error('Could not read the change history:', changeError)
+      toast.error(changeError.message)
+      setChanges([])
+    } else {
+      setChanges(changeRows || [])
+    }
     setLoading(false)
   }, [orderId, branchId])
 
@@ -178,9 +224,9 @@ export default function SalesOrderDetailPage({ orderId }) {
 
   // The dependency check behind the Cancel dialog: what is open, what went out, what is
   // invoiced or paid, and exactly what has to be cleared before the order can be cancelled.
-  const runCheck = useCallback(async (keep) => {
+  const runCheck = useCallback(async () => {
     setChecking(true)
-    const { data, error } = await supabase.rpc('order_cancellation_check', { p_order: orderId, p_keep_delivered: keep })
+    const { data, error } = await supabase.rpc('order_cancellation_check', { p_order: orderId, p_keep_delivered: false })
     setChecking(false)
     if (error || !data?.success) {
       const message = error?.message || data?.error || 'Could not check this order.'
@@ -193,16 +239,10 @@ export default function SalesOrderDetailPage({ orderId }) {
   }, [orderId])
 
   const openCancel = () => {
-    setKeepDelivered(false)
     setCancelReason('')
     setCheck(null)
     setAction('cancel')
-    runCheck(false)
-  }
-
-  const toggleKeep = (value) => {
-    setKeepDelivered(value)
-    runCheck(value)
+    runCheck()
   }
 
   const handleCancel = async () => {
@@ -212,16 +252,103 @@ export default function SalesOrderDetailPage({ orderId }) {
     }
     const data = await run(
       'cancel_sales_order',
-      { p_order: orderId, p_reason: cancelReason, p_keep_delivered: keepDelivered },
+      { p_order: orderId, p_reason: cancelReason, p_keep_delivered: false },
       'Order cancelled.',
       'Could not cancel the order.'
     )
     if (!data) {
-      runCheck(keepDelivered)
+      runCheck()
       return
     }
     setAction(null)
     setCancelReason('')
+    load()
+  }
+
+  const openComplete = async () => {
+    setCompleteNote('')
+    setCompletion(null)
+    setAction('complete')
+    const { data, error } = await supabase.rpc('sales_order_completion_check', { p_order: orderId })
+    if (error || !data?.success) {
+      const message = error?.message || data?.error || 'Could not check this order.'
+      console.error('sales_order_completion_check failed:', error || data)
+      toast.error(message)
+      setAction(null)
+      return
+    }
+    setCompletion(data)
+  }
+
+  const handleComplete = async () => {
+    const data = await run('complete_sales_order', { p_order: orderId, p_note: completeNote.trim() || null }, 'Order completed and sealed.', 'Could not complete the order.')
+    if (!data) return
+    setAction(null)
+    load()
+  }
+
+  const startEdit = () => {
+    setEditReason('')
+    setEditLines(
+      (order.sales_order_line_items || [])
+        .slice()
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+        .map((line) => ({
+          id: line.id,
+          description: line.description_snapshot,
+          detail: [line.variant_label_snapshot, line.sku_snapshot].filter(Boolean).join(' · '),
+          quantity: String(Number(line.quantity_ordered)),
+          unitPrice: String(Number(line.unit_price_snapshot)),
+          priceLock: locks[line.id] || '',
+          floor: Math.max(Number(line.quantity_delivered), Number(line.quantity_invoiced)),
+          locked: Number(line.quantity_delivered) > 0 || Number(line.quantity_invoiced) > 0 || Number(line.quantity_returned) > 0 || Boolean(locks[line.id]),
+        }))
+    )
+    setEditing(true)
+  }
+
+  const updateEditLine = (index, patch) => setEditLines((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
+
+  const handleSaveEdit = async () => {
+    if (editReason.trim().length < 10) {
+      toast.error('Give a reason for the change (at least 10 characters).')
+      return
+    }
+    if (editLines.length === 0) {
+      toast.error('The order must keep at least one item.')
+      return
+    }
+    for (const row of editLines) {
+      const quantity = Number(row.quantity)
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        toast.error(`Enter a quantity above zero for ${row.description}, or remove the line.`)
+        return
+      }
+      if (row.id && quantity < row.floor) {
+        toast.error(`${row.description} cannot go below ${row.floor} (already delivered or invoiced).`)
+        return
+      }
+      if (!Number.isFinite(Number(row.unitPrice)) || Number(row.unitPrice) < 0) {
+        toast.error(`Enter a price for ${row.description}.`)
+        return
+      }
+    }
+    const payload = editLines.map((row) =>
+      row.id
+        ? { id: row.id, quantity: Number(row.quantity), unit_price: Number(row.unitPrice) }
+        : {
+            variant: row.variant,
+            quantity: Number(row.quantity),
+            unit_price: Number(row.unitPrice),
+            description_snapshot: row.description,
+            variant_label_snapshot: row.variantLabel || '',
+            sku_snapshot: row.sku || '',
+            pricing_context: row.pricingContext || null,
+          }
+    )
+    const data = await run('edit_confirmed_sales_order', { p_order: orderId, p_reason: editReason.trim(), p_header: {}, p_lines: payload }, 'Order updated.', 'Could not update the order.')
+    if (!data) return
+    setEditing(false)
     load()
   }
 
@@ -239,41 +366,57 @@ export default function SalesOrderDetailPage({ orderId }) {
   const isLive = ['open', 'partially_fulfilled'].includes(order.status)
   const anyReserved = Object.values(reserved).some((qty) => qty > 0)
   const isCancelledState = ['cancelled', 'cancelled_partial'].includes(order.status)
-  const canCancel = isLive
+  const anyDelivery = deliveries.some((entry) => entry.status !== 'cancelled') || lines.some((line) => Number(line.quantity_delivered) > 0)
+  const canCancel = isLive && !anyDelivery
+  const canEdit = ['open', 'partially_fulfilled', 'fulfilled'].includes(order.status)
   const leftToInvoice = lines.some(
-    (line) => Number(line.quantity_ordered) - Number(line.quantity_cancelled) - Number(line.quantity_invoiced) > 0
+    (line) => Math.max(Number(line.quantity_ordered) - Number(line.quantity_cancelled), Number(line.quantity_delivered)) - Number(line.quantity_invoiced) > 0
   )
   const canInvoice = ['open', 'partially_fulfilled', 'fulfilled', 'cancelled_partial'].includes(order.status) && leftToInvoice
-  const anyDelivered = lines.some((line) => Number(line.quantity_delivered) > 0)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-bold tracking-tight text-slate-900">{order.order_number}</h2>
-          <OrderStatusPill status={order.status} />
+          <OrderStatusBadge status={order.status} />
           <ReturnPill status={order.return_status} />
+          <OrderTags tags={tags} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => window.print()}>Print / PDF</Button>
-          {isLive && (
+          {isLive && !editing && (
             <Button asChild className="h-8 bg-core text-xs text-white">
               <Link href={`${salesBase}/deliveries/new?order=${orderId}`}>Create delivery</Link>
             </Button>
           )}
-          {canInvoice && (
+          {canEdit && !editing && (
+            <Button type="button" variant="outline" className="h-8 text-xs" disabled={working} onClick={startEdit}>Edit order</Button>
+          )}
+          {canEdit && !editing && (
+            <Button type="button" variant="outline" className="h-8 text-xs" disabled={working} onClick={openComplete}>Complete order</Button>
+          )}
+          {canInvoice && !editing && (
             <Button asChild variant="outline" className="h-8 text-xs">
               <Link href={`${salesBase}/invoices/sales-invoices/new?order=${orderId}`}>Create invoice</Link>
             </Button>
           )}
-          {isLive && (
+          {canInvoice && ['open', 'partially_fulfilled'].includes(order.status) && !editing && (
+            <Button asChild variant="outline" className="h-8 text-xs">
+              <Link href={`${salesBase}/invoices/proforma-invoices/new?order=${orderId}`}>Create pro forma</Link>
+            </Button>
+          )}
+          {isLive && !editing && (
             <Button type="button" variant="outline" className="h-8 text-xs" disabled={working} onClick={handleReserve}>Reserve stock</Button>
           )}
-          {isLive && anyReserved && (
+          {isLive && anyReserved && !editing && (
             <Button type="button" variant="outline" className="h-8 text-xs" disabled={working} onClick={() => setAction('release')}>Release reservation</Button>
           )}
-          {canCancel && (
+          {canCancel && !editing && (
             <Button type="button" variant="outline" className="h-8 text-xs text-red-600" disabled={working} onClick={openCancel}>Cancel order</Button>
+          )}
+          {isLive && anyDelivery && !editing && (
+            <Button type="button" variant="outline" className="h-8 text-xs" disabled title="An order with a delivery cannot be cancelled. Remove undelivered items or process a return.">Cancel order</Button>
           )}
           {order.status === 'fulfilled' && (
             <Button type="button" variant="outline" className="h-8 text-xs" disabled title="Completed orders can't be cancelled. Use a return or credit note.">Cancel order</Button>
@@ -293,6 +436,26 @@ export default function SalesOrderDetailPage({ orderId }) {
             ? 'Duplicate it to make a corrected order.'
             : 'What was delivered stays on record; only the open quantity was cancelled.'}
         </p>
+      )}
+      {order.status === 'completed' && (
+        <p className="rounded-sm border border-emerald-200 bg-emerald-50 p-2 text-emerald-800 print:hidden">
+          Completed and sealed{order.completed_at ? ` on ${formatDate(order.completed_at)}` : ''}.{order.completion_note ? ` Note: ${order.completion_note}` : ''}
+        </p>
+      )}
+      {editing && (
+        <div className="space-y-2 rounded-sm border border-amber-200 bg-amber-50 p-3 text-amber-900 print:hidden">
+          <p className="font-medium">Editing this order</p>
+          <p>
+            Change quantities, remove items that were not delivered or invoiced, or add items. A price that sits on a pro forma or invoice is locked (cancel that document first).
+            Every change is recorded with your reason.
+          </p>
+          <Textarea value={editReason} onChange={(event) => setEditReason(event.target.value)} placeholder="Reason for the change (at least 10 characters)" className="min-h-16 bg-white text-xs" />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" className="h-8 bg-white text-xs" disabled={working} onClick={() => setAddOpen(true)}>Add item</Button>
+            <Button type="button" className="h-8 bg-core text-xs text-white" disabled={working} onClick={handleSaveEdit}>{working ? 'Saving...' : 'Save changes'}</Button>
+            <Button type="button" variant="outline" className="h-8 bg-white text-xs" disabled={working} onClick={() => setEditing(false)}>Discard</Button>
+          </div>
+        </div>
       )}
       {order.quotationRow && (
         <p className="rounded-sm border border-border bg-muted/40 p-2 print:hidden">
@@ -345,33 +508,70 @@ export default function SalesOrderDetailPage({ orderId }) {
               <th className="px-3 py-2 text-right font-medium">Unit price</th>
               <th className="px-3 py-2 text-right font-medium">Discount</th>
               <th className="px-3 py-2 text-right font-medium">Line total</th>
+              <th className="px-3 py-2 text-left font-medium print:hidden">Price</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {lines.map((line) => (
-              <tr key={line.id}>
-                <td className="px-3 py-2">
-                  <p className="font-medium text-foreground">{line.description_snapshot}</p>
-                  {(line.variant_label_snapshot || line.sku_snapshot) && (
-                    <p className="text-[10px] text-muted-foreground">{[line.variant_label_snapshot, line.sku_snapshot].filter(Boolean).join(' · ')}</p>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right">{Number(line.quantity_ordered)}</td>
-                <td className="px-3 py-2 text-right print:hidden">{Number(reserved[line.id] || 0) || '—'}</td>
-                <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_delivered)}</td>
-                <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_returned) || '—'}</td>
-                <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_cancelled) || '—'}</td>
-                <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_invoiced)}</td>
-                <td className="px-3 py-2 text-right">{money(line.unit_price_snapshot)}</td>
-                <td className="px-3 py-2 text-right text-muted-foreground">
-                  {Number(line.discount_value) > 0 ? (line.discount_type === 'percentage' ? `${Number(line.discount_value)}%` : money(line.discount_value)) : '—'}
-                </td>
-                <td className="px-3 py-2 text-right font-medium">{money(line.line_total)}</td>
-              </tr>
-            ))}
+            {editing
+              ? editLines.map((row, index) => (
+                  <tr key={row.id || `new-${index}`}>
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-foreground">{row.description}</p>
+                      {row.detail && <p className="text-[10px] text-muted-foreground">{row.detail}</p>}
+                      {!row.id && <p className="text-[10px] text-amber-700">New item</p>}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Input type="number" min={row.floor || 0} step="any" value={row.quantity} onChange={(event) => updateEditLine(index, { quantity: event.target.value })} className="ml-auto h-8 w-24 text-right text-xs" />
+                      {row.floor > 0 && <p className="mt-0.5 text-[10px] text-muted-foreground">min {row.floor}</p>}
+                    </td>
+                    <td colSpan={5} className="px-3 py-2 text-right text-[10px] text-muted-foreground print:hidden">
+                      {row.locked ? (row.priceLock ? `On ${row.priceLock}: cannot be removed` : 'Delivered or invoiced: cannot be removed') : ''}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Input type="number" min="0" step="any" value={row.unitPrice} disabled={Boolean(row.priceLock)} onChange={(event) => updateEditLine(index, { unitPrice: event.target.value })} className="ml-auto h-8 w-28 text-right text-xs" />
+                    </td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+                    <td className="px-3 py-2 text-right font-medium">{money(Number(row.quantity || 0) * Number(row.unitPrice || 0))}</td>
+                    <td className="px-3 py-2 print:hidden">
+                      {row.priceLock ? <span className="text-amber-700">Price locked by {row.priceLock}</span> : <span className="text-muted-foreground">Price editable</span>}
+                      {!row.locked && (
+                        <Button type="button" variant="outline" className="ml-2 h-7 text-[10px] text-red-600" onClick={() => setEditLines((current) => current.filter((_, rowIndex) => rowIndex !== index))}>Remove</Button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              : lines.map((line) => (
+                  <tr key={line.id}>
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-foreground">{line.description_snapshot}</p>
+                      {(line.variant_label_snapshot || line.sku_snapshot) && (
+                        <p className="text-[10px] text-muted-foreground">{[line.variant_label_snapshot, line.sku_snapshot].filter(Boolean).join(' · ')}</p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">{Number(line.quantity_ordered)}</td>
+                    <td className="px-3 py-2 text-right print:hidden">{Number(reserved[line.id] || 0) || '—'}</td>
+                    <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_delivered)}</td>
+                    <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_returned) || '—'}</td>
+                    <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_cancelled) || '—'}</td>
+                    <td className="px-3 py-2 text-right print:hidden">{Number(line.quantity_invoiced)}</td>
+                    <td className="px-3 py-2 text-right">{money(line.unit_price_snapshot)}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">
+                      {Number(line.discount_value) > 0 ? (line.discount_type === 'percentage' ? `${Number(line.discount_value)}%` : money(line.discount_value)) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium">{money(line.line_total)}</td>
+                    <td className="px-3 py-2 print:hidden">
+                      {locks[line.id] ? (
+                        <Link href={`${salesBase}/invoices`} className="text-amber-700" title="Cancel this document to change the price">Locked by {locks[line.id]}</Link>
+                      ) : (
+                        <span className="text-muted-foreground">Editable</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
           </tbody>
         </table>
 
+        {editing && <p className="mt-3 text-right text-[10px] text-muted-foreground print:hidden">Order totals are recalculated when you save.</p>}
         <div className="mt-4 ml-auto w-full max-w-xs space-y-1.5">
           <Row label="Subtotal" value={money(order.subtotal)} />
           {Number(order.discount_total) > 0 && <Row label="Discounts" value={`-${money(order.discount_total)}`} />}
@@ -452,12 +652,79 @@ export default function SalesOrderDetailPage({ orderId }) {
         </div>
       )}
 
+      {changes.length > 0 && (
+        <div className="rounded-sm border border-border bg-card print:hidden">
+          <h3 className="border-b border-border bg-muted px-4 py-2 text-xs font-semibold text-foreground">Change history</h3>
+          <div className="divide-y divide-border">
+            {changes.map((entry) => (
+              <div key={entry.id} className="px-4 py-2">
+                <p className="text-muted-foreground">{formatDate(entry.changed_at)}</p>
+                <p className="font-medium text-foreground">{entry.reason}</p>
+                <ul className="ml-4 list-disc text-muted-foreground">
+                  {describeChange(entry.before_lines, entry.after_lines, money).map((text, index) => <li key={index}>{text}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <AlertDialog open={action === 'complete'} onOpenChange={(open) => { if (!open && !working) setAction(null) }}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Complete {order.order_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Completing seals the order for good: nothing can be edited or added, and no more deliveries or invoices can be made. It cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {!completion && <p className="text-muted-foreground">Checking the order...</p>}
+          {completion && completion.blockers.length > 0 && (
+            <div className="space-y-1 rounded-sm border border-amber-200 bg-amber-50 p-2 text-amber-800">
+              <p className="font-medium">Clear these first:</p>
+              {completion.blockers.map((blocker) => <p key={blocker.kind}>{blocker.message}</p>)}
+            </div>
+          )}
+          {completion && completion.blockers.length === 0 && (
+            <div className="space-y-2">
+              {completion.leftovers.length > 0 ? (
+                <div className="space-y-1 rounded-sm border border-amber-200 bg-amber-50 p-2 text-amber-800">
+                  <p className="font-medium">These items were never delivered, invoiced or paid. They will be written off (cancelled):</p>
+                  <ul className="ml-4 list-disc">
+                    {completion.leftovers.map((entry) => <li key={entry.line}>{entry.description}: {Number(entry.quantity)}</li>)}
+                  </ul>
+                  <Textarea value={completeNote} onChange={(event) => setCompleteNote(event.target.value)} placeholder="Reason for closing without them (required)" className="min-h-16 bg-white text-xs" />
+                </div>
+              ) : (
+                <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-2 text-emerald-800">Everything quoted was supplied and paid for. Nothing is left over.</div>
+              )}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>Not yet</AlertDialogCancel>
+            <AlertDialogAction disabled={working || !completion || completion.blockers.length > 0} onClick={(event) => { event.preventDefault(); handleComplete() }}>
+              {working ? 'Completing...' : 'Complete order'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {addOpen && (
+        <AddItemDialog
+          branchId={branchId}
+          onClose={() => setAddOpen(false)}
+          onAdd={(item) => {
+            setEditLines((current) => [...current, item])
+            setAddOpen(false)
+          }}
+        />
+      )}
+
       <AlertDialog open={action === 'cancel'} onOpenChange={(open) => { if (!open && !working) setAction(null) }}>
         <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel {order.order_number}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Only the quantity not yet delivered is cancelled, and its reserved stock is released. Anything already delivered stays on record. A cancelled order cannot be reopened.
+              The whole order is cancelled and its reserved stock is released. This is possible only while nothing has been delivered. A cancelled order cannot be reopened.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -472,13 +739,6 @@ export default function SalesOrderDetailPage({ orderId }) {
                 <div><p className="text-[10px] text-muted-foreground">Invoiced</p><p className="font-medium">{money(check.invoiced)}</p></div>
                 <div><p className="text-[10px] text-muted-foreground">Paid</p><p className="font-medium">{money(check.paid)}</p></div>
               </div>
-
-              {anyDelivered && (
-                <label className="flex items-start gap-2">
-                  <input type="checkbox" className="mt-0.5" checked={keepDelivered} onChange={(event) => toggleKeep(event.target.checked)} />
-                  <span>The customer keeps what was delivered. Cancel only the rest.</span>
-                </label>
-              )}
 
               {check.blockers.length > 0 ? (
                 <div className="space-y-1 rounded-sm border border-amber-200 bg-amber-50 p-2 text-amber-800">
@@ -541,5 +801,115 @@ function Row({ label, value }) {
       <span>{label}</span>
       <span className="font-medium text-foreground">{value}</span>
     </div>
+  )
+}
+
+// Plain-language list of what a saved edit changed.
+function describeChange(before, after, money) {
+  const out = []
+  const was = new Map((before || []).map((row) => [row.id, row]))
+  const now = new Map((after || []).map((row) => [row.id, row]))
+  ;(after || []).forEach((row) => {
+    const old = was.get(row.id)
+    if (!old) out.push(`Added ${row.description} (${Number(row.quantity)} at ${money(row.unit_price)})`)
+    else {
+      if (Number(old.quantity) !== Number(row.quantity)) out.push(`${row.description}: quantity ${Number(old.quantity)} to ${Number(row.quantity)}`)
+      if (Number(old.unit_price) !== Number(row.unit_price)) out.push(`${row.description}: price ${money(old.unit_price)} to ${money(row.unit_price)}`)
+    }
+  })
+  ;(before || []).forEach((row) => {
+    if (!now.has(row.id)) out.push(`Removed ${row.description}`)
+  })
+  return out.length ? out : ['No item changes']
+}
+
+// Picks a product to add to the order. Loads the catalog only while it is open.
+function AddItemDialog({ branchId, onClose, onAdd }) {
+  const { defaultContext, catalog, pricingRules, loading, error } = useQuotationCatalog(branchId)
+  const [variantId, setVariantId] = useState('')
+  const [quantity, setQuantity] = useState('1')
+  const [price, setPrice] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const variant = catalog.find((entry) => entry.id === variantId)
+  const label = variant ? [variant.productTitle, variant.variantLabel].filter(Boolean).join(' - ') : 'Choose a product'
+
+  const choose = (id) => {
+    const picked = catalog.find((entry) => entry.id === id)
+    setVariantId(id)
+    setPickerOpen(false)
+    setPrice(String(resolveQuotationPrice(picked, defaultContext?.id, pricingRules, Number(quantity) || 1) ?? 0))
+  }
+
+  const submit = () => {
+    if (!variant) return toast.error('Choose a product.')
+    if (!(Number(quantity) > 0)) return toast.error('Enter a quantity above zero.')
+    if (!(Number(price) >= 0) || price === '') return toast.error('Enter a price.')
+    onAdd({
+      variant: variant.id,
+      description: variant.productTitle || 'Item',
+      variantLabel: variant.variantLabel || '',
+      sku: variant.sku || '',
+      detail: [variant.variantLabel, variant.sku].filter(Boolean).join(' · '),
+      pricingContext: defaultContext?.id || null,
+      quantity: String(Number(quantity)),
+      unitPrice: String(Number(price)),
+      confirmed: false,
+      floor: 0,
+      locked: false,
+    })
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add an item</DialogTitle>
+          <DialogDescription>It is saved when you save the order changes.</DialogDescription>
+        </DialogHeader>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        {loading ? (
+          <p className="text-xs text-muted-foreground">Loading products...</p>
+        ) : (
+          <div className="space-y-3 text-xs">
+            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button type="button" variant="outline" className="h-8 w-full justify-start text-xs font-normal">{label}</Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[360px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search products..." />
+                  <CommandList>
+                    <CommandEmpty>No product found.</CommandEmpty>
+                    <CommandGroup>
+                      {catalog.map((entry) => (
+                        <CommandItem key={entry.id} value={`${entry.productTitle} ${entry.variantLabel} ${entry.sku}`} onSelect={() => choose(entry.id)}>
+                          {[entry.productTitle, entry.variantLabel].filter(Boolean).join(' - ')}
+                          {entry.sku ? <span className="ml-2 text-muted-foreground">{entry.sku}</span> : null}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-[10px] text-muted-foreground">
+                Quantity
+                <Input type="number" min="0" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} className="mt-0.5 h-8 text-xs" />
+              </label>
+              <label className="block text-[10px] text-muted-foreground">
+                Unit price
+                <Input type="number" min="0" step="any" value={price} onChange={(event) => setPrice(event.target.value)} className="mt-0.5 h-8 text-xs" />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" className="h-8 text-xs" onClick={onClose}>Cancel</Button>
+              <Button type="button" className="h-8 bg-core text-xs text-white" onClick={submit}>Add to order</Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

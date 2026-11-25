@@ -142,7 +142,7 @@ export default function Home() {
         <div className="mx-auto flex h-[68px] w-[calc(100%-36px)] max-w-[1240px] items-center justify-between sm:h-[72px] sm:w-[calc(100%-64px)]">
           <Brand />
           <nav aria-label="Main navigation" className="hidden items-center gap-8 text-[13px] font-medium text-[#565a6b] md:flex">
-            <a className="transition-colors hover:text-[#5148e5]" href="#product">Product</a><a className="transition-colors hover:text-[#5148e5]" href="#solutions">Solutions</a><a className="transition-colors hover:text-[#5148e5]" href="#features">Features</a><Link className="transition-colors hover:text-[#5148e5]" href="/faqs">Resources</Link>
+            <a className="transition-colors hover:text-[#5148e5]" href="#product">Product</a><a className="transition-colors hover:text-[#5148e5]" href="#solutions">Solutions</a><a className="transition-colors hover:text-[#5148e5]" href="#features">Features</a><Link className="transition-colors hover:text-[#5148e5]" href="/docs">Docs</Link>
           </nav>
           <div className="hidden items-center gap-4 md:flex"><ThemeToggle /><Link className="text-[13px] font-medium text-[#565a6b] hover:text-[#5148e5]" href="/accounts/login">Log in</Link><Link className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#17192a] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-[#5148e5]" href="/accounts/signup">Get started <ArrowRight size={15} /></Link></div>
           <div className="flex items-center gap-2 md:hidden">
@@ -150,7 +150,7 @@ export default function Home() {
             <details className="group relative">
               <summary aria-label="Toggle navigation menu" className="flex size-10 cursor-pointer list-none flex-col items-center justify-center gap-[5px] rounded border border-[#e0dfe5] [&::-webkit-details-marker]:hidden"><span className="h-0.5 w-4 bg-[#17192a]" /><span className="h-0.5 w-4 bg-[#17192a]" /></summary>
             <nav aria-label="Mobile navigation" className="absolute right-0 top-12 hidden w-[min(280px,calc(100vw-36px))] flex-col rounded-md border border-[#e4e3e8] bg-white p-2 shadow-xl group-open:flex">
-              <a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#product">Product</a><a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#solutions">Solutions</a><a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#features">Features</a><Link className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="/faqs">Resources</Link><Link className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="/accounts/login">Log in</Link><Link className="mt-1 flex items-center justify-between rounded bg-[#17192a] px-3 py-3 text-xs font-semibold text-white" href="/accounts/signup">Get started <ArrowRight size={15} /></Link>
+              <a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#product">Product</a><a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#solutions">Solutions</a><a className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="#features">Features</a><Link className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="/docs">Docs</Link><Link className="rounded px-3 py-3 text-xs hover:bg-[#f6f5fb]" href="/accounts/login">Log in</Link><Link className="mt-1 flex items-center justify-between rounded bg-[#17192a] px-3 py-3 text-xs font-semibold text-white" href="/accounts/signup">Get started <ArrowRight size={15} /></Link>
             </nav>
             </details>
           </div>
@@ -265,7 +265,7 @@ export default function Home() {
           <div className="max-w-[225px]"><Brand inverse /><p className="mt-3 text-[10px] leading-5 text-[#a8a9b5]">Connected tools for the day-to-day work of growing businesses.</p></div>
           <div className="flex justify-between gap-5 sm:gap-12 md:gap-20">
             <div className="flex flex-col gap-2.5 text-[9px]"><strong className="mb-1 text-[10px]">Explore</strong><a className="text-[#a8a9b5] hover:text-white" href="#product">Product</a><a className="text-[#a8a9b5] hover:text-white" href="#solutions">Solutions</a><a className="text-[#a8a9b5] hover:text-white" href="#features">Features</a></div>
-            <div className="flex flex-col gap-2.5 text-[9px]"><strong className="mb-1 text-[10px]">Resources</strong><Link className="text-[#a8a9b5] hover:text-white" href="/about">About ZERP-8</Link><Link className="text-[#a8a9b5] hover:text-white" href="/faqs">FAQs</Link><Link className="text-[#a8a9b5] hover:text-white" href="/pricing">Pricing</Link></div>
+            <div className="flex flex-col gap-2.5 text-[9px]"><strong className="mb-1 text-[10px]">Docs</strong><Link className="text-[#a8a9b5] hover:text-white" href="/docs">Documentation</Link><Link className="text-[#a8a9b5] hover:text-white" href="/about">About ZERP-8</Link><Link className="text-[#a8a9b5] hover:text-white" href="/faqs">FAQs</Link><Link className="text-[#a8a9b5] hover:text-white" href="/pricing">Pricing</Link></div>
             <div className="flex flex-col gap-2.5 text-[9px]"><strong className="mb-1 text-[10px]">Account</strong><Link className="text-[#a8a9b5] hover:text-white" href="/accounts/login">Log in</Link><Link className="text-[#a8a9b5] hover:text-white" href="/accounts/signup">Get started</Link></div>
           </div>
         </div>

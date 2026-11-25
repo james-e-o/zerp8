@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -67,9 +68,9 @@ export default function ExcessDecisionPage() {
     setLoadError('')
 
     const { data, error } = await supabase
-      .from('purchase_receipt_holds')
+      .from('quarantine_holds')
       .select(
-        `id, kind, status, quantity, note, variant, created_at,
+        `id, hold_type, status, quantity, note, variant, created_at,
          receipt_line:purchase_receipt_line_items (
            purchase_receipt:purchase_receipts (
              id, receipt_number,
@@ -79,10 +80,12 @@ export default function ExcessDecisionPage() {
       )
       .eq('branch', branchId)
       .eq('status', 'awaiting_review')
-      .in('kind', ['excess', 'wrong_item'])
+      .in('hold_type', ['excess', 'wrong_item'])
       .order('created_at', { ascending: true })
 
     if (error) {
+      console.error('Could not load excess goods:', error)
+      toast.error(error.message || 'Could not load excess goods.')
       setLoadError(error.message || 'Could not load excess goods.')
       setHolds([])
     } else {
@@ -115,8 +118,11 @@ export default function ExcessDecisionPage() {
 
     const response = Array.isArray(data) ? data[0] : data
     if (error || response?.success === false) {
+      console.error('Could not accept excess goods:', error || response)
+      toast.error(`${nameOf(target.variant)}: ${error?.message || response?.error || 'Could not be accepted.'}`)
       setResult({ ok: false, text: `${nameOf(target.variant)}: ${error?.message || response?.error || 'Could not be accepted.'}` })
     } else {
+      toast.success(`${nameOf(target.variant)} added to the order. Inventory will check it next.`)
       setResult({
         ok: true,
         text: `${formatQty(qtyFor(target))} × ${nameOf(target.variant)} added to the order. Inventory will check it next.`,
@@ -130,7 +136,7 @@ export default function ExcessDecisionPage() {
 
   const returnLink = (hold) => {
     const order = hold.receipt_line?.purchase_receipt?.purchase_order
-    const reason = hold.kind === 'wrong_item' ? 'Wrong item delivered' : 'Excess delivered'
+    const reason = hold.hold_type === 'wrong_item' ? 'Wrong item delivered' : 'Excess delivered'
     const params = new URLSearchParams({ hold: hold.id, reason })
     if (order?.supplier) params.set('supplier', order.supplier)
     return `${purchaseReturns}/new?${params.toString()}`
@@ -183,7 +189,7 @@ export default function ExcessDecisionPage() {
               {holds.map((hold) => {
                 const receipt = hold.receipt_line?.purchase_receipt
                 const order = receipt?.purchase_order
-                const kind = HOLD_KIND[hold.kind] || { label: hold.kind, tone: 'gray' }
+                const kind = HOLD_KIND[hold.hold_type] || { label: hold.hold_type, tone: 'gray' }
                 const free = freeOf(hold)
                 return (
                   <tr key={hold.id} className="align-top">

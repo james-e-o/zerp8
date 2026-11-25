@@ -559,6 +559,27 @@ export const ProductConfigurations = forwardRef(({
                   : (!calculateSellingPrice(getStandardField('marginValue') || 0) && errors.sellingPrice ? 'Set a margin value to calculate selling price' : 'Auto-calculated: Cost Price + Margin Value')}
               </p>
             </div>
+
+            {/* Minimum margin - the lowest margin this product may be sold at, however many
+                discounts are applied. Optional; blank uses the branch default (if any). */}
+            <div data-field="minMargin">
+              <Label className="text-xs font-medium mb-2 block">
+                Minimum margin % <span className="text-neutral-400 ml-1">(Optional)</span>
+              </Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={getStandardField('minMarginPercentage')}
+                onChange={(e) => { beginEditIfNeeded(); setStandardDraft(prev => ({ ...prev, minMarginPercentage: e.target.value })); }}
+                placeholder="e.g. 10"
+                className="mt-0 h-8 border border-neutral-500 max-w-[200px]"
+              />
+              <p className="text-[10px] text-gray-500 mt-2">
+                A sale price, after any discount, will not be accepted below the cost plus this margin.
+                Leave blank to use the branch's default minimum margin.
+              </p>
+            </div>
           </div>
         </div>
 

@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import QuotationLineItemsTable from '@/components/modules/sales/quotation-line-items-table'
+import SalesOrderLineItemsTable from '@/components/modules/sales/sales-order-line-items-table'
 import CustomerPicker from '@/components/modules/sales/customer-picker'
 import { useQuotationCatalog, resolveQuotationPrice } from '@/components/modules/sales/quotation-catalog'
 import {
@@ -51,8 +51,6 @@ export default function SalesOrderFormPage() {
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [deliveryDate, setDeliveryDate] = useState('')
   const [items, setItems] = useState([emptyQuotationLine()])
-  const [discountType, setDiscountType] = useState('amount')
-  const [discountValue, setDiscountValue] = useState(0)
   const [applyVat, setApplyVat] = useState(true)
   const [vatRate, setVatRate] = useState(null)
   const [notes, setNotes] = useState('')
@@ -111,9 +109,7 @@ export default function SalesOrderFormPage() {
         setCustomerId(p.customerId || '')
         if (p.orderDate) setOrderDate(p.orderDate)
         setDeliveryDate(p.requestedDeliveryDate || '')
-        setItems(Array.isArray(p.items) && p.items.length ? p.items : [emptyQuotationLine()])
-        setDiscountType(p.discountType || 'amount')
-        setDiscountValue(Number(p.discountValue || 0))
+        setItems(Array.isArray(p.items) && p.items.length ? noDiscount(p.items) : [emptyQuotationLine()])
         setApplyVat(p.applyVat !== false)
         setVatRate(p.vatRate ?? null)
         setNotes(p.notes || '')
@@ -135,9 +131,10 @@ export default function SalesOrderFormPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftParam, branchId])
 
+  // Orders carry no discount (VAT only). The discount is given on the invoice.
   const totals = useMemo(
-    () => computeTotals(items, discountType, discountValue, applyVat, effectiveVatRate),
-    [items, discountType, discountValue, applyVat, effectiveVatRate]
+    () => computeTotals(items, 'amount', 0, applyVat, effectiveVatRate),
+    [items, applyVat, effectiveVatRate]
   )
   const filledItems = items.filter((item) => item.variantId)
 
@@ -161,8 +158,6 @@ export default function SalesOrderFormPage() {
         orderDate,
         requestedDeliveryDate: deliveryDate,
         items,
-        discountType,
-        discountValue,
         applyVat,
         vatRate: effectiveVatRate,
         notes,
@@ -230,8 +225,8 @@ export default function SalesOrderFormPage() {
           duplicated_from: source.duplicatedFrom || null,
           order_date: orderDate || null,
           requested_delivery_date: deliveryDate || null,
-          discount_type: discountType,
-          discount_value: Number(discountValue || 0),
+          discount_type: 'amount',
+          discount_value: 0,
           apply_vat: applyVat,
           vat_rate: Number(effectiveVatRate),
           notes,
@@ -320,7 +315,7 @@ export default function SalesOrderFormPage() {
           {catalogLoading ? (
             <p className="text-xs text-gray-500">Loading products and pricing contexts...</p>
           ) : (
-            <QuotationLineItemsTable
+            <SalesOrderLineItemsTable
               items={items}
               setItems={setItems}
               catalog={catalog}
@@ -336,18 +331,6 @@ export default function SalesOrderFormPage() {
 
         <div className="sales-document-summary mt-auto flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-gray-800">
-              <span>Document discount</span>
-              <Select value={discountType} onValueChange={setDiscountType}>
-                <SelectTrigger className="h-7 w-20 bg-white px-2 text-[11px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="amount">Amount</SelectItem>
-                  <SelectItem value="percentage">Percent</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input type="number" min="0" value={discountValue} onChange={(event) => setDiscountValue(Number(event.target.value))} className="h-7 w-20 bg-white px-2 text-[11px]" />
-            </div>
-
             <label className="flex items-center gap-2 text-[11px] font-medium text-gray-700">
               <input type="checkbox" checked={applyVat} onChange={(event) => setApplyVat(event.target.checked)} className="size-3 rounded border-gray-300 text-core focus:ring-core" />
               Apply VAT ({Number(effectiveVatRate).toFixed(1)}%)
@@ -366,8 +349,6 @@ export default function SalesOrderFormPage() {
 
           <div className="w-full max-w-xs shrink-0 space-y-1 sm:ml-auto">
             <SummaryRow label="Subtotal" value={money(totals.subtotal)} />
-            <SummaryRow label="Line discounts" value={`-${money(totals.lineDiscounts)}`} />
-            <SummaryRow label="Document discount" value={`-${money(totals.documentDiscount)}`} />
             {applyVat && <SummaryRow label={`VAT (${Number(effectiveVatRate).toFixed(1)}%)`} value={`+${money(totals.vat)}`} />}
             <div className="my-1 border-t border-dashed border-gray-300" />
             <div className="flex items-center justify-between">
@@ -383,8 +364,8 @@ export default function SalesOrderFormPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Create this order?</AlertDialogTitle>
             <AlertDialogDescription>
-              The order starts as Open and its prices and lines lock. {effectiveReserve ? 'Free stock is reserved for it now.' : 'No stock is reserved; you can reserve it later from the order.'}{' '}
-              To change a price afterwards, cancel the order and duplicate it.
+              The order starts as Open. {effectiveReserve ? 'Free stock is reserved for it now.' : 'No stock is reserved; you can reserve it later from the order.'}{' '}
+              Quantities can still be changed and items added or removed (with a reason). Each price must be confirmed with the customer on the order before that item can be invoiced, and a confirmed price never changes.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -399,6 +380,9 @@ export default function SalesOrderFormPage() {
   )
 }
 
+
+// Old drafts may still carry a discount; it is cleared here (the database ignores it too).
+const noDiscount = (list) => list.map((item) => ({ ...item, discountType: 'amount', discountValue: 0 }))
 
 function SummaryRow({ label, value }) {
   return (

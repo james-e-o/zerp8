@@ -79,9 +79,9 @@ export default function ReceiptsListPage({ view = 'all' }) {
 
     // Quarantine piles that still need a decision, grouped by receipt.
     const { data: holdRows, error: holdError } = await supabase
-      .from('purchase_receipt_holds')
+      .from('quarantine_holds')
       .select(
-        'id, kind, status, quantity, receipt_line:purchase_receipt_line_items ( purchase_receipt )'
+        'id, hold_type, status, quantity, receipt_line:purchase_receipt_line_items ( purchase_receipt )'
       )
       .eq('branch', branchId)
       .in('status', ['awaiting_review', 'damaged'])

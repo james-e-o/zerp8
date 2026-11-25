@@ -29,8 +29,11 @@ import { useVariantNames } from '@/components/modules/procurement/purchase-catal
 //   paid, cancelled, draft
 //        -> not editable. Correct a paid bill with a debit or credit note.
 //
-// Lines come in two kinds: lines on the purchase order, and accepted extras
-// (excess / unexpected goods). Neither kind can bill more than what is left.
+// Lines come in three kinds: lines on the purchase order, accepted extras
+// (excess / unexpected goods), and items not in the catalog (no product yet:
+// name, quantity, price and a note, kept unpayable). The first two cannot bill
+// more than what is left. Items not in the catalog are linked to an order line
+// from the bill page once the product exists.
 
 const EDITABLE = ['unpaid', 'overdue', 'partially_paid', 'pending_approval']
 
@@ -53,7 +56,7 @@ export default function EditBillPage() {
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState('')
 
-  const { names: variantNames } = useVariantNames(lines.map((line) => line.variant))
+  const { names: variantNames } = useVariantNames(lines.map((line) => line.variant).filter(Boolean))
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -70,11 +73,13 @@ export default function EditBillPage() {
         .single(),
       supabase
         .from('purchase_bill_line_items')
-        .select('id, description_snapshot, quantity, unit_price_snapshot, variant, purchase_order_line_item, purchase_receipt_hold')
+        .select('id, description_snapshot, quantity, unit_price_snapshot, variant, purchase_order_line_item, purchase_receipt_hold, is_unlisted, unlisted_note')
         .eq('purchase_bill', billId),
     ])
 
     if (billError || lineError || !billData) {
+      console.error('Could not load this bill:', billError || lineError)
+      toast.error(billError?.message || lineError?.message || 'Bill not found.')
       setLoadError(billError?.message || lineError?.message || 'Bill not found.')
       setLoading(false)
       return
@@ -88,7 +93,7 @@ export default function EditBillPage() {
         ? supabase.from('purchase_order_line_items').select('id, quantity_ordered, quantity_billed').in('id', poLineIds)
         : Promise.resolve({ data: [] }),
       holdIds.length
-        ? supabase.from('purchase_receipt_holds').select('id, kind, quantity, quantity_billed').in('id', holdIds)
+        ? supabase.from('quarantine_holds').select('id, hold_type, quantity, quantity_billed').in('id', holdIds)
         : Promise.resolve({ data: [] }),
     ])
 
@@ -104,6 +109,21 @@ export default function EditBillPage() {
     setLines(
       (lineData || []).map((l) => {
         const current = Number(l.quantity || 0)
+        if (l.is_unlisted) {
+          return {
+            id: l.id,
+            kind: 'unlisted',
+            purchase_order_line_item: null,
+            purchase_receipt_hold: null,
+            variant: null,
+            description: l.description_snapshot || '',
+            note: l.unlisted_note || '',
+            quantity: String(current),
+            price: String(l.unit_price_snapshot ?? ''),
+            cap: Number.POSITIVE_INFINITY,
+            removed: false,
+          }
+        }
         const isHold = Boolean(l.purchase_receipt_hold)
         const source = isHold ? holdById[l.purchase_receipt_hold] : poById[l.purchase_order_line_item]
         // What this bill may bill at most: what is left to bill, plus what
@@ -115,7 +135,7 @@ export default function EditBillPage() {
           : current
         return {
           id: l.id,
-          kind: isHold ? (holdById[l.purchase_receipt_hold]?.kind === 'excess' ? 'excess' : 'unexpected') : 'order',
+          kind: isHold ? (holdById[l.purchase_receipt_hold]?.hold_type === 'excess' ? 'excess' : 'unexpected') : 'order',
           purchase_order_line_item: l.purchase_order_line_item,
           purchase_receipt_hold: l.purchase_receipt_hold,
           variant: l.variant,
@@ -157,6 +177,7 @@ export default function EditBillPage() {
   const subtotal = computed.reduce((sum, line) => sum + line.total, 0)
   const total = amountsLocked ? Number(bill?.total || 0) : subtotal + Number(tax || 0)
   const hasOver = computed.some((line) => line.over)
+  const unpayableTotal = computed.filter((line) => line.kind === 'unlisted').reduce((sum, line) => sum + line.total, 0)
   const activeLines = computed.filter((line) => !line.removed)
 
   const updateLine = (id, patch) =>
@@ -174,6 +195,15 @@ export default function EditBillPage() {
       if (activeLines.some((line) => !(line.q > 0))) {
         setSubmitError('Every line needs a quantity above zero. Remove the line if it is not on this bill.')
         toast.error('Every line needs a quantity above zero. Remove the line if it is not on this bill.')
+        return
+      }
+      const badUnlisted = activeLines.find(
+        (line) => line.kind === 'unlisted' && (!line.description.trim() || String(line.note || '').trim().length < 10)
+      )
+      if (badUnlisted) {
+        const message = 'An item that is not in the catalog needs a name and a note of at least 10 characters.'
+        setSubmitError(message)
+        toast.error(message)
         return
       }
       if (hasOver) {
@@ -195,6 +225,7 @@ export default function EditBillPage() {
       p_line_items: amountsLocked
         ? null
         : activeLines.map((line) => ({
+            ...(line.kind === 'unlisted' ? { unlisted: true, unlisted_note: String(line.note || '').trim() } : {}),
             purchase_order_line_item: line.purchase_order_line_item || null,
             purchase_receipt_hold: line.purchase_receipt_hold || null,
             variant: line.variant,
@@ -317,10 +348,35 @@ export default function EditBillPage() {
               {computed.map((line) => (
                 <tr key={line.id} className={line.removed ? 'bg-gray-50/70 opacity-50' : ''}>
                   <td className="max-w-[260px] px-3 py-2">
-                    <p className="text-[10px] leading-[1.15] text-gray-800">
-                      {variantNames[line.variant]?.display || line.description || '—'}
-                    </p>
-                    {line.kind !== 'order' && (
+                    {line.kind === 'unlisted' && !amountsLocked ? (
+                      <div className="space-y-1">
+                        <Input
+                          value={line.description}
+                          disabled={line.removed}
+                          onChange={(event) => updateLine(line.id, { description: event.target.value })}
+                          className="h-7 text-xs"
+                          aria-label="Item name"
+                        />
+                        <Input
+                          value={line.note}
+                          disabled={line.removed}
+                          onChange={(event) => updateLine(line.id, { note: event.target.value })}
+                          className="h-7 text-xs"
+                          placeholder="Why it is not in the catalog"
+                          aria-label="Note"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-[10px] leading-[1.15] text-gray-800">
+                        {variantNames[line.variant]?.display || line.description || '—'}
+                      </p>
+                    )}
+                    {line.kind === 'unlisted' && (
+                      <span className="mt-0.5 inline-flex rounded-sm bg-red-100 px-1.5 py-0.5 text-[9px] font-medium text-red-800">
+                        Not in catalog · unpayable
+                      </span>
+                    )}
+                    {line.kind !== 'order' && line.kind !== 'unlisted' && (
                       <span className="mt-0.5 inline-flex rounded-sm bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800">
                         {line.kind === 'excess' ? 'Excess' : 'Not on order'}
                       </span>
@@ -414,6 +470,9 @@ export default function EditBillPage() {
         <div className="flex flex-col gap-0.5 border-t border-gray-200 pt-3 sm:border-t-0 sm:pt-0 sm:text-right">
           <span className="text-xs font-medium text-gray-700">Total</span>
           <span className="text-xl font-bold tracking-tight text-slate-900">{formatNaira(total)}</span>
+          {unpayableTotal > 0 && (
+            <span className="text-xs font-medium text-red-700">Unpayable: {formatNaira(unpayableTotal)}</span>
+          )}
         </div>
       </div>
 

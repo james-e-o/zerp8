@@ -102,7 +102,7 @@ export const HOLD_STATUS = {
 export function receiptState(receipt, openHolds = []) {
   if (receipt.status === 'draft') return { label: 'Draft', tone: 'gray' }
   if (receipt.status === 'cancelled') return { label: 'Cancelled', tone: 'gray' }
-  if (openHolds.some((hold) => isExtraKind(hold.kind))) return { label: 'Excess pending', tone: 'amber' }
+  if (openHolds.some((hold) => isExtraKind(hold.hold_type))) return { label: 'Excess pending', tone: 'amber' }
   if (openHolds.some((hold) => hold.status === 'damaged')) return { label: 'Damaged held', tone: 'red' }
   if (openHolds.length > 0) return { label: 'In quarantine', tone: 'blue' }
   return { label: 'Done', tone: 'green' }

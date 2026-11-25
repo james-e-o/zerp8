@@ -112,9 +112,9 @@ export default function NewReturnPage() {
           .order('created_at', { ascending: false })
           .limit(1),
         supabase
-          .from('purchase_receipt_holds')
+          .from('quarantine_holds')
           .select(
-            `id, kind, status, quantity, note, variant,
+            `id, hold_type, status, quantity, note, variant,
              receipt_line:purchase_receipt_line_items (
                purchase_receipt:purchase_receipts (
                  receipt_number,
@@ -310,7 +310,7 @@ export default function NewReturnPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {holds.map((hold) => {
-                    const kind = KIND_LABELS[hold.kind] || KIND_LABELS.normal
+                    const kind = KIND_LABELS[hold.hold_type] || KIND_LABELS.normal
                     return (
                       <tr key={hold.id}>
                         <td className="px-4 py-2 text-foreground">{variantNames[hold.variant]?.display || '—'}</td>

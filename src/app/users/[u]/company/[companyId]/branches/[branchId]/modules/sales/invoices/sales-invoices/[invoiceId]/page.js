@@ -22,8 +22,9 @@ import {
 import { formatDate, toDateInput, useMoney } from '@/components/modules/sales/quotation-shared'
 import { InvoiceStatusPill, PAYMENT_METHODS, balanceOf, methodLabel } from '@/components/modules/sales/invoice-shared'
 
-// Sales invoice detail. This is the whole page (nothing else uses it). Draft: edit, issue or cancel. Issued: record payments; it is never deleted
-// or cancelled, only reduced by credit notes (issued from the order or a sales return). When the customer
+// Sales invoice detail. This is the whole page (nothing else uses it). Draft: edit, issue or cancel. Issued: record payments.
+// An issued invoice can be cancelled (whole invoice, with a reason) only while nothing has been paid, credited or refunded on it;
+// after that it is only reduced by credit notes (issued from the order or a sales return). When the customer
 // has paid more than they now owe, Refund pays it back.
 export default function Page() {
   const router = useRouter()
@@ -41,6 +42,8 @@ export default function Page() {
   const [working, setWorking] = useState(false)
   const [action, setAction] = useState(null) // 'issue' | 'cancel' | 'pay'
   const [cancelReason, setCancelReason] = useState('')
+  const [refundMethod, setRefundMethod] = useState('bank_transfer') // branch default (Sales settings > Returns)
+  const [advanceLeft, setAdvanceLeft] = useState(0) // the customer's open advances, usable on this invoice
   const [pay, setPay] = useState({ amount: '', method: 'bank_transfer', reference: '', paidOn: '', note: '' })
 
   const load = useCallback(async () => {
@@ -67,7 +70,7 @@ export default function Page() {
     setInvoice(data)
 
     const [{ data: lineRows, error: lineError }, { data: paymentRows, error: paymentError }, { data: refundRows, error: refundError }, { data: creditRows, error: creditError }] = await Promise.all([
-      supabase.from('sales_invoice_line_items').select('id, description_snapshot, quantity, unit_price_snapshot, line_total, position').eq('sales_invoice', invoiceId).order('position'),
+      supabase.from('sales_invoice_line_items').select('id, description_snapshot, quantity, unit_price_snapshot, line_total, discount_type, discount_value, position').eq('sales_invoice', invoiceId).order('position'),
       supabase.from('payments').select('id, amount, method, reference, paid_at, note').eq('sales_invoice', invoiceId).order('paid_at', { ascending: false }),
       supabase.from('sales_refunds').select('id, amount, method, reference, refunded_at, note').eq('sales_invoice', invoiceId).order('refunded_at', { ascending: false }),
       supabase.from('credit_notes').select('id, credit_note_number, total, status, created_at').eq('sales_invoice', invoiceId).order('created_at', { ascending: false }),
@@ -81,12 +84,27 @@ export default function Page() {
     setPayments(paymentRows || [])
     setRefunds(refundRows || [])
     setCreditNotes(creditRows || [])
+    if (['unpaid', 'partially_paid'].includes(data.status) && data.customer?.id) {
+      const { data: position, error: positionError } = await supabase.rpc('customer_payment_position', { p_branch: branchId, p_customer: data.customer.id })
+      if (positionError) console.error('Failed to load the customer advance:', positionError)
+      setAdvanceLeft(Number(position?.advance || 0))
+    } else {
+      setAdvanceLeft(0)
+    }
     setLoading(false)
-  }, [invoiceId])
+  }, [invoiceId, branchId])
 
   useEffect(() => {
     if (invoiceId) load()
   }, [invoiceId, load])
+
+  useEffect(() => {
+    if (!branchId) return
+    supabase.rpc('get_return_rules', { p_branch: branchId }).then(({ data, error }) => {
+      if (error) console.error('Failed to load the refund method:', error)
+      else if (data?.success && data.default_refund_method) setRefundMethod(data.default_refund_method)
+    })
+  }, [branchId])
 
   async function run(name, args, success, fallback) {
     setWorking(true)
@@ -109,7 +127,12 @@ export default function Page() {
   }
 
   const handleCancel = async () => {
-    const data = await run('cancel_sales_invoice', { p_invoice: invoiceId, p_reason: cancelReason || null }, 'Draft invoice cancelled.', 'Could not cancel the invoice.')
+    const isDraft = invoice.status === 'draft'
+    if (!isDraft && !cancelReason.trim()) {
+      toast.error('Give a reason for cancelling this invoice.')
+      return
+    }
+    const data = await run('cancel_sales_invoice', { p_invoice: invoiceId, p_reason: cancelReason || null }, isDraft ? 'Draft invoice cancelled.' : 'Invoice cancelled. Its quantities can be invoiced again.', 'Could not cancel the invoice.')
     if (!data) return
     setAction(null)
     setCancelReason('')
@@ -118,8 +141,14 @@ export default function Page() {
 
   const refundable = invoice ? Math.max(0, Math.round((Number(invoice.paid) - (Number(invoice.total) - Number(invoice.credited || 0))) * 100) / 100) : 0
 
+  const handleUseAdvance = async () => {
+    const data = await run('apply_customer_advance_to_invoice', { p_invoice: invoiceId }, 'Advance applied to this invoice.', 'Could not use the advance.')
+    setAction(null)
+    if (data) load()
+  }
+
   const openRefund = () => {
-    setPay({ amount: String(refundable), method: 'bank_transfer', reference: '', paidOn: toDateInput(new Date()), note: '' })
+    setPay({ amount: String(refundable), method: refundMethod, reference: '', paidOn: toDateInput(new Date()), note: '' })
     setAction('refund')
   }
 
@@ -190,6 +219,9 @@ export default function Page() {
 
   const balance = balanceOf(invoice)
   const canPay = ['unpaid', 'partially_paid'].includes(invoice.status)
+  // A posted invoice can be cancelled only while no money or credit has touched it.
+  const canCancelPosted =
+    invoice.status === 'unpaid' && payments.length === 0 && refunds.length === 0 && creditNotes.length === 0 && Number(invoice.credited || 0) === 0 && Number(invoice.paid || 0) === 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-3 text-xs">
@@ -207,7 +239,13 @@ export default function Page() {
               <Button type="button" className="h-8 bg-core text-xs text-white" disabled={working} onClick={() => setAction('issue')}>Issue invoice</Button>
             </>
           )}
+          {canCancelPosted && (
+            <Button type="button" variant="outline" className="h-8 text-xs text-red-600" disabled={working} onClick={() => setAction('cancel')}>Cancel invoice</Button>
+          )}
           {refundable > 0 && <Button type="button" variant="outline" className="h-8 text-xs" disabled={working} onClick={openRefund}>Refund {money(refundable)}</Button>}
+          {canPay && advanceLeft > 0 && (
+            <Button type="button" variant="outline" className="h-8 text-xs" disabled={working} onClick={() => setAction('advance')}>Use advance ({money(advanceLeft)})</Button>
+          )}
           {canPay && <Button type="button" className="h-8 bg-core text-xs text-white" disabled={working} onClick={openPay}>Record payment</Button>}
         </div>
       </div>
@@ -236,12 +274,13 @@ export default function Page() {
       </div>
 
       <div className="overflow-x-auto rounded-sm border border-border bg-card">
-        <table className="w-full min-w-[560px] text-xs">
+        <table className="w-full min-w-[640px] text-xs">
           <thead className="bg-muted text-[10px] text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Item</th>
               <th className="px-3 py-2 text-right font-medium">Qty</th>
               <th className="px-3 py-2 text-right font-medium">Unit price</th>
+              <th className="px-3 py-2 text-right font-medium">Discount</th>
               <th className="px-3 py-2 text-right font-medium">Amount</th>
             </tr>
           </thead>
@@ -251,6 +290,7 @@ export default function Page() {
                 <td className="px-3 py-2">{line.description_snapshot}</td>
                 <td className="px-3 py-2 text-right">{Number(line.quantity)}</td>
                 <td className="px-3 py-2 text-right">{money(line.unit_price_snapshot)}</td>
+                <td className="px-3 py-2 text-right text-muted-foreground">{Number(line.discount_value) > 0 ? (line.discount_type === 'percentage' ? `${Number(line.discount_value)}%` : money(line.discount_value)) : '—'}</td>
                 <td className="px-3 py-2 text-right">{money(line.line_total)}</td>
               </tr>
             ))}
@@ -260,7 +300,7 @@ export default function Page() {
 
       <div className="ml-auto w-full max-w-xs space-y-1 rounded-sm border border-border p-3">
         <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{money(invoice.subtotal)}</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>{Number(invoice.discount_total) ? `-${money(invoice.discount_total)}` : money(0)}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Discount on the whole invoice</span><span>{Number(invoice.discount_total) ? `-${money(invoice.discount_total)}` : money(0)}</span></div>
         <div className="flex justify-between"><span className="text-muted-foreground">VAT</span><span>{money(invoice.vat_total)}</span></div>
         <div className="flex justify-between border-t border-border pt-1 text-sm font-semibold"><span>Total</span><span>{money(invoice.total)}</span></div>
         {!['draft', 'cancelled'].includes(invoice.status) && (
@@ -327,12 +367,27 @@ export default function Page() {
         </div>
       )}
 
+      <AlertDialog open={action === 'advance'} onOpenChange={(isOpen) => { if (!isOpen && !working) setAction(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Use {invoice.customer?.name || 'the customer'}&apos;s advance?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {money(advanceLeft)} of advance is available. It is applied to this invoice, oldest advance first, up to the balance of {money(balance)}. It shows as a payment on the invoice.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>Not now</AlertDialogCancel>
+            <AlertDialogAction disabled={working} onClick={(event) => { event.preventDefault(); handleUseAdvance() }}>{working ? 'Applying...' : 'Use advance'}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={action === 'issue'} onOpenChange={(open) => { if (!open && !working) setAction(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Issue {invoice.invoice_number}?</AlertDialogTitle>
             <AlertDialogDescription>
-              It will count against the order's invoiced quantities and can no longer be edited or cancelled. A mistake after this is corrected with a credit note.
+              It will count against the order's invoiced quantities and can no longer be edited. Until a payment is recorded it can still be cancelled; after that, a mistake is corrected with a credit note.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -345,13 +400,17 @@ export default function Page() {
       <AlertDialog open={action === 'cancel'} onOpenChange={(open) => { if (!open && !working) setAction(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel draft {invoice.invoice_number}?</AlertDialogTitle>
-            <AlertDialogDescription>Nothing has been posted, so this simply discards the draft.</AlertDialogDescription>
+            <AlertDialogTitle>{invoice.status === 'draft' ? `Cancel draft ${invoice.invoice_number}?` : `Cancel invoice ${invoice.invoice_number}?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {invoice.status === 'draft'
+                ? 'Nothing has been posted, so this simply discards the draft.'
+                : 'The whole invoice is cancelled and its quantities can be invoiced again. This is possible only because nothing has been paid on it. It cannot be undone.'}
+            </AlertDialogDescription>
           </AlertDialogHeader>
-          <Textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Reason (optional)" className="min-h-16 text-xs" />
+          <Textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder={invoice.status === 'draft' ? 'Reason (optional)' : 'Reason (required)'} className="min-h-16 text-xs" />
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={working}>Keep draft</AlertDialogCancel>
-            <AlertDialogAction disabled={working} onClick={(event) => { event.preventDefault(); handleCancel() }}>{working ? 'Cancelling...' : 'Cancel draft'}</AlertDialogAction>
+            <AlertDialogCancel disabled={working}>{invoice.status === 'draft' ? 'Keep draft' : 'Keep invoice'}</AlertDialogCancel>
+            <AlertDialogAction disabled={working} onClick={(event) => { event.preventDefault(); handleCancel() }}>{working ? 'Cancelling...' : invoice.status === 'draft' ? 'Cancel draft' : 'Cancel invoice'}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

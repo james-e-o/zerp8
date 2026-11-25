@@ -81,8 +81,8 @@ export default function PurchasesReceiptsListPage({ view = 'all' }) {
     }
 
     const { data: holdRows, error: holdError } = await supabase
-      .from('purchase_receipt_holds')
-      .select('id, kind, status, quantity, receipt_line:purchase_receipt_line_items ( purchase_receipt )')
+      .from('quarantine_holds')
+      .select('id, hold_type, status, quantity, receipt_line:purchase_receipt_line_items ( purchase_receipt )')
       .eq('branch', branchId)
       .in('status', ['awaiting_review', 'damaged'])
     if (holdError) console.error('Could not read quarantine status:', holdError)

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/config/supabaseServer"
+import { StaffProvider } from "@/components/contexts/staff-context"
 import BranchLayoutClient from "./branchLayoutClient"
 
 export default async function BranchLayout({ children, params }) {
@@ -138,12 +139,14 @@ export default async function BranchLayout({ children, params }) {
   }
 
   return (
-    <BranchLayoutClient
-      currentBranch={currentBranch}
-      modules={modulesData}
-      company={companyInfo}
-    >
-      {children}
-    </BranchLayoutClient>
+    <StaffProvider companyId={company.id} branchId={branchId}>
+      <BranchLayoutClient
+        currentBranch={currentBranch}
+        modules={modulesData}
+        company={companyInfo}
+      >
+        {children}
+      </BranchLayoutClient>
+    </StaffProvider>
   )
 }

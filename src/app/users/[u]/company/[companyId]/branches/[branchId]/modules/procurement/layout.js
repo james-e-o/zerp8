@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { isModuleEnabledServer } from "@/lib/module-access-server";
+import { getModuleAccessLevelServer } from "@/lib/module-access-server";
 import { createSupabaseServerClient } from "@/config/supabaseServer";
 import ProcurementLayoutClient from "./procurementLayoutClient";
 
@@ -12,10 +12,15 @@ export default async function ProcurementLayout({ params, children }) {
 
   await supabase.from("branches").select("id").eq("id", branchId).maybeSingle();
 
-  const isProcurementEnabled = await isModuleEnabledServer(companyId, "procurement");
+  // "full"      -> normal use
+  // "read_only" -> subscription no longer active but the company has history here:
+  //                pages load, a banner explains, the database refuses writes
+  // "none"      -> never had the module and has no data here: send them to
+  //                subscriptions instead of an unauthorized page
+  const accessLevel = await getModuleAccessLevelServer(companyId, "procurement");
 
-  if (!isProcurementEnabled) {
-    redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?module=procurement`);
+  if (accessLevel === "none") {
+    redirect(`/users/${u}/company/${companyId}/subscriptions`);
   }
 
   const navigationItems = [
@@ -35,6 +40,7 @@ export default async function ProcurementLayout({ params, children }) {
       title="Procurement"
       items={navigationItems}
       basePath={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement`}
+      accessLevel={accessLevel}
     >
       {children}
     </ProcurementLayoutClient>

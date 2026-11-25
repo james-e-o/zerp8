@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,6 +38,9 @@ import {
 // is left. From here you can apply what is left to an unpaid bill, un-apply
 // it, record a cash refund against it (supplier credit notes only), or void
 // it while nothing has been taken from it.
+
+// An advance is money we paid beyond what we owed, kept with the supplier.
+const ADVANCE_TYPE = { label: 'Advance', className: 'bg-amber-50 text-amber-700' }
 
 export default function SupplierCreditDetailPage() {
   const { u, companyId, branchId, supplierId, creditId } = useParams()
@@ -94,6 +98,7 @@ export default function SupplierCreditDetailPage() {
     const failure = creditRes.error || allocRes.error || refundRes.error || returnRes.error || billRes.error
     if (failure) {
       console.error('Failed to load credit:', failure)
+      toast.error(failure.message || 'Could not load this credit.')
       setErrorMessage(failure.message || 'Could not load this credit.')
     } else if (!creditRes.data) {
       setErrorMessage('Credit not found.')
@@ -137,12 +142,15 @@ export default function SupplierCreditDetailPage() {
     })
     setWorking(false)
     if (error) {
+      console.error('Could not apply the credit:', error)
+      toast.error(messageOf(error))
       setResult({ ok: false, lines: [messageOf(error)] })
       return
     }
     setBillId('')
     setApplyAmount('')
-    setResult({ ok: true, lines: ['Credit applied to the bill.'] })
+    toast.success(credit?.kind === 'advance' ? 'Advance applied to the bill.' : 'Credit applied to the bill.')
+    setResult({ ok: true, lines: [credit?.kind === 'advance' ? 'Advance applied to the bill.' : 'Credit applied to the bill.'] })
     load()
   }
 
@@ -157,9 +165,12 @@ export default function SupplierCreditDetailPage() {
     setWorking(false)
     setConfirm(null)
     if (error) {
+      console.error(action.kind === 'unapply' ? 'Could not un-apply the credit:' : 'Could not void the credit:', error)
+      toast.error(messageOf(error))
       setResult({ ok: false, lines: [messageOf(error)] })
       return
     }
+    toast.success(action.kind === 'unapply' ? 'Credit taken back from the bill.' : 'Credit voided.')
     setResult({ ok: true, lines: [action.kind === 'unapply' ? 'Credit taken back from the bill.' : 'Credit voided.'] })
     load()
   }
@@ -181,7 +192,8 @@ export default function SupplierCreditDetailPage() {
     )
   }
 
-  const type = CREDIT_TYPES[credit.kind]
+  const type = CREDIT_TYPES[credit.kind] || (credit.kind === 'advance' ? ADVANCE_TYPE : { label: credit.kind, className: '' })
+  const isAdvance = credit.kind === 'advance'
   const isVoid = credit.status === 'void'
   const untouched = Number(credit.applied_amount) === 0 && Number(credit.refunded_amount) === 0
 
@@ -199,14 +211,14 @@ export default function SupplierCreditDetailPage() {
           {isVoid && <Pill className="bg-red-50 text-red-700">Void</Pill>}
         </div>
         <div className="flex items-center gap-2">
-          {credit.kind === 'credit_note' && !isVoid && remaining > 0 && (
+          {(credit.kind === 'credit_note' || isAdvance) && !isVoid && remaining > 0 && (
             <Link href={`${base}/suppliers/${supplierId}/refunds/new?credit=${credit.id}`}>
               <Button type="button" variant="outline" size="sm" className="h-7 rounded-sm text-xs">
                 Record refund against this
               </Button>
             </Link>
           )}
-          {!isVoid && untouched && (
+          {!isVoid && untouched && !isAdvance && (
             <Button
               type="button"
               variant="outline"
@@ -221,6 +233,14 @@ export default function SupplierCreditDetailPage() {
       </div>
 
       <Notice result={result} onDismiss={() => setResult(null)} />
+
+      {isAdvance && (
+        <p className="rounded-sm border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800">
+          Money we paid this supplier beyond what we owed. It is used on their next bill, or you can apply it to
+          an unpaid bill below. If the supplier gives the money back, record a refund against it. It cannot be
+          voided because the money has already been paid.
+        </p>
+      )}
 
       {credit.kind === 'debit_note' && (
         <p className="rounded-sm border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800">

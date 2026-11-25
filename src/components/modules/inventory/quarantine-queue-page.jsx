@@ -36,7 +36,7 @@ import {
 } from '@/components/modules/inventory/receipt-shared'
 
 // Shared by the Quarantine, Excess and Damaged tabs of Inventory > Receipts.
-// Rows come from purchase_receipt_holds. Every action is a database function
+// Rows come from quarantine_holds. Every action is a database function
 // that also writes the stock ledger.
 //
 //   view="all"      everything still in quarantine
@@ -101,7 +101,7 @@ export default function QuarantineQueuePage({ view = 'all' }) {
     setLoadError('')
 
     const { data, error } = await supabase
-      .from('purchase_receipt_holds')
+      .from('quarantine_holds')
       .select(
         `*,
          receipt_line:purchase_receipt_line_items (
@@ -137,7 +137,7 @@ export default function QuarantineQueuePage({ view = 'all' }) {
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return holds.filter((hold) => {
-      if (view === 'excess' && !isExtraKind(hold.kind)) return false
+      if (view === 'excess' && !isExtraKind(hold.hold_type)) return false
       if (view === 'damaged' && hold.status !== 'damaged') return false
       if (!needle) return true
       const receipt = hold.receipt_line?.purchase_receipt
@@ -157,7 +157,7 @@ export default function QuarantineQueuePage({ view = 'all' }) {
   }, [holds, view, search, variants, batches])
 
   // Goods that do not match the order are for purchases to decide.
-  const isLocked = (hold) => isExtraKind(hold.kind)
+  const isLocked = (hold) => isExtraKind(hold.hold_type)
   const actionable = visible.filter((hold) => !isLocked(hold))
   const selectedHolds = actionable.filter((hold) => selected[hold.id])
 
@@ -354,7 +354,7 @@ export default function QuarantineQueuePage({ view = 'all' }) {
                 const receipt = hold.receipt_line?.purchase_receipt
                 const batch = batches[hold.batch]
                 const locked = isLocked(hold)
-                const kind = HOLD_KIND[hold.kind] || { label: hold.kind, tone: 'gray' }
+                const kind = HOLD_KIND[hold.hold_type] || { label: hold.hold_type, tone: 'gray' }
                 const status = HOLD_STATUS[hold.status] || { label: hold.status, tone: 'gray' }
                 return (
                   <tr

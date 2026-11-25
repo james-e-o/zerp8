@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronsUpDown, Plus, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,7 @@ import { useRequestCatalog } from '@/components/modules/procurement/request-cata
 import { useVariantNames } from '@/components/modules/procurement/purchase-catalog'
 import { useBranchWarehouses } from '@/components/modules/procurement/use-branch-warehouses'
 import { formatDate, formatMoney, formatQty, useBranchCurrency } from '@/components/modules/inventory/inventory-shared'
+import EmergencyReceiptSheet from '@/components/modules/inventory/emergency-receipt-sheet'
 import {
   ErrorNote,
   RECEIPT_SOURCES,
@@ -66,6 +68,7 @@ import {
 const REASONS = ['Delivery', 'Expiry', 'Production run', 'Quality grade', 'Source supplier', 'Other']
 const RECEIVABLE = ['open', 'sent', 'partially_received']
 const NONE = '__none__'
+const EMERGENCY = '__emergency__'
 
 const newKey = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 const today = () => new Date().toISOString().slice(0, 10)
@@ -175,6 +178,7 @@ function NewReceiptForm() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [draftLoaded, setDraftLoaded] = useState(!draftId)
+  const [emergencyOpen, setEmergencyOpen] = useState(false)
 
   const { warehouses, defaultId } = useBranchWarehouses(branchId)
   const { catalog } = useRequestCatalog(branchId)
@@ -197,7 +201,7 @@ function NewReceiptForm() {
       const { data, error: orderError } = await supabase
         .from('purchase_orders')
         .select(
-          `id, order_number, status, supplier:suppliers ( name ),
+          `id, order_number, status, supplier_id:supplier, supplier:suppliers ( name ),
            lines:purchase_order_line_items (
              id, variant, quantity_ordered, quantity_received, quantity_delivered, unit_cost_snapshot, delivery_warehouse
            )`
@@ -435,6 +439,12 @@ function NewReceiptForm() {
   const removeLine = (key) => setLines((previous) => previous.filter((line) => line.key !== key))
 
   const switchSource = (value) => {
+    // "Emergency item" is not a receipt source. It opens a sheet that records
+    // goods that are not in the catalog, and leaves this receipt as it is.
+    if (value === EMERGENCY) {
+      setEmergencyOpen(true)
+      return
+    }
     setSource(value)
     setError('')
     if (value !== 'purchase_order') {
@@ -559,9 +569,12 @@ function NewReceiptForm() {
 
     const result = Array.isArray(data) ? data[0] : data
     if (rpcError || result?.success === false) {
+      console.error('The receipt could not be saved:', rpcError || result)
       setError(rpcError?.message || result?.error || 'The receipt could not be saved.')
+      toast.error(rpcError?.message || result?.error || 'The receipt could not be saved.')
       return
     }
+    toast.success(post ? 'Receipt posted to quarantine.' : 'Draft saved.')
     router.push(result?.receipt_id ? `${receiptsPath}/${result.receipt_id}` : `${receiptsPath}/drafts`)
   }
 
@@ -573,7 +586,7 @@ function NewReceiptForm() {
   const shelvesFor = (line) => shelves.filter((shelf) => shelf.warehouse === (line.warehouseId || warehouseId))
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 p-3 sm:grid-cols-2 lg:grid-cols-4">
         <Labelled label="Source">
           <Select value={source} onValueChange={switchSource} disabled={!!draftId}>
@@ -586,6 +599,9 @@ function NewReceiptForm() {
                   {entry.label}
                 </SelectItem>
               ))}
+              <SelectItem value={EMERGENCY} className="text-xs">
+                Emergency item (not in catalog)
+              </SelectItem>
             </SelectContent>
           </Select>
         </Labelled>
@@ -956,7 +972,16 @@ function NewReceiptForm() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <div className="sticky bottom-0 -mx-4 flex items-center justify-end gap-2 border-t border-gray-200 bg-white px-4 py-2">
+      <EmergencyReceiptSheet
+        open={emergencyOpen}
+        onOpenChange={setEmergencyOpen}
+        branchId={branchId}
+        defaultOrderId={isOrderReceipt ? orderId : ''}
+        defaultSupplierId={isOrderReceipt ? selectedOrder?.supplier_id || '' : ''}
+        defaultDeliveryNote={deliveryNote}
+      />
+
+      <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background px-4 py-2 md:-mx-4">
         {!canCreate && <span className="mr-auto text-[11px] text-gray-500">You need inventory create access to post receipts.</span>}
         <Button type="button" variant="outline" className="h-7 text-xs" disabled={saving || !canCreate} onClick={() => save(false)}>
           Save draft

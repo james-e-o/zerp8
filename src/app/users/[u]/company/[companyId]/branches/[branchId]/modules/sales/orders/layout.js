@@ -7,7 +7,8 @@ const TABS = [
   { label: 'Draft', value: 'draft' },
   { label: 'Open', value: 'open' },
   { label: 'Partially fulfilled', value: 'partially-fulfilled' },
-  { label: 'Completed', value: 'fulfilled' },
+  { label: 'Delivered', value: 'fulfilled' },
+  { label: 'Completed', value: 'completed' },
   { label: 'Cancelled', value: 'cancelled' },
 ]
 
@@ -19,7 +20,7 @@ export default async function OrdersLayout({ children, params }) {
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader
         title="Sales Orders"
-        description="Confirmed customer orders. Prices lock and stock is reserved when an order is created."
+        description="Confirmed customer orders. Prices lock while a pro forma or invoice exists for them. Complete an order to seal it."
         action={
           <Link
             href={`${basePath}/new`}

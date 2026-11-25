@@ -65,7 +65,7 @@ export default function ToReturnPage() {
     setLoadError('')
 
     const { data, error } = await supabase
-      .from('purchase_receipt_holds')
+      .from('quarantine_holds')
       .select(
         `*,
          receipt_line:purchase_receipt_line_items (

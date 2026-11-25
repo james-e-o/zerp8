@@ -45,6 +45,8 @@ const flattenProducts = (products, variants) => {
       ...variant,
       productId: product.id,
       productTitle: product.title || product.name || 'Untitled product',
+      productThumbnail: product.thumbnail || '',
+      productImages: product.images || [],
       variantLabel: variant.variant_label || variant.variantLabel || 'Default',
       sku: variant.sku || '',
       displayName: `${product.title || product.name || 'Untitled product'}${(variant.variant_label || variant.variantLabel) ? ` - ${variant.variant_label || variant.variantLabel}` : ''}`,
@@ -123,7 +125,7 @@ export function useQuotationCatalog(branchId) {
           { data: warehouseRows, error: warehouseError },
         ] = await Promise.all([
           supabase.from('pricing_contexts').select('*').eq('branch', branchId).eq('is_active', true).order('is_default', { ascending: false }).order('priority', { ascending: false }),
-          supabase.from('products').select('id,title,handle,sub_title,description,type,brand').eq('status', 'active').order('created_at', { ascending: false }),
+          supabase.from('products').select('id,title,handle,sub_title,description,type,brand,thumbnail,images').eq('status', 'active').order('created_at', { ascending: false }),
           supabase.from('product_variants').select('*').eq('is_active', true),
           supabase.from('standard_prices').select('*').eq('branch', branchId),
           supabase.from('warehouses').select('*').eq('home_branch', branchId).is('archived_at', null).order('is_default', { ascending: false }),

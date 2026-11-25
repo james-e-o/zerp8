@@ -47,8 +47,6 @@ export default function QuotationFormPage({ quotationId = null }) {
   const [customerId, setCustomerId] = useState('')
   const [validUntil, setValidUntil] = useState('')
   const [items, setItems] = useState([emptyQuotationLine()])
-  const [discountType, setDiscountType] = useState('amount')
-  const [discountValue, setDiscountValue] = useState(0)
   const [applyVat, setApplyVat] = useState(true)
   const [vatRate, setVatRate] = useState(null)
   const [notes, setNotes] = useState('')
@@ -122,9 +120,7 @@ export default function QuotationFormPage({ quotationId = null }) {
         const p = data.payload || {}
         setCustomerId(p.customerId || '')
         setValidUntil(p.validUntil || '')
-        setItems(Array.isArray(p.items) && p.items.length ? p.items : [emptyQuotationLine()])
-        setDiscountType(p.discountType || 'amount')
-        setDiscountValue(Number(p.discountValue || 0))
+        setItems(Array.isArray(p.items) && p.items.length ? noDiscount(p.items) : [emptyQuotationLine()])
         setApplyVat(p.applyVat !== false)
         setVatRate(p.vatRate ?? null)
         setNotes(p.notes || '')
@@ -165,9 +161,7 @@ export default function QuotationFormPage({ quotationId = null }) {
         setQuotationNumber(data.quote_number)
         setCustomerId(data.customer || '')
         setValidUntil(toDateInput(data.valid_until))
-        setItems(rowsToItems(data.quotation_line_items).length ? rowsToItems(data.quotation_line_items) : [emptyQuotationLine()])
-        setDiscountType(data.discount_type || 'amount')
-        setDiscountValue(Number(data.discount_value || 0))
+        setItems(rowsToItems(data.quotation_line_items).length ? noDiscount(rowsToItems(data.quotation_line_items)) : [emptyQuotationLine()])
         setApplyVat(data.apply_vat !== false)
         setVatRate(Number(data.vat_rate))
         setNotes(data.notes || '')
@@ -195,9 +189,10 @@ export default function QuotationFormPage({ quotationId = null }) {
     }
   }, [customerId])
 
+  // Quotations carry no discount (VAT only). The discount is given on the pro forma or the invoice.
   const totals = useMemo(
-    () => computeTotals(items, discountType, discountValue, applyVat, effectiveVatRate),
-    [items, discountType, discountValue, applyVat, effectiveVatRate]
+    () => computeTotals(items, 'amount', 0, applyVat, effectiveVatRate),
+    [items, applyVat, effectiveVatRate]
   )
 
   const filledItems = items.filter((item) => item.variantId)
@@ -224,8 +219,8 @@ export default function QuotationFormPage({ quotationId = null }) {
   const headerPayload = () => ({
     customer: customerId || null,
     valid_until: validUntil || null,
-    discount_type: discountType,
-    discount_value: Number(discountValue || 0),
+    discount_type: 'amount',
+    discount_value: 0,
     apply_vat: applyVat,
     vat_rate: Number(effectiveVatRate),
     notes,
@@ -249,8 +244,6 @@ export default function QuotationFormPage({ quotationId = null }) {
         customerId,
         validUntil,
         items,
-        discountType,
-        discountValue,
         applyVat,
         vatRate: effectiveVatRate,
         notes,
@@ -456,24 +449,6 @@ export default function QuotationFormPage({ quotationId = null }) {
 
         <div className="sales-document-summary flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-gray-800">
-              <span>Document discount</span>
-              <Select value={discountType} onValueChange={setDiscountType}>
-                <SelectTrigger className="h-7 w-20 bg-white px-2 text-[11px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="amount">Amount</SelectItem>
-                  <SelectItem value="percentage">Percent</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                type="number"
-                min="0"
-                value={discountValue}
-                onChange={(event) => setDiscountValue(Number(event.target.value))}
-                className="h-7 w-20 bg-white px-2 text-[11px]"
-              />
-            </div>
-
             <label className="flex items-center gap-2 text-[11px] font-medium text-gray-700">
               <input
                 type="checkbox"
@@ -498,8 +473,6 @@ export default function QuotationFormPage({ quotationId = null }) {
 
           <div className="w-full max-w-xs shrink-0 space-y-1 sm:ml-auto">
             <SummaryRow label="Subtotal" value={money(totals.subtotal)} />
-            <SummaryRow label="Line discounts" value={`-${money(totals.lineDiscounts)}`} />
-            <SummaryRow label="Document discount" value={`-${money(totals.documentDiscount)}`} />
             {applyVat && <SummaryRow label={`VAT (${Number(effectiveVatRate).toFixed(1)}%)`} value={`+${money(totals.vat)}`} />}
             <div className="my-1 border-t border-dashed border-gray-300" />
             <div className="flex items-center justify-between">
@@ -526,6 +499,9 @@ export default function QuotationFormPage({ quotationId = null }) {
     </div>
   )
 }
+
+// Old drafts and quotations may still carry a discount; it is cleared here (the database ignores it too).
+const noDiscount = (list) => list.map((item) => ({ ...item, discountType: 'amount', discountValue: 0 }))
 
 function SummaryRow({ label, value }) {
   return (

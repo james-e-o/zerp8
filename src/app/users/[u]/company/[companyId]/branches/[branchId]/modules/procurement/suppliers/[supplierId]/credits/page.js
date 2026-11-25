@@ -17,6 +17,7 @@ import {
 // One list for everything the supplier has given back to us:
 //   Credit notes   the supplier's own documents
 //   Debit notes    ones WE issued when the supplier stayed silent
+//   Advances       money we paid beyond what we owed, kept for their next bill
 //   Refunds        cash they paid back (a credit note is not needed)
 // ?type=debit_note (etc.) presets the filter, so the sidebar can link
 // straight to "Debit notes".
@@ -24,9 +25,14 @@ import {
 // The content is wrapped in <Suspense> below because it uses useSearchParams(),
 // which Next.js requires to sit inside a Suspense boundary.
 
+// An advance is money we paid beyond what we owed. It is kept with the supplier and
+// used on their next bill.
+const ADVANCE_TYPE = { label: 'Advance', className: 'bg-amber-50 text-amber-700' }
+
 const FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'credit_note', label: 'Credit notes' },
+  { key: 'advance', label: 'Advances' },
   { key: 'debit_note', label: 'Debit notes' },
   { key: 'refund', label: 'Refunds' },
 ]
@@ -221,7 +227,7 @@ function SupplierCreditsContent() {
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row) => {
-                const type = CREDIT_TYPES[row.type]
+                const type = CREDIT_TYPES[row.type] || (row.type === 'advance' ? ADVANCE_TYPE : { label: row.type, className: '' })
                 return (
                   <tr
                     key={row.key}

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 
 // Sits inside suppliers/layout.js (which already renders the "Suppliers"
-// header). Adds the tabs for ONE supplier - Overview | Credits & refunds.
+// header). Adds the tabs for ONE supplier - Overview | Payments | Credits & refunds.
 // The tabs hide themselves on the forms and the credit detail page, which
 // have their own Back buttons and are not tabs.
 export default function SupplierLayout({ children }) {
@@ -14,6 +14,7 @@ export default function SupplierLayout({ children }) {
 
   const tabs = [
     { label: 'Overview', href: base },
+    { label: 'Payments', href: `${base}/payments` },
     { label: 'Credits & refunds', href: `${base}/credits` },
   ]
 

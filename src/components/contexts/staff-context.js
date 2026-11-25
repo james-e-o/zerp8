@@ -11,7 +11,8 @@ function toLabel(key) {
     .replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-export function StaffProvider({ children, companyId }) {
+export function StaffProvider({ children, companyId, branchId }) {
+  const staffSelect = branchId ? 'user, branch, first_name, last_name, email' : '*, staff_info(date_hired)';
   const [staffData, setStaffData] = useState([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [error, setError] = useState(null);
@@ -37,15 +38,17 @@ export function StaffProvider({ children, companyId }) {
         setIsLoadingStaff(true);
         setError(null);
 
-        const { data: staff, error: fetchError } = await supabase
+        const staffQuery = supabase
           .from('staff')
-          .select('*, staff_info(date_hired)')
+          .select(staffSelect)
           .eq('company', companyId)
           .order('created_at', { ascending: false });
+        const scopedStaffQuery = branchId ? staffQuery.eq('branch', branchId) : staffQuery;
+        const { data: staff, error: fetchError } = await scopedStaffQuery
 
         if (fetchError) {
-          console.error('Error fetching staff data:', fetchError);
-          setError(fetchError.message);
+          console.error('Error fetching staff data:', fetchError.message || fetchError);
+          setError(fetchError.message || 'Could not fetch staff data.');
         } else {
           setStaffData(
             (staff || []).map((item) => ({
@@ -63,12 +66,17 @@ export function StaffProvider({ children, companyId }) {
     }
 
     fetchStaffData();
-  }, [companyId]);
+  }, [companyId, branchId]);
 
   // Fetch permission keys on mount.
   // These rows carry the canonical category (core or module) for each
   // permission definition, and the access-level/override rows should match it.
   useEffect(() => {
+    if (branchId) {
+      setIsLoadingPermissions(false);
+      return;
+    }
+
     async function fetchPermissionKeys() {
       try {
         setIsLoadingPermissions(true);
@@ -121,11 +129,16 @@ export function StaffProvider({ children, companyId }) {
     }
 
     fetchPermissionKeys();
-  }, []);
+  }, [branchId]);
 
   // Fetch counts for the Onboarding notification badge:
   // pending company_invites + pending staff_pending_acceptance records.
   useEffect(() => {
+    if (branchId) {
+      setIsLoadingOnboardingCount(false);
+      return;
+    }
+
     async function fetchPendingOnboardingCount() {
       if (!companyId) {
         setIsLoadingOnboardingCount(false);
@@ -162,7 +175,7 @@ export function StaffProvider({ children, companyId }) {
     }
 
     fetchPendingOnboardingCount();
-  }, [companyId]);
+  }, [companyId, branchId]);
 
   // Function to fetch access level (default) permissions for a given access level.
   // category is the canonical permission definition on permission_keys, while
@@ -213,15 +226,17 @@ export function StaffProvider({ children, companyId }) {
       setIsLoadingStaff(true);
       setError(null);
 
-      const { data: staff, error: fetchError } = await supabase
+      const staffQuery = supabase
         .from('staff')
-        .select('*, staff_info(date_hired)')
+        .select(staffSelect)
         .eq('company', companyId)
         .order('created_at', { ascending: false });
+      const scopedStaffQuery = branchId ? staffQuery.eq('branch', branchId) : staffQuery;
+      const { data: staff, error: fetchError } = await scopedStaffQuery
 
       if (fetchError) {
-        console.error('Error refetching staff data:', fetchError);
-        setError(fetchError.message);
+        console.error('Error refetching staff data:', fetchError.message || fetchError);
+        setError(fetchError.message || 'Could not fetch staff data.');
       } else {
         setStaffData(
           (staff || []).map((item) => ({
@@ -274,6 +289,9 @@ export function StaffProvider({ children, companyId }) {
 
   const value = {
     staffData,
+    branchStaffData: branchId
+      ? staffData.filter((staff) => String(staff.branch) === String(branchId))
+      : [],
     isLoadingStaff,
     error,
     refetchStaffData,

@@ -103,10 +103,10 @@ const ACTION_COPY = {
 // The buttons a pile gets, in order. 'return' is a link, the rest open a dialog.
 function actionsFor(hold) {
   if (hold.status === 'awaiting_review') {
-    return isExtraKind(hold.kind) ? ['addtoorder', 'return'] : ['accept', 'damaged', 'return']
+    return isExtraKind(hold.hold_type) ? ['addtoorder', 'return'] : ['accept', 'damaged', 'return']
   }
   if (hold.status === 'damaged') {
-    const list = isExtraKind(hold.kind) ? [] : ['accept']
+    const list = isExtraKind(hold.hold_type) ? [] : ['accept']
     return awaitsPurchasesDecision(hold) ? [...list, 'wontreturn', 'return'] : [...list, 'writeoff']
   }
   return []
@@ -202,7 +202,7 @@ export default function ReceiptDetailPage() {
         const grouped = {}
         for (const part of chunk((lineRows || []).map((row) => row.id))) {
           const { data: holdRows, error: holdError } = await supabase
-            .from('purchase_receipt_holds')
+            .from('quarantine_holds')
             .select('*')
             .in('purchase_receipt_line_item', part)
           if (holdError) {
@@ -397,7 +397,7 @@ export default function ReceiptDetailPage() {
             {heldPiles.map((hold) => {
               const line = lines.find((row) => row.id === hold.purchase_receipt_line_item)
               const info = nameOf(line?.variant || hold.variant)
-              const kind = HOLD_KIND[hold.kind] || { label: hold.kind, tone: 'gray' }
+              const kind = HOLD_KIND[hold.hold_type] || { label: hold.hold_type, tone: 'gray' }
               const status = HOLD_STATUS[hold.status] || { label: hold.status, tone: 'gray' }
               const free = freeQty(hold)
               const inReturn = Number(reserved[hold.id] || 0)
@@ -410,8 +410,8 @@ export default function ReceiptDetailPage() {
                       {info.sku ? <span className="ml-1 font-mono text-[10px] text-gray-500">{info.sku}</span> : null}
                     </p>
                     <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-600">
-                      <Tone tone={hold.status === 'awaiting_review' && isExtraKind(hold.kind) ? 'amber' : status.tone}>{status.label}</Tone>
-                      {hold.kind !== 'normal' && <Tone tone={kind.tone}>{kind.label}</Tone>}
+                      <Tone tone={hold.status === 'awaiting_review' && isExtraKind(hold.hold_type) ? 'amber' : status.tone}>{status.label}</Tone>
+                      {hold.hold_type !== 'normal' && <Tone tone={kind.tone}>{kind.label}</Tone>}
                       <span>{formatQty(hold.quantity)} held</span>
                       {hold.batch && batchNames[hold.batch]?.batch_number ? <span>Batch {batchNames[hold.batch].batch_number}</span> : null}
                       {hold.status === 'damaged' && <span>{damageReasonLabel(hold.damage_reason)}</span>}
@@ -513,7 +513,7 @@ export default function ReceiptDetailPage() {
               const holds = holdsByLine[line.id] || []
               const totals = new Map()
               for (const hold of holds) {
-                const key = `${hold.kind}:${hold.status}`
+                const key = `${hold.hold_type}:${hold.status}`
                 totals.set(key, (totals.get(key) || 0) + Number(hold.quantity || 0))
               }
               return (

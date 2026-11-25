@@ -28,6 +28,7 @@ import {
 
 import supabase from '@/config/supabaseClient'
 import { formatNaira } from '@/components/modules/sales/dummy-data'
+import { useVariantNames } from '@/components/modules/procurement/purchase-catalog'
 import StatusBadge from '@/components/modules/sales/status-badge'
 import { AttachmentList } from '@/components/company-file-uploader'
 // ASSUMPTION: same path the Bill form imports company-files from.
@@ -41,6 +42,11 @@ import { getAttachmentUrl, formatFileSize, useFileAttachments } from '@/componen
 //  - purchase_bill_payments for payment history, plus
 //    record_purchase_bill_payment() to add one - purchase_bills.paid
 //    and status update themselves via trigger once a payment lands.
+//  - Lines flagged "not in catalog" are goods the supplier charged for that have
+//    no product. They are in the bill's total (it matches the invoice) but
+//    cannot be paid. Once the product exists and purchasing has put it on the
+//    order, "Link to order line" calls resolve_bill_unlisted_line() and the
+//    amount becomes payable. The payable balance below leaves them out.
 //  - cancel_purchase_bill() for the Cancel action - the function
 //    itself refuses if anything's been paid, so this page just
 //    surfaces whatever it says rather than re-deciding that here.
@@ -169,6 +175,11 @@ export default function PurchaseBillDetailPage() {
   const [recordingPayment, setRecordingPayment] = useState(false)
   const [paymentError, setPaymentError] = useState('')
 
+  const [orderLines, setOrderLines] = useState([]) // this bill's order lines, for linking flagged lines
+  const [linkTarget, setLinkTarget] = useState(null)
+  const [linkOrderLine, setLinkOrderLine] = useState('')
+  const [linking, setLinking] = useState(false)
+
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
@@ -209,7 +220,7 @@ export default function PurchaseBillDetailPage() {
           .single(),
         supabase
           .from('purchase_bill_line_items')
-          .select('id, description_snapshot, quantity, unit_price_snapshot, line_total, variant, purchase_order_line_item')
+          .select('id, description_snapshot, quantity, unit_price_snapshot, line_total, variant, purchase_order_line_item, is_unlisted, unlisted_note')
           .eq('purchase_bill', billId),
         supabase
           .from('purchase_bill_payments')
@@ -219,6 +230,7 @@ export default function PurchaseBillDetailPage() {
       ])
 
     if (billError) {
+      console.error('Could not load this bill:', billError)
       toast.error(billError.message || 'Could not load this bill.')
       setLoadError(billError.message || 'Could not load this bill.')
       setLoading(false)
@@ -264,7 +276,7 @@ export default function PurchaseBillDetailPage() {
           .select('id, quantity_received, quantity_returned')
           .in('id', orderLineIds),
         supabase
-          .from('purchase_receipt_holds')
+          .from('quarantine_holds')
           .select('purchase_order_line_item, quantity')
           .in('purchase_order_line_item', orderLineIds)
           .in('status', ['awaiting_review', 'damaged']),
@@ -276,6 +288,17 @@ export default function PurchaseBillDetailPage() {
           (quarantine.get(row.purchase_order_line_item) || 0) + Number(row.quantity || 0)
         )
       })
+    }
+
+    // The order's own lines, so a flagged line can be linked to one of them.
+    if ((lineData || []).some((line) => line.is_unlisted) && billData?.purchase_order?.id) {
+      const { data: poRows } = await supabase
+        .from('purchase_order_line_items')
+        .select('id, variant, quantity_ordered, quantity_billed, adjustment_kind')
+        .eq('purchase_order', billData.purchase_order.id)
+      setOrderLines(poRows || [])
+    } else {
+      setOrderLines([])
     }
 
     setBill(billData)
@@ -309,12 +332,15 @@ export default function PurchaseBillDetailPage() {
     load()
   }, [load])
 
+  const { names: orderLineNames } = useVariantNames(orderLines.map((line) => line.variant).filter(Boolean))
+
   const handleRecordPayment = async (event) => {
     event.preventDefault()
     setPaymentError('')
 
     if (!paymentAmount || Number(paymentAmount) <= 0) {
       setPaymentError('Enter an amount greater than zero.')
+      toast.error('Enter an amount greater than zero.')
       return
     }
 
@@ -329,6 +355,7 @@ export default function PurchaseBillDetailPage() {
     setRecordingPayment(false)
 
     if (error) {
+      console.error('Could not record this payment:', error)
       setPaymentError(error.message || 'Could not record this payment.')
       toast.error(error.message || 'Could not record this payment.')
       return
@@ -340,6 +367,25 @@ export default function PurchaseBillDetailPage() {
     setPaymentDate('')
     setPaymentMethod('')
     setPaymentReference('')
+    load()
+  }
+
+  const handleLink = async () => {
+    if (!linkTarget || !linkOrderLine) return
+    setLinking(true)
+    const { error } = await supabase.rpc('resolve_bill_unlisted_line', {
+      p_line: linkTarget.id,
+      p_purchase_order_line_item: linkOrderLine,
+    })
+    setLinking(false)
+    if (error) {
+      console.error('Could not link this line:', error)
+      toast.error(error.message || 'Could not link this line.')
+      return
+    }
+    toast.success('Linked. This amount can now be paid.')
+    setLinkTarget(null)
+    setLinkOrderLine('')
     load()
   }
 
@@ -385,7 +431,14 @@ export default function PurchaseBillDetailPage() {
 
   const isPending = bill.effective_status === 'pending_approval'
   const creditApplied = Number(bill.credit_applied || 0)
-  const balance = Number(bill.total || 0) - Number(bill.paid || 0) - creditApplied
+  const owed = Number(bill.total || 0) - Number(bill.paid || 0) - creditApplied
+  const unpayable = lineItems
+    .filter((line) => line.is_unlisted)
+    .reduce((sum, line) => sum + Number(line.line_total || 0), 0)
+  // What can be paid (or credited) right now: what is owed, less the amount for
+  // items that are not in the catalog yet.
+  const balance = Math.max(owed - unpayable, 0)
+  const canLink = !['draft', 'cancelled', 'pending_approval'].includes(bill.effective_status)
   const creditsBase = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/suppliers/${bill.supplier?.id}/credits`
   const pickedCredit = creditOptions.find((credit) => credit.id === creditId)
 
@@ -399,6 +452,7 @@ export default function PurchaseBillDetailPage() {
     })
     setApplyingCredit(false)
     if (error) {
+      console.error('Could not apply the credit:', error)
       setCreditError(error.message || 'Could not apply the credit.')
       toast.error(error.message || 'Could not apply the credit.')
       return
@@ -604,8 +658,14 @@ export default function PurchaseBillDetailPage() {
                 <p className="text-xs text-gray-800">{formatNaira(creditApplied)}</p>
               </div>
             )}
+            {unpayable > 0 && (
+              <div>
+                <p className="text-[10px] text-red-700">Unpayable</p>
+                <p className="text-xs font-medium text-red-700">{formatNaira(unpayable)}</p>
+              </div>
+            )}
             <div>
-              <p className="text-[10px] text-gray-500">Balance</p>
+              <p className="text-[10px] text-gray-500">{unpayable > 0 ? 'Payable now' : 'Balance'}</p>
               <p className={`text-xs font-medium ${balance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
                 {formatNaira(balance)}
               </p>
@@ -629,15 +689,40 @@ export default function PurchaseBillDetailPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {lineItems.map((line) => (
-                    <tr key={line.id}>
+                    <tr key={line.id} className={line.is_unlisted ? 'bg-red-50/50' : ''}>
                       <td className="px-2.5 py-1 text-gray-800">
                         {line.description_snapshot || '—'}
-                        <DeliveryChip line={line} />
+                        {line.is_unlisted ? (
+                          <>
+                            <span className="ml-1.5 inline-flex rounded-sm bg-red-100 px-1 py-0.5 align-middle text-[9px] font-medium text-red-800">
+                              Not in catalog · unpayable
+                            </span>
+                            {line.unlisted_note && (
+                              <span className="mt-0.5 block text-[10px] text-gray-500">{line.unlisted_note}</span>
+                            )}
+                            {canLink && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLinkTarget(line)
+                                  setLinkOrderLine('')
+                                }}
+                                className="mt-0.5 block text-[10px] text-core hover:underline"
+                              >
+                                Link to order line
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <DeliveryChip line={line} />
+                        )}
                       </td>
                       <td className="px-2.5 py-1 text-right text-gray-600">{line.quantity}</td>
-                      <td className="px-2.5 py-1 text-right text-gray-600">{line.received.toLocaleString()}</td>
                       <td className="px-2.5 py-1 text-right text-gray-600">
-                        {line.inQuarantine > 0 ? (
+                        {line.is_unlisted ? '—' : line.received.toLocaleString()}
+                      </td>
+                      <td className="px-2.5 py-1 text-right text-gray-600">
+                        {line.is_unlisted ? '—' : line.inQuarantine > 0 ? (
                           <span className="rounded-sm bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
                             {line.inQuarantine.toLocaleString()}
                           </span>
@@ -645,7 +730,9 @@ export default function PurchaseBillDetailPage() {
                           '—'
                         )}
                       </td>
-                      <td className="px-2.5 py-1 text-right text-gray-600">{line.returned.toLocaleString()}</td>
+                      <td className="px-2.5 py-1 text-right text-gray-600">
+                        {line.is_unlisted ? '—' : line.returned.toLocaleString()}
+                      </td>
                       <td className="px-2.5 py-1 text-right text-gray-600">
                         {formatNaira(line.unit_price_snapshot)}
                       </td>
@@ -809,7 +896,7 @@ export default function PurchaseBillDetailPage() {
                     className="mt-0.5 h-7 w-full text-xs"
                   />
                   <span className="mt-0.5 block text-[10px] font-normal text-gray-400">
-                    Balance: {formatNaira(balance)} (a part-payment is fine)
+                    Payable now: {formatNaira(balance)} (a part-payment is fine)
                   </span>
                 </label>
 
@@ -857,6 +944,45 @@ export default function PurchaseBillDetailPage() {
           )}
         </section>
       </div>
+
+      <AlertDialog open={!!linkTarget} onOpenChange={(open) => !open && !linking && setLinkTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">Link to an order line</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              {linkTarget ? `${linkTarget.quantity} × ${linkTarget.description_snapshot}. ` : ''}
+              Do this once the product exists and purchasing has added it to the order. The amount then becomes
+              payable. The same checks as billing apply: quantity left on the order line, goods received, and the
+              price tolerance.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <select
+            value={linkOrderLine}
+            onChange={(event) => setLinkOrderLine(event.target.value)}
+            className="h-8 w-full rounded-sm border border-gray-200 bg-white px-2 text-xs text-gray-800"
+          >
+            <option value="">Choose the order line...</option>
+            {orderLines.map((line) => (
+              <option key={line.id} value={line.id}>
+                {(orderLineNames[line.variant]?.display || 'Item') + ' · ordered ' + line.quantity_ordered + ' · billed ' + line.quantity_billed}
+              </option>
+            ))}
+          </select>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-7 text-xs" disabled={linking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="h-7 bg-core text-xs text-white hover:bg-core/90"
+              disabled={linking || !linkOrderLine}
+              onClick={(event) => {
+                event.preventDefault()
+                handleLink()
+              }}
+            >
+              {linking ? 'Linking...' : 'Link line'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <AlertDialogContent>

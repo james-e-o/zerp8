@@ -23,8 +23,8 @@ import { ProformaStatusPill, isProformaExpired } from '@/components/modules/sale
 
 // Proforma detail. The whole page lives here (nothing else uses it).
 // Actions: Edit, Print / mark as sent, Convert to invoice, Cancel.
-// Converting creates the sales order (stock reserved per the branch setting) and a DRAFT sales
-// invoice for every line, and opens that invoice.
+// Converting (once the customer has approved) creates a DRAFT sales invoice with the same lines and
+// discounts and opens it. The pro forma is raised on a sales order; no order is created here.
 export default function Page() {
   const router = useRouter()
   const { u, companyId, branchId, proformaId } = useParams()
@@ -215,7 +215,7 @@ export default function Page() {
           <AlertDialogHeader>
             <AlertDialogTitle>Convert {proforma.proforma_number}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This creates the sales order (stock is reserved if the branch reserves on order) and a draft sales invoice for every line. The stock is checked again first, so it fails if the goods are no longer available.
+              Only convert once the customer has approved this pro forma. It creates a draft sales invoice with the same lines and discounts. You can still change the discounts on the draft before issuing it (they replace these, they do not add to them).
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { isModuleEnabledServer } from "@/lib/module-access-server";
+import { getModuleAccessLevelServer } from "@/lib/module-access-server";
 import { createSupabaseServerClient } from "@/config/supabaseServer";
 import InventoryLayoutClient from "./inventoryLayoutClient";
 
@@ -22,10 +22,15 @@ export default async function InventoryLayout({ params, children }) {
     .eq("id", companyId)
     .single();
 
-  const isInventoryEnabled = await isModuleEnabledServer(companyId, "inventory");
+  // "full"      -> normal use
+  // "read_only" -> subscription no longer includes Inventory but the company has history here:
+  //                pages load and a banner explains
+  // "none"      -> never had the module and has no data here: send them to subscriptions
+  //                instead of showing a module they should not see
+  const accessLevel = await getModuleAccessLevelServer(companyId, "inventory");
 
-  if (!isInventoryEnabled) {
-    redirect(`/users/${u}/company/${companyId}/branches/${branchId}/unauthorized?module=inventory`);
+  if (accessLevel === "none") {
+    redirect(`/users/${u}/company/${companyId}/subscriptions`);
   }
 
   const infoRow = Array.isArray(branchData?.branch_info)
@@ -48,6 +53,7 @@ export default async function InventoryLayout({ params, children }) {
     { key: 'movements', label: 'Movements', icon: 'ArrowLeftRight', path: '/movements' },
     { key: 'adjustments', label: 'Adjustments', icon: 'SlidersHorizontal', path: '/adjustments' },
     { key: 'transfers', label: 'Transfers', icon: 'Truck', path: '/transfers' },
+    { key: 'bill-differences', label: 'Bill differences', icon: 'FileDiff', path: '/bill-differences' },
     { key: 'warehouses', label: 'Warehouses', icon: 'Warehouse', path: '/warehouses' },
     { key: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
   ];
@@ -61,6 +67,7 @@ export default async function InventoryLayout({ params, children }) {
       profile={profile}
       company={companyData}
       branch={currentBranch}
+      accessLevel={accessLevel}
     >
       {children}
     </InventoryLayoutClient>

@@ -4,6 +4,8 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { toast } from 'sonner'
+import supabase from '@/config/supabaseClient'
 
 // Helper functions for margin and price calculations
 const calculateValueFromPercentage = (percentage, basePrice) => {
@@ -98,7 +100,7 @@ const calculateSellingPrice = (costPrice, marginValue) => {
 export function VariantTable({ combinations = [], costPrice, standardPricing = {}, bulkThreshold, updateValue, productType = 'physical' }) {
   // Services are not stocked, so the inventory column and switch are hidden.
   const showStock = productType !== 'service'
-  const gridCols = showStock ? 'grid-cols-9' : 'grid-cols-8'
+  const gridCols = showStock ? 'grid-cols-10' : 'grid-cols-9'
   const [pendingEdits, setPendingEdits] = useState({})
   // Live edit buffer for margin %/value, per row index - see comment above.
   const [marginDrafts, setMarginDrafts] = useState({})
@@ -111,6 +113,33 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
     delete next[rowIndex]
     return next
   })
+  // Barcode: saved on the row, but first checked against the other rows here and against
+  // the company's existing products, so a duplicate is caught before the form is submitted.
+  const checkBarcode = async (rowIndex, raw) => {
+    const code = String(raw || '').trim()
+    setPendingEdits(prev => ({ ...prev, [rowIndex]: { ...(prev[rowIndex] || {}), barcode: code } }))
+    updateValue(rowIndex, 'barcode', code)
+    if (!code) return
+    const clash = combinations.findIndex((c, i) => i !== rowIndex && String(c.barcode || '').trim() === code)
+    if (clash !== -1) {
+      toast.error(`The barcode ${code} is already used by another row of this product.`)
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('product_variants')
+        .select('id, sku, products(title)')
+        .or(`barcode.eq.${code},ean.eq.${code},upc.eq.${code}`)
+        .limit(1)
+      if (error) throw error
+      if (data && data.length > 0) {
+        toast.error(`The barcode ${code} already belongs to ${data[0].products?.title || 'another product'} (${data[0].sku}).`)
+      }
+    } catch (err) {
+      console.error('Barcode check failed:', err)
+      toast.error(err?.message || 'Could not check the barcode.')
+    }
+  }
   const [trackInventorySwitch, setTrackInventorySwitch] = useState(true)
   const [trackInShopSwitch, setTrackInShopSwitch] = useState(true)
 
@@ -165,6 +194,7 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
       return {
         variant: combo.combination.length > 0 ? combo.combination.map(item => `${item.value}`).join(' / ') : 'Product',
         sku: combo.sku || '',
+        barcode: combo.barcode || '',
         managed: combo.managed,
         trackedInShop: combo.trackedInShop,
         costPrice: rowCostPrice,
@@ -187,6 +217,9 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
           </div>
           <div className="flex items-center justify-center border-r border-gray-200 p-2">
             <p className="text-[11px] text-center font-medium">SKU</p>
+          </div>
+          <div className="flex items-center justify-center border-r border-gray-200 p-2">
+            <p className="text-[11px] text-center font-medium">Barcode</p>
           </div>
           {showStock && (
             <div className="flex items-center justify-center border-r border-gray-200 p-2">
@@ -263,6 +296,16 @@ export function VariantTable({ combinations = [], costPrice, standardPricing = {
                   setPendingEdits(prev => ({ ...prev, [rowIndex]: { ...(prev[rowIndex] || {}), sku: val } }))
                 }}
                 className="h-7 w-32 text-[11px]"
+              />
+            </div>
+            <div className="flex items-center justify-center border-r border-gray-100 p-2">
+              <Input
+                // A scanner types the code and presses Enter; Enter just confirms the field.
+                defaultValue={(pendingEdits[rowIndex]?.barcode) ?? combo.barcode}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+                onBlur={(e) => checkBarcode(rowIndex, e.target.value)}
+                className="h-7 w-36 text-[11px]"
+                placeholder="Scan or type"
               />
             </div>
             {showStock && (

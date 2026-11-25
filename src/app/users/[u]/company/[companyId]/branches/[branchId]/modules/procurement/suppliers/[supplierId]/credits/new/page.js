@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,6 +76,12 @@ function SupplierCreditFormContent() {
       ])
       if (cancelled) return
 
+      const loadError = supplierRes.error || returnRes.error || recoveryRes.error
+      if (loadError) {
+        console.error('Could not load the supplier or its returns:', loadError)
+        toast.error(loadError.message || 'Could not load the supplier or its returns.')
+      }
+
       const recovery = Object.fromEntries((recoveryRes.data || []).map((row) => [row.purchase_return, row]))
       const list = (returnRes.data || [])
         .filter((row) => !['rejected', 'write_off'].includes(row.resolution))
@@ -110,21 +117,27 @@ function SupplierCreditFormContent() {
     })
   }
 
+  const isDebitKind = kind === 'debit_note'
+
   const submit = async (event) => {
     event.preventDefault()
     setResult(null)
 
     const total = Number(amount)
+    const reject = (message) => {
+      toast.error(message)
+      setResult({ ok: false, lines: [message] })
+    }
     if (!(total > 0)) {
-      setResult({ ok: false, lines: ['Enter the amount.'] })
+      reject('Enter the amount.')
       return
     }
     if (kind === 'credit_note' && !number.trim()) {
-      setResult({ ok: false, lines: ['Enter the credit note number the supplier gave you.'] })
+      reject('Enter the credit note number the supplier gave you.')
       return
     }
     if (pickedTotal > total) {
-      setResult({ ok: false, lines: ['The returns add up to more than the credit amount.'] })
+      reject('The returns add up to more than the credit amount.')
       return
     }
 
@@ -144,9 +157,12 @@ function SupplierCreditFormContent() {
     setSaving(false)
 
     if (error) {
+      console.error('Could not record this document:', error)
+      toast.error(messageOf(error))
       setResult({ ok: false, lines: [messageOf(error)] })
       return
     }
+    toast.success(isDebitKind ? 'Debit note issued.' : 'Credit note recorded.')
     router.push(`${base}/credits/${data.credit_id}`)
   }
 

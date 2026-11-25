@@ -4,6 +4,7 @@ import { useContext, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft, Pencil } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import supabase from '@/config/supabaseClient'
@@ -11,7 +12,7 @@ import { formatCurrency } from '@/components/modules/procurement/dummy-data'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 import { OrderStatusBadge } from '@/components/modules/procurement/purchase-orders-list-page'
 import { SupplierStatusBadge } from '@/components/modules/procurement/suppliers-list'
-import { RESOLUTION_LABELS, Stat } from '@/components/modules/procurement/supplier-credit-shared'
+import { RESOLUTION_LABELS, Stat, formatDate } from '@/components/modules/procurement/supplier-credit-shared'
 
 export default function SupplierDetailPage() {
   const { u, companyId, branchId, supplierId } = useParams()
@@ -23,6 +24,8 @@ export default function SupplierDetailPage() {
   const [orders, setOrders] = useState([])
   const [summary, setSummary] = useState(null)
   const [awaiting, setAwaiting] = useState([])
+  const [position, setPosition] = useState(null) // owed / payable / advance, from supplier_payment_position
+  const [recentPayments, setRecentPayments] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [statusSaving, setStatusSaving] = useState(false)
@@ -69,6 +72,24 @@ export default function SupplierDetailPage() {
           .eq('branch', branchId)
           .maybeSingle()
 
+        // Payment position (payable now, advance held) and the latest payments.
+        // These come from the supplier payments migration; if it has not been
+        // run yet the sections simply stay hidden.
+        const { data: positionRow, error: positionError } = await supabase.rpc('supplier_payment_position', {
+          p_branch: branchId,
+          p_supplier: supplierId,
+        })
+        if (positionError) console.error('Could not load the payment position:', positionError)
+
+        const { data: paymentRows, error: paymentsError } = await supabase
+          .from('supplier_remittances')
+          .select('id, amount, paid_at, method, reference, purchase_bill_payments ( id )')
+          .eq('supplier', supplierId)
+          .eq('branch', branchId)
+          .order('paid_at', { ascending: false })
+          .limit(5)
+        if (paymentsError) console.error('Could not load the recent payments:', paymentsError)
+
         let awaitingRows = []
         const { data: recoveryRows } = await supabase
           .from('purchase_return_recovery')
@@ -89,6 +110,8 @@ export default function SupplierDetailPage() {
           setSupplier(supplierRow)
           setSummary(summaryRow || null)
           setAwaiting(awaitingRows)
+          setPosition(positionError ? null : positionRow || null)
+          setRecentPayments(paymentsError ? [] : paymentRows || [])
           setOrders((orderRows || []).map((order) => ({
             ...order,
             total: (order.purchase_order_line_items || []).reduce(
@@ -99,6 +122,7 @@ export default function SupplierDetailPage() {
         }
       } catch (err) {
         console.error('Failed to load supplier:', err)
+        toast.error(err.message || 'Could not load this supplier.')
         if (!cancelled) setErrorMessage(err.message || 'Could not load this supplier.')
       } finally {
         if (!cancelled) setIsLoading(false)
@@ -125,8 +149,10 @@ export default function SupplierDetailPage() {
 
       if (error) throw error
       setSupplier((prev) => (prev ? { ...prev, status: nextStatus } : prev))
+      toast.success(nextStatus === 'active' ? 'Supplier marked active.' : 'Supplier marked inactive.')
     } catch (err) {
       console.error('Failed to update supplier status:', err)
+      toast.error(err.message || 'Could not update supplier status.')
       setErrorMessage(err.message || 'Could not update supplier status.')
     } finally {
       setStatusSaving(false)
@@ -237,7 +263,33 @@ export default function SupplierDetailPage() {
             />
             <Stat label="Returns awaiting outcome" value={String(summary.returns_awaiting_outcome || 0)} />
           </div>
+          {position && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat
+                label="Payable now"
+                value={money(position.payable)}
+                hint={
+                  Number(position.unpayable || 0) > 0
+                    ? `${money(position.unpayable)} is for items not in the catalog yet`
+                    : undefined
+                }
+              />
+              <Stat
+                label="Advance held"
+                value={money(position.advance)}
+                hint={Number(position.advance || 0) > 0 ? 'Used on this supplier\'s next bill' : undefined}
+              />
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
+            <Link href={`${base}/suppliers/${supplier.id}/payments/new`} className="text-core hover:underline">
+              Pay supplier
+            </Link>
+            <span className="text-muted-foreground">·</span>
+            <Link href={`${base}/suppliers/${supplier.id}/payments`} className="text-core hover:underline">
+              Payments
+            </Link>
+            <span className="text-muted-foreground">·</span>
             <Link href={`${base}/suppliers/${supplier.id}/credits`} className="text-core hover:underline">
               Credits & refunds
             </Link>
@@ -254,6 +306,45 @@ export default function SupplierDetailPage() {
               Record refund
             </Link>
           </div>
+        </section>
+      )}
+
+      {position && (
+        <section className="overflow-hidden border border-border rounded-sm bg-card">
+          <div className="flex items-center justify-between border-b border-border bg-muted px-4 py-3">
+            <h2 className="text-xs font-semibold text-foreground">Recent payments</h2>
+            <Link href={`${base}/suppliers/${supplier.id}/payments`} className="text-[11px] text-core hover:underline">
+              View all
+            </Link>
+          </div>
+          {recentPayments.length === 0 ? (
+            <p className="p-4 text-xs text-muted-foreground">No payments to this supplier yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] text-xs">
+                <thead className="bg-muted/50 text-[10px] text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium">Date</th>
+                    <th className="px-4 py-2 text-left font-medium">Reference</th>
+                    <th className="px-4 py-2 text-left font-medium">Bills paid</th>
+                    <th className="px-4 py-2 text-right font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {recentPayments.map((payment) => (
+                    <tr key={payment.id}>
+                      <td className="px-4 py-2 text-muted-foreground">{formatDate(payment.paid_at)}</td>
+                      <td className="px-4 py-2 font-medium text-foreground">{payment.reference || '—'}</td>
+                      <td className="px-4 py-2 text-muted-foreground">
+                        {(payment.purchase_bill_payments || []).length || 'None'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-foreground">{money(payment.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 

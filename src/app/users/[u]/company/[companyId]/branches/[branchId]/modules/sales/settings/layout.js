@@ -4,6 +4,10 @@ import TabNav from '@/components/modules/sales/TabNav'
 const TABS = [
   { label: 'General', value: '' },
   { label: 'Documents', value: 'documents' },
+  { label: 'Delivery', value: 'delivery' },
+  { label: 'Discounts & margin', value: 'discounts' },
+  { label: 'Returns', value: 'returns' },
+  { label: 'POS', value: 'pos' },
 ]
 
 export default async function SalesSettingsLayout({ children, params }) {

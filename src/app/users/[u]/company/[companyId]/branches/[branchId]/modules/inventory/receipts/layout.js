@@ -4,7 +4,8 @@ import TabNav from '@/components/modules/sales/TabNav'
 
 // Receipts is where everything that comes into the branch is counted in:
 // purchase orders, gifts, opening stock and anything else. All is the landing
-// tab (every receipt); Expected lists the orders still due.
+// tab (every receipt); Expected lists the orders still due. Emergency lists
+// goods that arrived but are not in the product catalog (not in stock).
 const TABS = [
   { label: 'All', value: '' },
   { label: 'Expected', value: 'expected' },
@@ -12,6 +13,7 @@ const TABS = [
   { label: 'Quarantine', value: 'quarantine' },
   { label: 'Excess', value: 'excess' },
   { label: 'Damaged', value: 'damaged' },
+  { label: 'Emergency', value: 'emergency' },
   { label: 'Unbilled', value: 'unbilled' },
   { label: 'Done', value: 'done' },
 ]
@@ -35,7 +37,7 @@ export default async function ReceiptsLayout({ children, params }) {
         }
       />
       <TabNav tabs={TABS} basePath={basePath} />
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="min-h-0 flex-1 w-full overflow-x-hidden overflow-y-auto">{children}</div>
     </div>
   )
 }

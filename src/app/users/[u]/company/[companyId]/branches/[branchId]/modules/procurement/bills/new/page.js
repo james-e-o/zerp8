@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { X, Upload, FileText, Maximize2 } from 'lucide-react'
+import { X, Upload, FileText, Maximize2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -120,6 +120,15 @@ function FileMedia({ file }) {
 // they appear here under "Accepted extras" and can be billed. While they
 // are still held they are not billable; a notice says so.
 //
+// Items the supplier charged for that are NOT in the product catalog go on the
+// same bill as flagged lines ("Items not in the catalog": name, quantity, price
+// and a compulsory note). They count in the bill's total so it matches the
+// supplier's invoice, but they cannot be paid until the product exists and
+// purchasing has put it on the order (the bill page links the line then).
+//
+// Estimated cost prices are NOT changed from this page. Only Products >
+// Pricing > Cost estimates does that.
+//
 // Real order goods are billable up to the ordered quantity whether or not
 // they have arrived or are sitting in quarantine; the form flags which.
 //
@@ -159,7 +168,12 @@ export default function BillForm() {
   const [extraQuantities, setExtraQuantities] = useState({}) // { [holdId]: quantity }
   const [extraPrices, setExtraPrices] = useState({}) // { [holdId]: price (blank = receipt cost) }
   const [holds, setHolds] = useState([]) // receipt holds on the selected PO
+  const [unlistedItems, setUnlistedItems] = useState([]) // [{ key, name, quantity, price, note }] items not in the catalog
   const [saving, setSaving] = useState(false)
+  // What this supplier holds for us in advance (an overpayment kept as credit).
+  // The bill can use it when it is saved.
+  const [advanceAvailable, setAdvanceAvailable] = useState(0)
+  const [useAdvance, setUseAdvance] = useState(true)
   const [submitError, setSubmitErrorState] = useState('')
   // Every error shown inline is also shown as a toast.
   const setSubmitError = (message) => {
@@ -177,7 +191,6 @@ export default function BillForm() {
   const totalsRef = useRef(null) // the subtotal / tax / total box, scrolled into view for a new bill
   const scrollToTotalsRef = useRef(false)
   const [reviewOpen, setReviewOpen] = useState(false) // "review before saving" dialog
-  const [updateEstimates, setUpdateEstimates] = useState(false) // tick: also update estimated cost prices
   const [notice, setNotice] = useState(null) // { title, lines, redirectTo } shown after saving
 
   // { id, file, uploading, url, error } per picked file; nothing is sent
@@ -202,6 +215,33 @@ export default function BillForm() {
 
   const selectedOrder = orders.find((order) => order.id === purchaseOrderId)
   const poLineItems = selectedOrder?.purchase_order_line_items || []
+  const advanceSupplierId = selectedOrder?.supplier?.id
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadAdvance() {
+      if (!advanceSupplierId || !branchId) {
+        setAdvanceAvailable(0)
+        return
+      }
+      const { data, error } = await supabase.rpc('supplier_payment_position', {
+        p_branch: branchId,
+        p_supplier: advanceSupplierId,
+      })
+      if (cancelled) return
+      if (error) {
+        // Not blocking: the bill can still be saved without the advance.
+        console.error('Could not load the supplier advance:', error)
+        setAdvanceAvailable(0)
+        return
+      }
+      setAdvanceAvailable(Number(data?.advance || 0))
+    }
+    loadAdvance()
+    return () => {
+      cancelled = true
+    }
+  }, [advanceSupplierId, branchId])
 
   // Everything held or accepted from receipts on this order. Used for the
   // accepted-extras section, the held-goods notice, and to tell "in
@@ -213,9 +253,9 @@ export default function BillForm() {
 
     async function loadHolds() {
       const { data, error } = await supabase
-        .from('purchase_receipt_holds')
+        .from('quarantine_holds')
         .select(
-          'id, kind, status, quantity, quantity_billed, variant, purchase_order_line_item, purchase_receipt_line_items(unit_cost_snapshot)'
+          'id, hold_type, status, quantity, quantity_billed, variant, purchase_order_line_item, purchase_receipt_line_items(unit_cost_snapshot)'
         )
         .eq('purchase_order', purchaseOrderId)
       if (cancelled) return
@@ -242,7 +282,7 @@ export default function BillForm() {
   const quarantinedByLine = useMemo(() => {
     const map = {}
     holds.forEach((hold) => {
-      if (hold.kind === 'normal' && ['awaiting_review', 'damaged'].includes(hold.status) && hold.purchase_order_line_item) {
+      if (hold.hold_type === 'normal' && ['awaiting_review', 'damaged'].includes(hold.status) && hold.purchase_order_line_item) {
         map[hold.purchase_order_line_item] = (map[hold.purchase_order_line_item] || 0) + Number(hold.quantity || 0)
       }
     })
@@ -255,7 +295,7 @@ export default function BillForm() {
       holds
         .filter(
           (hold) =>
-            (hold.kind === 'excess' || hold.kind === 'wrong_item') &&
+            (hold.hold_type === 'excess' || hold.hold_type === 'wrong_item') &&
             hold.status === 'accepted' &&
             Number(hold.quantity || 0) - Number(hold.quantity_billed || 0) > 0
         )
@@ -285,7 +325,7 @@ export default function BillForm() {
   // Extras still held in quarantine: received, but not billable yet.
   const heldExtras = holds.filter(
     (hold) =>
-      (hold.kind === 'excess' || hold.kind === 'wrong_item') &&
+      (hold.hold_type === 'excess' || hold.hold_type === 'wrong_item') &&
       ['awaiting_review', 'damaged'].includes(hold.status)
   )
 
@@ -306,6 +346,7 @@ export default function BillForm() {
     setSelectedExtras({})
     setExtraQuantities({})
     setExtraPrices({})
+    setUnlistedItems([])
 
     // A new bill starts with every line that can still be billed selected, at
     // its full remaining quantity (ordered minus already billed). The user
@@ -399,6 +440,7 @@ export default function BillForm() {
     setSelectedExtras(pendingDraft.selectedExtras || {})
     setExtraQuantities(pendingDraft.extraQuantities || {})
     setExtraPrices(pendingDraft.extraPrices || {})
+    setUnlistedItems(pendingDraft.unlistedItems || [])
     setPendingDraft(null)
   }, [pendingDraft, orders, ordersLoading, ordersError])
 
@@ -493,18 +535,57 @@ export default function BillForm() {
     [billableLines]
   )
   const selectedExtraLines = extraLines.filter((line) => line.isSelected && line.quantity > 0)
+
+  // Items that are not in the catalog: only rows that have been started count.
+  const unlistedRows = unlistedItems.map((item) => {
+    const quantity = Number(item.quantity || 0)
+    const price = Number(item.price || 0)
+    return { ...item, quantityNumber: quantity, priceNumber: price, lineTotal: quantity * price }
+  })
+  const unlistedTotal = unlistedRows.reduce((sum, item) => sum + item.lineTotal, 0)
+  const addUnlisted = () =>
+    setUnlistedItems((prev) => [
+      ...prev,
+      { key: `unlisted-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: '', quantity: '', price: '', note: '' },
+    ])
+  const updateUnlisted = (key, patch) =>
+    setUnlistedItems((prev) => prev.map((item) => (item.key === key ? { ...item, ...patch } : item)))
+  const removeUnlisted = (key) => setUnlistedItems((prev) => prev.filter((item) => item.key !== key))
+  const unlistedProblem = () => {
+    for (const item of unlistedRows) {
+      const label = item.name.trim() || 'An item that is not in the catalog'
+      if (!item.name.trim()) return 'Enter the name of every item that is not in the catalog.'
+      if (!(item.quantityNumber > 0)) return `${label}: enter the quantity.`
+      if (item.price === '' || !(item.priceNumber >= 0)) return `${label}: enter the price.`
+      if (item.note.trim().length < 10) return `${label}: explain why it is not in the catalog (at least 10 characters).`
+    }
+    return ''
+  }
+
   const needsReview =
-    priceDifferences.length > 0 || linesAheadOfReceipts.length > 0 || selectedExtraLines.length > 0
+    priceDifferences.length > 0 ||
+    linesAheadOfReceipts.length > 0 ||
+    selectedExtraLines.length > 0 ||
+    unlistedRows.length > 0
 
   const subtotal =
     billableLines.reduce((sum, line) => sum + line.lineTotal, 0) +
-    extraLines.reduce((sum, line) => sum + line.lineTotal, 0)
+    extraLines.reduce((sum, line) => sum + line.lineTotal, 0) +
+    unlistedTotal
   const total = subtotal + Number(tax || 0)
+  // How much of this bill the supplier's advance would cover when it is saved.
+  // Items not in the catalog are unpayable, so they are left out.
+  const payableTotal = Math.max(total - unlistedTotal, 0)
+  const advanceCovered = useAdvance ? Math.min(advanceAvailable, payableTotal) : 0
+  const leftToPay = Math.max(payableTotal - advanceCovered, 0)
   const hasAnySelected =
-    billableLines.some((line) => line.isSelected) || extraLines.some((line) => line.isSelected)
+    billableLines.some((line) => line.isSelected) ||
+    extraLines.some((line) => line.isSelected) ||
+    unlistedRows.length > 0
   const hasAnyQuantity =
     billableLines.some((line) => line.isSelected && line.quantity > 0) ||
-    extraLines.some((line) => line.isSelected && line.quantity > 0)
+    extraLines.some((line) => line.isSelected && line.quantity > 0) ||
+    unlistedRows.some((item) => item.quantityNumber > 0)
   const selectableLines = billableLines.filter((line) => !line.fullyBilled)
   const allLinesSelected =
     selectableLines.length > 0 && selectableLines.every((line) => line.isSelected)
@@ -594,6 +675,7 @@ export default function BillForm() {
       selectedExtras,
       extraQuantities,
       extraPrices,
+      unlistedItems,
     }
     const title = [selectedOrder?.order_number, selectedOrder?.supplier?.name, supplierReference]
       .filter(Boolean)
@@ -662,7 +744,7 @@ export default function BillForm() {
     if (hasOverLimit) {
       return 'One or more lines are billed for more than what is still left to bill. Fix the lines shown in red.'
     }
-    return ''
+    return unlistedProblem()
   }
 
   // Save Bill button: if anything differs from the Purchase Order (price) or
@@ -719,6 +801,19 @@ export default function BillForm() {
       })
     })
 
+    // Items that are not in the catalog: flagged lines with no product.
+    unlistedRows.forEach((item) => {
+      lineItems.push({
+        unlisted: true,
+        unlisted_note: item.note.trim(),
+        variant: null,
+        description_snapshot: item.name.trim(),
+        quantity: item.quantityNumber,
+        unit_price_snapshot: item.priceNumber,
+        line_total: item.lineTotal,
+      })
+    })
+
     const { data, error } = await supabase.rpc('create_purchase_bill', {
       p_branch: branchId,
       p_supplier: selectedOrder?.supplier?.id,
@@ -735,6 +830,7 @@ export default function BillForm() {
     })
 
     if (error) {
+      console.error('Could not create this bill:', error)
       setSaving(false)
       setSubmitError(error.message || 'Could not create this bill.')
       return
@@ -772,32 +868,29 @@ export default function BillForm() {
       }
     }
 
-    // Ticked in the review dialog: make the billed prices the products'
-    // estimated cost prices.
-    if (billId && updateEstimates && priceDifferences.length > 0) {
-      const { data: estimateResult, error: estimateError } = await supabase.rpc(
-        'update_cost_estimates_from_bill',
-        {
-          p_branch: branchId,
-          p_updates: priceDifferences.map((row) => ({
-            variant: row.variant,
-            cost_price: row.billed,
-            cost_currency: row.currency,
-          })),
-        }
+    // Use the supplier's advance on the new bill.
+    if (billId && useAdvance && advanceAvailable > 0 && advanceCovered > 0) {
+      const { data: advanceResult, error: advanceError } = await supabase.rpc(
+        'apply_supplier_advance_to_bill',
+        { p_bill: billId }
       )
-      if (estimateError) {
-        noticeLines.push(`Estimated cost prices were not updated: ${estimateError.message}`)
-      } else {
-        const updated = Number(estimateResult?.updated || 0)
-        const skipped = Number(estimateResult?.skipped || 0)
+      if (advanceError) {
+        console.error('Could not apply the supplier advance:', advanceError)
+        toast.error(advanceError.message || 'Could not apply the supplier advance.')
         noticeLines.push(
-          `Estimated cost price updated for ${updated} product${updated === 1 ? '' : 's'}.` +
-            (skipped > 0
-              ? ` ${skipped} left unchanged (different currency, or you can't edit that product).`
-              : '')
+          `The supplier advance was not applied (${advanceError.message}). You can apply it from the bill page.`
         )
+      } else if (Number(advanceResult?.applied || 0) > 0) {
+        noticeLines.push(`${formatNaira(advanceResult.applied)} of the supplier advance was applied to this bill.`)
+      } else if (advanceResult?.reason) {
+        noticeLines.push(`The supplier advance was not applied: ${advanceResult.reason}.`)
       }
+    }
+
+    if (unlistedRows.length > 0) {
+      noticeLines.push(
+        `${formatNaira(unlistedTotal)} of this bill is for items that are not in the catalog. It cannot be paid until the product is created and added to the order.`
+      )
     }
 
     // Flags raised by the server's own price check.
@@ -1345,10 +1438,10 @@ export default function BillForm() {
                           <td className="px-3 py-2">
                             <span
                               className={`inline-flex rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${
-                                line.kind === 'excess' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                                line.hold_type === 'excess' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
                               }`}
                             >
-                              {line.kind === 'excess' ? 'Excess' : 'Not on order'}
+                              {line.hold_type === 'excess' ? 'Excess' : 'Not on order'}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-right text-gray-600">{line.billable}</td>
@@ -1398,6 +1491,81 @@ export default function BillForm() {
               </div>
             )}
 
+            {/* Items the supplier charged for that are not in the product catalog. */}
+            {purchaseOrderId && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-gray-800">Items not in the catalog</h2>
+                  <Button type="button" variant="outline" className="h-7 text-xs" onClick={addUnlisted}>
+                    <Plus className="mr-1 size-3.5" /> Add item not in catalog
+                  </Button>
+                </div>
+                {unlistedRows.length === 0 ? (
+                  <p className="text-xs text-gray-500">
+                    If this invoice charges for something we have no product for, add it here. It stays on the bill
+                    but cannot be paid until the product exists and is on the order.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {unlistedRows.map((item) => (
+                      <div key={item.key} className="grid grid-cols-2 items-end gap-2 rounded-lg border border-red-200 bg-red-50/40 p-3 sm:grid-cols-12">
+                        <label className="col-span-2 text-[11px] text-gray-600 sm:col-span-4">
+                          Item name
+                          <Input
+                            value={item.name}
+                            onChange={(event) => updateUnlisted(item.key, { name: event.target.value })}
+                            className="mt-1 h-7 bg-white text-xs"
+                          />
+                        </label>
+                        <label className="text-[11px] text-gray-600 sm:col-span-2">
+                          Quantity
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.quantity}
+                            onChange={(event) => updateUnlisted(item.key, { quantity: event.target.value })}
+                            className="mt-1 h-7 bg-white text-right text-xs"
+                          />
+                        </label>
+                        <label className="text-[11px] text-gray-600 sm:col-span-2">
+                          Price
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.price}
+                            onChange={(event) => updateUnlisted(item.key, { price: event.target.value })}
+                            className="mt-1 h-7 bg-white text-right text-xs"
+                          />
+                        </label>
+                        <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-4 sm:justify-end">
+                          <span className="text-xs font-medium text-gray-800">{formatNaira(item.lineTotal)}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeUnlisted(item.key)}
+                            className="text-gray-400 hover:text-red-600"
+                            aria-label="Remove item"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                        <label className="col-span-2 text-[11px] text-gray-600 sm:col-span-12">
+                          Why is it not in the catalog? (compulsory)
+                          <Input
+                            value={item.note}
+                            onChange={(event) => updateUnlisted(item.key, { note: event.target.value })}
+                            className="mt-1 h-7 bg-white text-xs"
+                            placeholder="Where it came from and why we have no product for it"
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {purchaseOrderId && heldExtras.length > 0 && (
               <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] leading-4 text-gray-700">
                 <p className="font-medium">Received but held in quarantine - not billable yet</p>
@@ -1405,7 +1573,7 @@ export default function BillForm() {
                   {heldExtras.map((hold) => (
                     <li key={hold.id}>
                       {variantNames[hold.variant]?.display || 'Item'}: {Number(hold.quantity)}{' '}
-                      {hold.kind === 'excess' ? 'excess' : 'not on the order'}. Accept it in Quarantine to bill it.
+                      {hold.hold_type === 'excess' ? 'excess' : 'not on the order'}. Accept it in Quarantine to bill it.
                     </li>
                   ))}
                 </ul>
@@ -1436,8 +1604,55 @@ export default function BillForm() {
               <div className="flex flex-col gap-0.5 border-t border-gray-200 pt-3 sm:border-t-0 sm:pt-0 sm:text-right">
                 <span className="text-xs font-medium text-gray-700">Total</span>
                 <span className="text-xl font-bold tracking-tight text-slate-900">{formatNaira(total)}</span>
+                {unlistedTotal > 0 && (
+                  <>
+                    <span className="text-xs font-medium text-red-700">Unpayable: {formatNaira(unlistedTotal)}</span>
+                    <span className="text-[11px] leading-4 text-gray-500 sm:max-w-xs sm:self-end">
+                      For items that are not in the product catalog and were never on the purchase order. It
+                      cannot be paid until the product exists and is on the order.
+                    </span>
+                  </>
+                )}
               </div>
             </div>
+
+            {advanceAvailable > 0 && (
+              <div
+                className={`rounded-lg border p-3 text-xs ${
+                  payableTotal <= 0
+                    ? 'border-gray-200 bg-gray-50/60'
+                    : useAdvance && leftToPay <= 0.005
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : useAdvance && advanceCovered > 0
+                        ? 'border-amber-200 bg-amber-50'
+                        : 'border-red-200 bg-red-50'
+                }`}
+              >
+                <label className="flex cursor-pointer items-start gap-2">
+                  <Checkbox
+                    checked={useAdvance}
+                    onCheckedChange={(checked) => setUseAdvance(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="font-medium text-gray-800">
+                    Use supplier advance ({formatNaira(advanceAvailable)} available)
+                  </span>
+                </label>
+                {payableTotal > 0 && (
+                  <p className="mt-1.5 leading-5 text-gray-700">
+                    {useAdvance && leftToPay <= 0.005
+                      ? `Covered: the advance pays this whole bill (${formatNaira(payableTotal)}).`
+                      : useAdvance && advanceCovered > 0
+                        ? `Part covered: ${formatNaira(advanceCovered)} comes from the advance. ${formatNaira(leftToPay)} is left to pay. The bill will be Partially paid.`
+                        : `Not covered: ${formatNaira(payableTotal)} is left to pay.`}
+                  </p>
+                )}
+                <p className="mt-1 text-[11px] leading-4 text-gray-500">
+                  The advance is applied when the bill is saved. If the bill waits for approval, it is not applied
+                  until then.
+                </p>
+              </div>
+            )}
 
             <label className="text-xs font-medium text-gray-700">
               Notes
@@ -1517,9 +1732,40 @@ export default function BillForm() {
                     {selectedExtraLines.map((line) => (
                       <tr key={line.id}>
                         <td className="py-1 pr-2 text-gray-800">{line.displayName || 'Item'}</td>
-                        <td className="py-1">{line.kind === 'excess' ? 'Excess' : 'Not on order'}</td>
+                        <td className="py-1">{line.hold_type === 'excess' ? 'Excess' : 'Not on order'}</td>
                         <td className="py-1 text-right">{line.quantity}</td>
                         <td className="py-1 text-right">{formatNaira(line.lineTotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {unlistedRows.length > 0 && (
+              <div>
+                <p className="mb-1 font-semibold text-red-800">Items not in the catalog</p>
+                <p className="mb-1.5 text-[11px] text-gray-500">
+                  These were never on the purchase order and have no product. They are on the bill so it matches the
+                  supplier's invoice, but they cannot be paid until the product is created and added to the order.
+                </p>
+                <table className="w-full text-[11px]">
+                  <thead className="text-gray-500">
+                    <tr>
+                      <th className="py-1 text-left font-medium">Item</th>
+                      <th className="py-1 text-right font-medium">Quantity</th>
+                      <th className="py-1 text-right font-medium">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {unlistedRows.map((item) => (
+                      <tr key={item.key}>
+                        <td className="py-1 pr-2 text-gray-800">
+                          {item.name}
+                          <span className="block text-[10px] text-gray-500">{item.note}</span>
+                        </td>
+                        <td className="py-1 text-right">{item.quantityNumber}</td>
+                        <td className="py-1 text-right">{formatNaira(item.lineTotal)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1562,23 +1808,6 @@ export default function BillForm() {
                     })}
                   </tbody>
                 </table>
-
-                <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-gray-200 bg-gray-50/60 p-2.5">
-                  <Checkbox
-                    checked={updateEstimates}
-                    onCheckedChange={(checked) => setUpdateEstimates(checked === true)}
-                    className="mt-0.5"
-                  />
-                  <span className="text-[11px] leading-4 text-gray-700">
-                    <span className="font-medium text-gray-900">
-                      Also update the estimated cost price of {priceDifferences.length === 1 ? 'this product' : 'these products'}
-                    </span>
-                    <br />
-                    The billing price above becomes each product's estimated cost price for future
-                    Purchase Orders. Products priced in a different currency, or that you can't edit,
-                    are left unchanged.
-                  </span>
-                </label>
               </div>
             )}
           </div>

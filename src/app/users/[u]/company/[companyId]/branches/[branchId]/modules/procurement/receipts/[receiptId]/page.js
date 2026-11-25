@@ -4,6 +4,21 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 import supabase from '@/config/supabaseClient'
 import {
@@ -19,6 +34,7 @@ import {
   HOLD_STATUS,
   Tone,
   chunk,
+  fetchReturnReserved,
   isExtraKind,
   receiptState,
   sourceLabel,
@@ -27,8 +43,10 @@ import {
 
 // Purchases > Receipts > [receipt]: one receipt as inventory counted it, and
 // what has happened to each line since (accepted, in quarantine, damaged,
-// returned). Read-only. Purchases acts on two things from here: excess goods
-// (Receipts > Excess) and damaged goods (Returns > To return).
+// returned). The receipt itself is read-only. Purchases acts from here on two
+// things: goods that are not on the order (accept them into the order, or send
+// them back) and damaged goods (Returns > To return). Accepting needs the
+// purchase order edit permission; the database enforces it.
 
 export default function PurchasesReceiptDetailPage() {
   const { receiptId } = useParams()
@@ -41,6 +59,12 @@ export default function PurchasesReceiptDetailPage() {
   const [holdsByLine, setHoldsByLine] = useState({})
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const [reserved, setReserved] = useState({})
+  const [quantities, setQuantities] = useState({})
+  const [target, setTarget] = useState(null)
+  const [note, setNote] = useState('')
+  const [working, setWorking] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const { variants } = useStockNames(lines.map((line) => line.variant))
   const nameOf = (id) => {
@@ -61,7 +85,7 @@ export default function PurchasesReceiptDetailPage() {
         let head = await supabase
           .from('purchase_receipts')
           .select(
-            `*, order_ref:purchase_orders!purchase_order ( id, order_number, supplier:suppliers ( name ) )`
+            `*, order_ref:purchase_orders!purchase_order ( id, order_number, supplier:suppliers ( id, name ) )`
           )
           .eq('id', receiptId)
           .eq('branch', branchId)
@@ -90,7 +114,7 @@ export default function PurchasesReceiptDetailPage() {
         const grouped = {}
         for (const part of chunk((lineRows || []).map((row) => row.id))) {
           const { data: holdRows, error: holdError } = await supabase
-            .from('purchase_receipt_holds')
+            .from('quarantine_holds')
             .select('*')
             .in('purchase_receipt_line_item', part)
           if (holdError) {
@@ -113,7 +137,14 @@ export default function PurchasesReceiptDetailPage() {
           warehouse = warehouseRow?.name || warehouseRow?.label || warehouseRow?.code || ''
         }
 
+        const pendingIds = Object.values(grouped)
+          .flat()
+          .filter((hold) => isExtraKind(hold.hold_type) && hold.status === 'awaiting_review')
+          .map((hold) => hold.id)
+        const reservedNow = pendingIds.length ? await fetchReturnReserved(pendingIds) : {}
+
         if (cancelled) return
+        setReserved(reservedNow)
         setReceipt(head.data)
         setWarehouseName(warehouse)
         setLines(lineRows || [])
@@ -121,6 +152,7 @@ export default function PurchasesReceiptDetailPage() {
       } catch (error) {
         if (cancelled) return
         console.error('Failed to load receipt:', error)
+        toast.error(error.message || 'Could not load this receipt.')
         setErrorMessage(error.message || 'Could not load this receipt.')
       } finally {
         if (!cancelled) setLoading(false)
@@ -131,7 +163,51 @@ export default function PurchasesReceiptDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [receiptId, branchId])
+  }, [receiptId, branchId, reloadKey])
+
+  const pendingExtra = Object.values(holdsByLine)
+    .flat()
+    .filter((hold) => isExtraKind(hold.hold_type) && hold.status === 'awaiting_review')
+  const freeOf = (hold) => Math.max(Number(hold.quantity) - (reserved[hold.id] || 0), 0)
+  const qtyFor = (hold) => {
+    const raw = quantities[hold.id]
+    return raw === undefined || raw === '' ? freeOf(hold) : Number(raw)
+  }
+  const qtyInvalid = (hold) => !(qtyFor(hold) > 0) || qtyFor(hold) > freeOf(hold)
+  const labelOf = (id) => {
+    const info = nameOf(id)
+    return info.label ? `${info.title} · ${info.label}` : info.title
+  }
+
+  const accept = async () => {
+    if (!target) return
+    setWorking(true)
+    const { data, error } = await supabase.rpc('accept_excess_hold', {
+      p_hold: target.id,
+      p_quantity: qtyFor(target),
+      p_note: note.trim() || null,
+    })
+    setWorking(false)
+
+    const response = Array.isArray(data) ? data[0] : data
+    if (error || response?.success === false) {
+      console.error('Could not accept goods into the order:', error || response)
+      toast.error(`${labelOf(target.variant)}: ${error?.message || response?.error || 'Could not be accepted.'}`)
+    } else {
+      toast.success(`${formatQty(qtyFor(target))} × ${labelOf(target.variant)} added to the order. Inventory will check it next.`)
+      setReloadKey((key) => key + 1)
+    }
+    setTarget(null)
+    setNote('')
+    setQuantities({})
+  }
+
+  const returnLink = (hold) => {
+    const reason = hold.hold_type === 'wrong_item' ? 'Wrong item delivered' : 'Excess delivered'
+    const params = new URLSearchParams({ hold: hold.id, reason })
+    if (order?.supplier?.id) params.set('supplier', order.supplier.id)
+    return `${returnsPath}/new?${params.toString()}`
+  }
 
   if (loading) return <p className="p-4 text-xs text-gray-500">Loading receipt...</p>
   if (errorMessage || !receipt) {
@@ -155,7 +231,7 @@ export default function PurchasesReceiptDetailPage() {
   )
   const order = receipt.order_ref
   const needsExcess = allHolds
-    .filter((hold) => isExtraKind(hold.kind) && hold.status === 'awaiting_review')
+    .filter((hold) => isExtraKind(hold.hold_type) && hold.status === 'awaiting_review')
     .reduce((sum, hold) => sum + Number(hold.quantity || 0), 0)
   const needsReturn = allHolds
     .filter((hold) => hold.status === 'damaged' && (hold.damage_reason || 'arrival') === 'arrival' && hold.return_decision !== 'write_off')
@@ -183,8 +259,9 @@ export default function PurchasesReceiptDetailPage() {
           {needsExcess > 0 && (
             <span>
               {formatQty(needsExcess)} unit(s) not on the order.{' '}
+              <span className="font-medium">Decide below, or in </span>
               <Link href={`${receiptsPath}/excess`} className="font-medium underline">
-                Decide in Excess
+                Excess
               </Link>
             </span>
           )}
@@ -198,6 +275,99 @@ export default function PurchasesReceiptDetailPage() {
           )}
         </div>
       )}
+
+      {pendingExtra.length > 0 && (
+        <div className="rounded-lg border border-amber-200">
+          <p className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            Not on the order. Add to the order, or send back.
+          </p>
+          <table className="w-full min-w-[640px] text-xs">
+            <tbody className="divide-y divide-gray-100">
+              {pendingExtra.map((hold) => {
+                const free = freeOf(hold)
+                const kind = HOLD_KIND[hold.hold_type] || { label: hold.hold_type, tone: 'gray' }
+                return (
+                  <tr key={hold.id} className="align-middle">
+                    <td className="px-3 py-2 text-[11px] text-gray-800">
+                      {labelOf(hold.variant)}
+                      {hold.note && <span className="block text-[10px] text-gray-500">{hold.note}</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Tone tone={kind.tone}>{kind.label}</Tone>
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-900">
+                      {formatQty(free)}
+                      {free < Number(hold.quantity) && (
+                        <span className="block text-[10px] text-gray-500">{formatQty(Number(hold.quantity) - free)} in a return</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Input
+                        type="number"
+                        min="0"
+                        max={free}
+                        value={quantities[hold.id] ?? ''}
+                        placeholder={String(free)}
+                        disabled={free <= 0}
+                        onChange={(event) => setQuantities((previous) => ({ ...previous, [hold.id]: event.target.value }))}
+                        className="ml-auto h-7 w-20 text-right text-xs"
+                      />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mr-1.5 h-7 bg-core text-xs text-white hover:bg-core/90"
+                        disabled={free <= 0 || qtyInvalid(hold)}
+                        onClick={() => setTarget(hold)}
+                      >
+                        Accept into order
+                      </Button>
+                      <Link
+                        href={returnLink(hold)}
+                        className="inline-flex h-7 items-center rounded-md border border-gray-300 px-2.5 text-xs text-gray-700 hover:bg-gray-50"
+                      >
+                        Return
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <AlertDialog open={!!target} onOpenChange={(open) => !open && !working && setTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">Add these goods to the order?</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              {target ? `${formatQty(qtyFor(target))} × ${labelOf(target.variant)}. ` : ''}
+              The order now covers them at the order price, so you can bill them. They stay in quarantine until
+              inventory checks them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Note (optional)"
+            className="min-h-16 text-xs"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-7 text-xs" disabled={working}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="h-7 bg-core text-xs text-white hover:bg-core/90"
+              disabled={working}
+              onClick={accept}
+            >
+              Add to order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-gray-200 p-3 text-xs sm:grid-cols-4">
         <Field label="Source">{sourceLabel(receipt)}</Field>
@@ -242,7 +412,7 @@ export default function PurchasesReceiptDetailPage() {
               const holds = holdsByLine[line.id] || []
               const totals = new Map()
               for (const hold of holds) {
-                const key = `${hold.kind}:${hold.status}`
+                const key = `${hold.hold_type}:${hold.status}`
                 totals.set(key, (totals.get(key) || 0) + Number(hold.quantity || 0))
               }
               return (

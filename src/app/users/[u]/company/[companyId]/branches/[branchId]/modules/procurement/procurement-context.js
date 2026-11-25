@@ -3,12 +3,18 @@
 // ----------------------------------------------------------------------
 // ProcurementProvider / useProcurementContext
 //
-// All Supabase fetching for the procurement module lives HERE now, not in
+// All Supabase fetching for the procurement module lives HERE, not in
 // individual page.js files. This is mounted once in ProcurementLayoutClient,
 // which wraps every procurement subroute (overview, suppliers, orders,
 // receipts, bills, returns, requests, settings) - since Next's app router
 // does not remount a layout when navigating between sibling subroutes,
 // this fetch runs once per branch visit, not once per page.
+//
+// Access level: the server layout resolves the company's access level for this
+// module ("full" or "read_only"; "none" never reaches here) and passes it in.
+// Pages can read `readOnly` to hide create/edit actions. The database already
+// refuses writes for read-only companies (module_gate), so hiding is only for
+// a cleaner experience.
 //
 // Scope note: this currently covers exactly what the Overview page needed
 // (requests, orders, receipts, bills) - it does not yet fetch suppliers,
@@ -29,11 +35,12 @@
 // ----------------------------------------------------------------------
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import supabase from '@/config/supabaseClient'
 
 const ProcurementContext = createContext(null)
 
-export function ProcurementProvider({ branchId, children }) {
+export function ProcurementProvider({ branchId, accessLevel = 'full', children }) {
   const [loading, setLoading] = useState(true)
   const [requests, setRequests] = useState([])
   const [orders, setOrders] = useState([])
@@ -105,6 +112,7 @@ export function ProcurementProvider({ branchId, children }) {
       setBills(billsWithBalance)
     } catch (err) {
       console.error('Error loading procurement context data:', err)
+      toast.error(err?.message || 'Could not load procurement data')
     } finally {
       setLoading(false)
     }
@@ -116,7 +124,16 @@ export function ProcurementProvider({ branchId, children }) {
 
   return (
     <ProcurementContext.Provider
-      value={{ loading, requests, orders, receipts, bills, refetch: fetchAll }}
+      value={{
+        loading,
+        requests,
+        orders,
+        receipts,
+        bills,
+        accessLevel,
+        readOnly: accessLevel === 'read_only',
+        refetch: fetchAll,
+      }}
     >
       {children}
     </ProcurementContext.Provider>

@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { emptyQuotationLine, getAvailableStock, getLineTotal, useMoney } from '@/components/modules/sales/quotation-shared'
 import { resolveQuotationPrice } from '@/components/modules/sales/quotation-catalog'
 
+// The line items table of QUOTATIONS. Quotations carry no discount (VAT only), so there is no discount
+// column. Sales orders, pro formas and invoices each have their own table.
 // `items` is the flat array of line objects (variantId, qty, unitPrice, discount...) the
 // parent page owns as state. This component only ever calls `setItems` with a
 // full new array — it never mutates in place — so the parent's existing
@@ -132,25 +134,6 @@ export default function QuotationLineItemsTable({ items, setItems, catalog, cont
             </Select>
           )
         },
-      },
-      {
-        id: 'discount',
-        header: 'Discount',
-        cell: ({ row }) => (
-          <div className="flex items-center gap-1">
-            <Select value={row.original.discountType || 'amount'} onValueChange={(value) => updateRow(row.index, { discountType: value })}>
-              <SelectTrigger className="h-8 w-16 px-1 text-[10px]"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="amount">Amount</SelectItem><SelectItem value="percentage">%</SelectItem></SelectContent>
-            </Select>
-            <Input
-              type="number"
-              min="0"
-              value={row.original.discountValue ?? 0}
-              onChange={(event) => updateRow(row.index, { discountValue: Number(event.target.value) })}
-              className="h-auto w-20 rounded border border-gray-200 px-2 py-1.5 text-xs focus:border-core focus:outline-none"
-            />
-          </div>
-        ),
       },
       {
         id: 'amount',

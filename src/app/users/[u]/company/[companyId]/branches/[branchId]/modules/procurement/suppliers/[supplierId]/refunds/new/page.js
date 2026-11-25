@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,10 +64,10 @@ function SupplierRefundFormContent() {
         supabase.from('suppliers').select('id, name').eq('id', supplierId).maybeSingle(),
         supabase
           .from('supplier_credits')
-          .select('id, credit_number, remaining_amount')
+          .select('id, kind, credit_number, remaining_amount')
           .eq('supplier', supplierId)
           .eq('branch', branchId)
-          .eq('kind', 'credit_note')
+          .in('kind', ['credit_note', 'advance'])
           .eq('status', 'open')
           .gt('remaining_amount', 0),
         supabase
@@ -84,6 +85,12 @@ function SupplierRefundFormContent() {
         supabase.rpc('get_effective_purchase_settings', { p_branch: branchId }),
       ])
       if (cancelled) return
+
+      const loadError = supplierRes.error || creditRes.error || returnRes.error || recoveryRes.error
+      if (loadError) {
+        console.error('Could not load the refund form:', loadError)
+        toast.error(loadError.message || 'Could not load the refund form.')
+      }
 
       const recovery = Object.fromEntries((recoveryRes.data || []).map((row) => [row.purchase_return, row]))
       const list = (returnRes.data || [])
@@ -113,6 +120,9 @@ function SupplierRefundFormContent() {
     [picked]
   )
   const selectedCredit = credits.find((credit) => credit.id === creditId)
+  // A refund of an advance is the supplier giving back money we overpaid. It is not
+  // about returned goods, so the returns list is not offered for it.
+  const isAdvanceRefund = selectedCredit?.kind === 'advance'
 
   const toggleReturn = (row) => {
     setPicked((prev) => {
@@ -128,19 +138,20 @@ function SupplierRefundFormContent() {
     setResult(null)
 
     const total = Number(amount)
+    const reject = (message) => {
+      toast.error(message)
+      setResult({ ok: false, lines: [message] })
+    }
     if (!(total > 0)) {
-      setResult({ ok: false, lines: ['Enter the amount.'] })
+      reject('Enter the amount.')
       return
     }
     if (requireCredit && !creditId) {
-      setResult({
-        ok: false,
-        lines: ['Purchase settings require a credit note first. Record the supplier\'s credit note, then the refund against it.'],
-      })
+      reject('Purchase settings require a credit note first. Record the supplier\'s credit note, then the refund against it.')
       return
     }
-    if (pickedTotal > total) {
-      setResult({ ok: false, lines: ['The returns add up to more than the refund amount.'] })
+    if (!isAdvanceRefund && pickedTotal > total) {
+      reject('The returns add up to more than the refund amount.')
       return
     }
 
@@ -153,7 +164,7 @@ function SupplierRefundFormContent() {
       p_method: method,
       p_reference: reference.trim() || null,
       p_credit: creditId || null,
-      p_returns: Object.entries(picked)
+      p_returns: Object.entries(isAdvanceRefund ? {} : picked)
         .filter(([, value]) => Number(value) > 0)
         .map(([id, value]) => ({ return: id, amount: Number(value) })),
       p_notes: notes.trim() || null,
@@ -161,9 +172,12 @@ function SupplierRefundFormContent() {
     setSaving(false)
 
     if (error) {
+      console.error('Could not record this refund:', error)
+      toast.error(messageOf(error))
       setResult({ ok: false, lines: [messageOf(error)] })
       return
     }
+    toast.success('Refund recorded.')
     router.push(creditId ? `${base}/credits/${creditId}` : `${base}/credits?type=refund`)
   }
 
@@ -184,8 +198,8 @@ function SupplierRefundFormContent() {
 
       <p className="rounded-sm border border-border bg-muted/50 p-2.5 text-[11px] text-muted-foreground">
         {requireCredit
-          ? 'Your purchase settings require a credit note before a refund. Choose the credit note this refund is against.'
-          : 'The supplier does not have to send a credit note first. If they did, choose it below so the refund is taken off it.'}
+          ? 'Your purchase settings require a credit note before a refund. Choose the credit note (or advance) this refund is against.'
+          : 'The supplier does not have to send a credit note first. If they did, choose it below so the refund is taken off it. If they are giving back an advance we paid, choose the advance.'}
       </p>
 
       <SectionCard title="Refund">
@@ -220,13 +234,13 @@ function SupplierRefundFormContent() {
           </label>
           <label className="block sm:col-span-2">
             <span className="text-[10px] text-muted-foreground">
-              Against credit note{requireCredit ? ' (required)' : ' (optional)'}
+              Against credit note or advance{requireCredit ? ' (required)' : ' (optional)'}
             </span>
             <select value={creditId} onChange={(event) => setCreditId(event.target.value)} className={`${inputClass} mt-1`}>
-              <option value="">{requireCredit ? 'Choose a credit note...' : 'None - cash refund only'}</option>
+              <option value="">{requireCredit ? 'Choose a credit note or advance...' : 'None - cash refund only'}</option>
               {credits.map((credit) => (
                 <option key={credit.id} value={credit.id}>
-                  {credit.credit_number} - {money(credit.remaining_amount)} left
+                  {credit.credit_number}{credit.kind === 'advance' ? ' (advance)' : ''} - {money(credit.remaining_amount)} left
                 </option>
               ))}
             </select>
@@ -243,6 +257,7 @@ function SupplierRefundFormContent() {
         </div>
       </SectionCard>
 
+      {!isAdvanceRefund && (
       <SectionCard
         title="Returns this refund covers (optional)"
         action={pickedTotal > 0 ? <span className="text-[10px] text-muted-foreground">Selected: {money(pickedTotal)}</span> : null}
@@ -293,6 +308,7 @@ function SupplierRefundFormContent() {
           </table>
         )}
       </SectionCard>
+      )}
 
       <div className="flex items-center gap-2">
         <Button type="submit" size="sm" className="h-8 bg-core text-xs text-white hover:bg-core/90" disabled={saving}>
