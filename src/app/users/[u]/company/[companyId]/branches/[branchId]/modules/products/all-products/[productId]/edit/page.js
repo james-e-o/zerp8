@@ -39,6 +39,11 @@ import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[bra
 //              listed in shop, this branch's pricing-context adjustments
 //   Inventory  stocked goods, batch tracking, expiry, shelf life
 //
+//   Pricing    (per variant) barcode, minimum margin %, how the cost estimate
+//              follows supplier bills, and what happens to the selling price when
+//              the estimate changes. The last two override the company defaults
+//              set in Products > Settings > Pricing; blank follows the default.
+//
 // What cannot be edited here (on purpose)
 //   - Product type (physical / service): history depends on it.
 //   - Adding or removing variants / option combinations.
@@ -79,6 +84,11 @@ function marginFrom(cost, selling) {
   if (!c || c <= 0 || s === null) return ''
   return fixed2(((s - c) / c) * 100)
 }
+
+const COST_MODE_LABEL = {
+  last_bill: 'Last bill', stock_average: 'Average on hand', highest: 'Highest on hand', lowest: 'Lowest on hand', manual: 'Manual',
+}
+const PRICE_MODE_LABEL = { auto: 'Automatic', review: 'Review first', locked: 'Locked' }
 
 function FieldLabel({ children, required, optional }) {
   return (
@@ -148,6 +158,8 @@ export default function EditProductPage() {
   const [contexts, setContexts] = useState([])
   const [adjustments, setAdjustments] = useState({})
   const [rulesLoaded, setRulesLoaded] = useState(false)
+  const [policy, setPolicy] = useState(null)
+  const extrasRef = useRef({})
 
   const initialRef = useRef('')
 
@@ -184,18 +196,20 @@ export default function EditProductPage() {
 
         const ids = (variantRows || []).map((row) => row.id)
 
-        const [costRes, priceRes, flagRes, aliasRes, companyRes, catRes, ctxRes] = await Promise.all([
+        const [costRes, priceRes, flagRes, aliasRes, companyRes, catRes, ctxRes, policyRes] = await Promise.all([
           ids.length
-            ? supabase.from('product_cost_estimates').select('variant_id,cost_price,cost_currency').in('variant_id', ids)
+            ? supabase.from('product_cost_estimates').select('variant_id,cost_price,cost_currency,update_mode').in('variant_id', ids)
             : Promise.resolve({ data: [] }),
           ids.length
-            ? supabase.from('standard_prices').select('variant,selling_price,margin_percentage').eq('branch', branchId).in('variant', ids)
+            ? supabase.from('standard_prices').select('variant,selling_price,margin_percentage,min_margin_percentage,reprice_mode').eq('branch', branchId).in('variant', ids)
             : Promise.resolve({ data: [] }),
           supabase.rpc('product_variant_stock_flags', { p_product: productId }),
           supabase.from('product_branch_aliases').select('alias_name').eq('product', productId).eq('branch', branchId).maybeSingle(),
           supabase.from('companies').select('default_currency').eq('id', companyKey).maybeSingle(),
           supabase.from('categories').select('id,name,parent').eq('company', companyKey),
           supabase.from('pricing_contexts').select('id,name,is_default').eq('branch', branchId).eq('is_active', true),
+          // Only used to show what "company default" currently means; may be refused for some users.
+          supabase.rpc('get_costing_policy', { p_branch: branchId }),
         ])
 
         if (costRes.error) throw costRes.error
@@ -214,7 +228,11 @@ export default function EditProductPage() {
             id: row.id,
             label: row.variant_label || 'Default variant',
             sku: row.sku || '',
+            barcode: str(row.barcode),
             mpn: str(row.mpn), upc: str(row.upc), ean: str(row.ean), isbn: str(row.isbn),
+            minMargin: str(price?.min_margin_percentage),
+            estimateMode: cost?.update_mode || '',
+            repriceMode: price?.reprice_mode || '',
             minSale: str(row.min_sale_quantity ?? 1),
             increment: str(row.quantity_increment ?? 1),
             bulk: str(row.bulk_threshold),
@@ -291,6 +309,10 @@ export default function EditProductPage() {
         setContexts(otherContexts)
         setAdjustments(nextAdjustments)
         setRulesLoaded(loadedRules)
+        setPolicy(policyRes?.error ? null : policyRes?.data || null)
+        extrasRef.current = Object.fromEntries(nextVariants.map((v) => [v.id, {
+          barcode: v.barcode, minMargin: v.minMargin, estimateMode: v.estimateMode, repriceMode: v.repriceMode,
+        }]))
 
         initialRef.current = JSON.stringify({ nextForm, nextImages, nextVariants: stripFlags(nextVariants), nextAdjustments })
       } catch (error) {
@@ -427,6 +449,7 @@ export default function EditProductPage() {
     if (!convertToSlug(form.handle)) return ['details', 'The handle cannot be empty.']
 
     const seen = new Set()
+    const seenCodes = new Set()
     for (const variant of variants) {
       const name = variant.label
       const sku = variant.sku.trim()
@@ -439,6 +462,12 @@ export default function EditProductPage() {
       }
       if (!isService && (variant.cost === '' || toNum(variant.cost) === null || toNum(variant.cost) < 0)) {
         return ['variants', `${name}: enter a cost estimate.`]
+      }
+      if (variant.minMargin !== '' && !(toNum(variant.minMargin) >= 0)) return ['variants', `${name}: the minimum margin cannot be negative.`]
+      const code = variant.barcode.trim()
+      if (code) {
+        if (seenCodes.has(code)) return ['variants', `Two variants use the barcode "${code}".`]
+        seenCodes.add(code)
       }
       if (variant.minSale !== '' && !(parseInt(variant.minSale, 10) >= 1)) return ['variants', `${name}: minimum sale quantity must be at least 1.`]
       if (variant.increment !== '' && !(parseInt(variant.increment, 10) >= 1)) return ['variants', `${name}: quantity increment must be at least 1.`]
@@ -546,6 +575,43 @@ export default function EditProductPage() {
 
       if (error) throw error
       if (!data?.success) throw new Error(data?.error || 'Could not save this product.')
+
+      // Barcode, minimum margin and the two pricing overrides are saved right after the
+      // main save. Only what changed is sent. A failure here is reported on its own.
+      const before = extrasRef.current
+      const extras = []
+      const failures = []
+      variants.forEach((variant) => {
+        const old = before[variant.id] || {}
+        const item = { variant_id: variant.id }
+        if (variant.barcode.trim() !== (old.barcode || '').trim()) item.barcode = variant.barcode.trim()
+        if (variant.minMargin !== (old.minMargin || '')) item.min_margin_percentage = variant.minMargin
+        if ('barcode' in item || 'min_margin_percentage' in item) extras.push(item)
+      })
+      if (extras.length > 0) {
+        const { data: res, error: err } = await supabase.rpc('set_variant_extras', { p_branch: branchId, p_items: extras })
+        if (err || !res?.success) failures.push(`barcode or minimum margin: ${err?.message || res?.error || 'unknown error'}`)
+      }
+      for (const variant of variants) {
+        const old = before[variant.id] || {}
+        if (variant.estimateMode !== (old.estimateMode || '')) {
+          const { error: err } = await supabase.rpc('set_estimate_mode', {
+            p_branch: branchId, p_variant: variant.id, p_mode: variant.estimateMode || null,
+          })
+          if (err) failures.push(`${variant.label} cost estimate rule: ${err.message}`)
+        }
+        if (variant.repriceMode !== (old.repriceMode || '')) {
+          const { error: err } = await supabase.rpc('set_reprice_mode', {
+            p_branch: branchId, p_variant: variant.id, p_mode: variant.repriceMode || null,
+          })
+          if (err) failures.push(`${variant.label} selling price rule: ${err.message}`)
+        }
+      }
+      if (failures.length > 0) {
+        console.error('Product saved, follow-up changes failed:', failures)
+        toast.error(`Product saved, but these were not: ${failures.join('; ')}`)
+        return
+      }
 
       initialRef.current = ''
       toast.success('Product saved')
@@ -850,6 +916,45 @@ export default function EditProductPage() {
 
                 <div className="grid gap-3 md:grid-cols-3">
                   <div>
+                    <FieldLabel optional>Minimum margin %</FieldLabel>
+                    <Input
+                      type="number" step="0.01" min="0" placeholder="Branch default"
+                      value={variant.minMargin}
+                      onChange={(e) => patchVariant(variant.id, { minMargin: e.target.value })}
+                      className="h-8 text-xs"
+                    />
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      A price, after any discount, is not accepted below cost plus this margin. Blank uses the branch default.
+                    </p>
+                  </div>
+                  <div>
+                    <FieldLabel optional>Cost estimate follows</FieldLabel>
+                    <select
+                      value={variant.estimateMode}
+                      onChange={(e) => patchVariant(variant.id, { estimateMode: e.target.value })}
+                      className="h-8 w-full rounded-sm border border-input bg-transparent px-2 text-xs"
+                    >
+                      <option value="">Company default{policy ? ` (${COST_MODE_LABEL[policy.cost_update_policy] || policy.cost_update_policy})` : ''}</option>
+                      {Object.entries(COST_MODE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                    <p className="mt-1 text-[10px] text-muted-foreground">How this product&apos;s cost estimate moves when a supplier bill arrives.</p>
+                  </div>
+                  <div>
+                    <FieldLabel optional>Selling price after a cost change</FieldLabel>
+                    <select
+                      value={variant.repriceMode}
+                      onChange={(e) => patchVariant(variant.id, { repriceMode: e.target.value })}
+                      className="h-8 w-full rounded-sm border border-input bg-transparent px-2 text-xs"
+                    >
+                      <option value="">Company default{policy ? ` (${PRICE_MODE_LABEL[policy.default_reprice_mode] || policy.default_reprice_mode})` : ''}</option>
+                      {Object.entries(PRICE_MODE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Automatic applies the new price, review waits for approval, locked never changes it.</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div>
                     <FieldLabel>Minimum sale quantity</FieldLabel>
                     <Input type="number" min="1" value={variant.minSale} onChange={(e) => patchVariant(variant.id, { minSale: e.target.value })} className="h-8 text-xs" />
                   </div>
@@ -864,8 +969,8 @@ export default function EditProductPage() {
                 </div>
 
                 {!isService && (
-                  <div className="grid gap-3 md:grid-cols-4">
-                    {[['mpn', 'MPN'], ['upc', 'UPC'], ['ean', 'EAN'], ['isbn', 'ISBN']].map(([key, label]) => (
+                  <div className="grid gap-3 md:grid-cols-5">
+                    {[['barcode', 'Barcode'], ['mpn', 'MPN'], ['upc', 'UPC'], ['ean', 'EAN'], ['isbn', 'ISBN']].map(([key, label]) => (
                       <div key={key}>
                         <FieldLabel optional>{label}</FieldLabel>
                         <Input value={variant[key]} onChange={(e) => patchVariant(variant.id, { [key]: e.target.value })} className="h-8 text-xs" />

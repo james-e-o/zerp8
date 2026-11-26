@@ -75,7 +75,7 @@
   --core_light:#EDECFB;
   --navy:#151728;
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --background: #f7f7f4;
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -90,7 +90,7 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
+  --border: #e7e6e7;
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.646 0.222 41.116);
@@ -98,14 +98,27 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: #f7f7f4;
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: #ffffff;
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+}
+
+:root:not(.dark) [data-slot="sidebar-container"],
+:root:not(.dark) [data-slot="sidebar"],
+:root:not(.dark) [data-slot="sidebar-inner"],
+:root:not(.dark) [data-slot="sidebar-header"],
+:root:not(.dark) [data-slot="sidebar-content"],
+:root:not(.dark) [data-slot="sidebar-footer"] {
+  background-color: var(--sidebar) !important;
+}
+
+:root:not(.dark) [data-slot="sidebar-menu-button"][data-active="true"] {
+  background-color: var(--border) !important;
 }
 
 .dark {

@@ -133,6 +133,7 @@ const DEFAULT_STANDARD_PRICING = {
   marginPercentage: '',
   marginValue: '',
   sellingPrice: '',
+  minMarginPercentage: '', // optional; saved to standard_prices.min_margin_percentage
 };
 
 const ATTRIBUTE_PRESETS = [
@@ -731,6 +732,13 @@ const CreateProductPage = () => {
       return;
     }
 
+    // The same barcode cannot be used twice on one product.
+    const typedCodes = variantCombinations.map((v) => String(v.barcode || '').trim()).filter(Boolean)
+    if (new Set(typedCodes).size !== typedCodes.length) {
+      toast.error('Two variants have the same barcode. Each variant needs its own.')
+      return
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const currentUserId = user?.id;
@@ -774,7 +782,6 @@ const CreateProductPage = () => {
           upc: variant.upc || null,
           ean: variant.ean || null,
           isbn: variant.isbn || null,
-          barcode: (variant.barcode || '').trim() || null,
         };
       });
 
@@ -787,9 +794,6 @@ const CreateProductPage = () => {
         standardPrices[sku] = {
           selling_price: parseFloat(variant.sellingPrice || standardPricing.sellingPrice) || 0,
           margin_percentage: parseFloat(standardPricing.marginPercentage) || null,
-          min_margin_percentage: standardPricing.minMarginPercentage !== '' && standardPricing.minMarginPercentage != null
-            ? parseFloat(standardPricing.minMarginPercentage)
-            : null,
         };
       });
 
@@ -838,6 +842,34 @@ const CreateProductPage = () => {
       if (!data?.success) throw new Error(data?.error || 'Failed to create product');
 
       const productId = data.product_id;
+
+      // Step 1a - barcode and minimum margin. create_product_with_variants does not carry
+      // them, so they are saved right after, like batch tracking below. A failure here is
+      // never reported as "product creation failed".
+      try {
+        const minMargin = String(standardPricing.minMarginPercentage ?? '').trim()
+        const extras = (data.variants || [])
+          .map((created) => {
+            const idx = variantsPayload.findIndex((v) => v.sku === created.sku)
+            const combo = variantCombinations[idx] || {}
+            const item = { variant_id: created.variant_id }
+            if (String(combo.barcode || '').trim()) item.barcode = String(combo.barcode).trim()
+            if (minMargin !== '' && !Number.isNaN(parseFloat(minMargin))) item.min_margin_percentage = parseFloat(minMargin)
+            return item
+          })
+          .filter((item) => 'barcode' in item || 'min_margin_percentage' in item)
+        if (extras.length > 0 && productId) {
+          const { data: extrasResult, error: extrasError } = await supabase.rpc('set_variant_extras', {
+            p_branch: currentBranch?.id,
+            p_items: extras,
+          })
+          if (extrasError) throw extrasError
+          if (!extrasResult?.success) throw new Error(extrasResult?.error || 'Barcode or minimum margin could not be saved')
+        }
+      } catch (extrasErr) {
+        console.error(extrasErr)
+        toast.warning(`Product created, but the barcode or minimum margin was not saved: ${extrasErr.message || 'unknown error'}. You can set them on the product's edit page.`)
+      }
 
       // Step 1b - batch tracking. create_product_with_variants does not
       // know about it, so it is applied right after, to the stocked

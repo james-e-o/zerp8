@@ -16,8 +16,8 @@ import { ErrorNote, Tone, useInventoryCan } from '@/components/modules/inventory
 //   1. The costing METHOD. One per company, never per branch and never per
 //      product. The owner must confirm it before the first receipt, and it is
 //      locked for good once any branch posts its first stock movement.
-//   2. Pricing basis and the negative-stock rule. Company defaults that a
-//      branch may override for itself.
+//   2. The negative-stock rule. A company default that a branch may override
+//      for itself. (How selling prices follow cost lives in Products > Pricing.)
 
 const METHODS = [
   {
@@ -30,13 +30,6 @@ const METHODS = [
     label: 'Weighted average',
     text: 'All of a branch’s stock of a product shares one average cost, recalculated at every receipt. 10 at 100 plus 10 at 120 makes every unit cost 110.',
   },
-]
-
-const PRICING_BASES = [
-  { value: 'latest_receipt_cost', label: 'Latest receipt cost' },
-  { value: 'average_cost', label: 'Average cost' },
-  { value: 'oldest_layer_cost', label: 'Oldest layer cost (FIFO)' },
-  { value: 'cost_estimate', label: 'Cost estimate on the product' },
 ]
 
 const NEGATIVE_POLICIES = [
@@ -65,7 +58,7 @@ export default function CostingSettingsPage() {
   // Rules section (view <-> edit in place)
   const [editing, setEditing] = useState(false)
   const [override, setOverride] = useState(false)
-  const [draft, setDraft] = useState({ pricing_cost_basis: 'latest_receipt_cost', negative_stock_policy: 'block' })
+  const [draft, setDraft] = useState({ negative_stock_policy: 'block' })
   const [rulesBusy, setRulesBusy] = useState(false)
   const [rulesError, setRulesError] = useState('')
 
@@ -77,7 +70,7 @@ export default function CostingSettingsPage() {
       supabase.rpc('get_effective_inventory_settings', { p_branch: branchId }),
       supabase
         .from('inventory_settings')
-        .select('branch, costing_method, costing_locked_at, costing_confirmed_at, pricing_cost_basis, negative_stock_policy')
+        .select('branch, costing_method, costing_locked_at, costing_confirmed_at, negative_stock_policy')
         .eq('company', companyId),
     ])
     if (effectiveResult.error) {
@@ -92,9 +85,8 @@ export default function CostingSettingsPage() {
     setEffective(eff)
     setCompanyRow(company)
     setBranchRow(branch)
-    setOverride(Boolean(branch && (branch.pricing_cost_basis || branch.negative_stock_policy)))
+    setOverride(Boolean(branch && branch.negative_stock_policy))
     setDraft({
-      pricing_cost_basis: eff?.pricing_cost_basis || 'latest_receipt_cost',
       negative_stock_policy: eff?.negative_stock_policy || 'block',
     })
     setLoading(false)
@@ -141,7 +133,7 @@ export default function CostingSettingsPage() {
       result = await supabase.rpc('save_inventory_settings', {
         p_company: companyId,
         p_branch: branchId,
-        p_values: { pricing_cost_basis: null, negative_stock_policy: null },
+        p_values: { negative_stock_policy: null },
       })
     }
     setRulesBusy(false)
@@ -155,10 +147,9 @@ export default function CostingSettingsPage() {
 
   function cancelRules() {
     setDraft({
-      pricing_cost_basis: effective?.pricing_cost_basis || 'latest_receipt_cost',
       negative_stock_policy: effective?.negative_stock_policy || 'block',
     })
-    setOverride(Boolean(branchRow && (branchRow.pricing_cost_basis || branchRow.negative_stock_policy)))
+    setOverride(Boolean(branchRow && branchRow.negative_stock_policy))
     setRulesError('')
     setEditing(false)
   }
@@ -167,11 +158,10 @@ export default function CostingSettingsPage() {
   if (loadError) return <div className="p-6"><ErrorNote>{loadError}</ErrorNote></div>
 
   const currentMethod = METHODS.find((method) => method.value === effective?.costing_method)
-  const basisLabel = PRICING_BASES.find((entry) => entry.value === draft.pricing_cost_basis)?.label
   const policy = NEGATIVE_POLICIES.find((entry) => entry.value === draft.negative_stock_policy)
 
   return (
-    <div className="max-w-2xl space-y-3 p-1">
+    <div className="max-w-2xl space-y-6 p-6">
       <p className="text-xs text-gray-500">
         How stock is valued, which cost prices are based on, and what happens when stock runs out.
       </p>
@@ -280,7 +270,7 @@ export default function CostingSettingsPage() {
       <section className="space-y-4 rounded-lg border border-gray-200 p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-xs font-semibold text-gray-800">Pricing and stock rules</h2>
+            <h2 className="text-xs font-semibold text-gray-800">Stock rules</h2>
             <p className="mt-0.5 text-[11px] text-gray-500">
               {override
                 ? 'This branch uses its own values.'
@@ -312,23 +302,6 @@ export default function CostingSettingsPage() {
             </p>
           </div>
           <Switch checked={override} disabled={!editing} onCheckedChange={setOverride} />
-        </div>
-
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-gray-700">Cost used for percentage mark-ups</p>
-          {editing ? (
-            <Select value={draft.pricing_cost_basis} onValueChange={(value) => setDraft((prev) => ({ ...prev, pricing_cost_basis: value }))}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {PRICING_BASES.map((entry) => (
-                  <SelectItem key={entry.value} value={entry.value} className="text-xs">{entry.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <p className="text-sm text-gray-900">{basisLabel}</p>
-          )}
-          <p className="text-[11px] text-gray-500">The cost a selling price is worked out from when it is set as a percentage over cost.</p>
         </div>
 
         <div className="space-y-1">
