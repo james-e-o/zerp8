@@ -20,7 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 import supabase from '@/config/supabaseClient'
-import { useRequestCatalog } from '@/components/modules/procurement/request-catalog'
+import { usePurchaseCatalog } from '@/components/modules/procurement/purchase-catalog'
 import { useVariantNames } from '@/components/modules/procurement/purchase-catalog'
 import { useBranchWarehouses } from '@/components/modules/procurement/use-branch-warehouses'
 import { formatDate, formatMoney, formatQty, useBranchCurrency } from '@/components/modules/inventory/inventory-shared'
@@ -181,7 +181,7 @@ function NewReceiptForm() {
   const [emergencyOpen, setEmergencyOpen] = useState(false)
 
   const { warehouses, defaultId } = useBranchWarehouses(branchId)
-  const { catalog } = useRequestCatalog(branchId)
+  const { catalog } = usePurchaseCatalog(branchId)
   const { names } = useVariantNames(lines.map((line) => line.variantId))
 
   const isOrderReceipt = source === 'purchase_order'

@@ -2,11 +2,28 @@
 
 import { Button } from '@/components/ui/button'
 import { Check } from 'lucide-react'
+import { formatCurrency } from '@/components/modules/procurement/dummy-data'
 
-export default function SubscriptionSummary({ bundles, values, total, pricing, billingInterval, onConfirm, loading }) {
+function labelFor(key, limitLabels) {
+  if (limitLabels?.[key]) return limitLabels[key]
+  const group = String(key).split('.')[0].replaceAll('_', ' ')
+  return group.charAt(0).toUpperCase() + group.slice(1)
+}
+
+export default function SubscriptionSummary({
+  bundles,
+  values,
+  total,
+  pricing,
+  billingInterval,
+  onConfirm,
+  loading,
+  currency = 'USD',
+  limitLabels,
+}) {
   return (
-    <aside className="sticky top-4 rounded-xl border border-border bg-card p-5">
-      <h2 className="mb-4 text-xs font-semibold uppercase text-muted-foreground">Your subscription</h2>
+    <aside className="sticky top-3 rounded-lg border border-border bg-card p-3 font-sans">
+      <h2 className="mb-3 text-xs font-semibold uppercase text-muted-foreground">Your subscription</h2>
 
       {bundles.length > 0 ? (
         <div className="space-y-1.5">
@@ -22,10 +39,10 @@ export default function SubscriptionSummary({ bundles, values, total, pricing, b
       )}
 
       {Object.keys(values).length > 0 && (
-        <div className="my-5 border-y border-border py-4 space-y-1.5">
+        <div className="my-3 border-y border-border py-3 space-y-1">
           {Object.entries(values).map(([key, value]) => (
             <div key={key} className="flex justify-between items-baseline py-1 text-xs text-muted-foreground">
-              <span className="capitalize">{key.replaceAll('_', ' ')}</span>
+              <span>{labelFor(key, limitLabels)}</span>
               <strong className="text-foreground font-mono">
                 {typeof value === 'number' ? value.toLocaleString() : String(value)}
               </strong>
@@ -34,14 +51,14 @@ export default function SubscriptionSummary({ bundles, values, total, pricing, b
         </div>
       )}
 
-      <div className="mb-5 flex items-baseline justify-between">
+      <div className="mb-3 flex items-baseline justify-between">
         <span className="text-sm font-semibold text-foreground">Total</span>
-        <strong className="text-2xl font-mono text-foreground">
+        <strong className="text-xl font-mono text-foreground">
           {pricing ? (
             <span className="text-base text-muted-foreground">calculating…</span>
           ) : (
             <>
-              ₦{total.toLocaleString()}
+              {formatCurrency(total, currency)}
               <span className="text-xs font-normal text-muted-foreground">
                 /{billingInterval === 'annual' ? 'yr' : 'mo'}
               </span>

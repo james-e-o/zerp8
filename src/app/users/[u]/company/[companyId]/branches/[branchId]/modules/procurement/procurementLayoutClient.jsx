@@ -14,8 +14,8 @@ import { BranchAssistantOverlay } from "@/components/ai/branch-assistant-context
 // people know why buttons fail. The database enforces this (module_gate);
 // this list is only the explanation.
 const READ_ONLY_BLOCKED = [
-  "Create or edit purchase requests",
-  "Approve requests or orders",
+  "Create or edit RFQs",
+  "Approve purchase orders",
   "Create, edit or send purchase orders",
   "Record supplier bills and payments",
   "Raise purchase returns",

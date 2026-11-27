@@ -6,7 +6,7 @@
 // All Supabase fetching for the procurement module lives HERE, not in
 // individual page.js files. This is mounted once in ProcurementLayoutClient,
 // which wraps every procurement subroute (overview, suppliers, orders,
-// receipts, bills, returns, requests, settings) - since Next's app router
+// receipts, bills, returns, RFQs, settings) - since Next's app router
 // does not remount a layout when navigating between sibling subroutes,
 // this fetch runs once per branch visit, not once per page.
 //
@@ -17,7 +17,7 @@
 // a cleaner experience.
 //
 // Scope note: this currently covers exactly what the Overview page needed
-// (requests, orders, receipts, bills) - it does not yet fetch suppliers,
+// (RFQs, orders, receipts, bills) - it does not yet fetch suppliers,
 // returns, or any per-row detail (line items beyond what's needed to
 // compute order totals). Extend this file once the other subroute pages
 // are available, rather than guessing at what they need.
@@ -42,7 +42,7 @@ const ProcurementContext = createContext(null)
 
 export function ProcurementProvider({ branchId, accessLevel = 'full', children }) {
   const [loading, setLoading] = useState(true)
-  const [requests, setRequests] = useState([])
+  const [rfqs, setRfqs] = useState([])
   const [orders, setOrders] = useState([])
   const [receipts, setReceipts] = useState([])
   const [bills, setBills] = useState([])
@@ -54,14 +54,14 @@ export function ProcurementProvider({ branchId, accessLevel = 'full', children }
 
     try {
       const [
-        { data: requestRows, error: requestsError },
+        { data: rfqRows, error: rfqsError },
         { data: orderRows, error: ordersError },
         { data: receiptRows, error: receiptsError },
         { data: billRows, error: billsError },
       ] = await Promise.all([
         supabase
-          .from('purchase_requests')
-          .select('id, status, created_at')
+          .from('rfq_list')
+          .select('id, rfq_number, name, status, created_at')
           .eq('branch', branchId)
           .order('created_at', { ascending: false })
           .limit(100),
@@ -88,7 +88,7 @@ export function ProcurementProvider({ branchId, accessLevel = 'full', children }
           .limit(100),
       ])
 
-      if (requestsError) throw requestsError
+      if (rfqsError) throw rfqsError
       if (ordersError) throw ordersError
       if (receiptsError) throw receiptsError
       if (billsError) throw billsError
@@ -106,7 +106,7 @@ export function ProcurementProvider({ branchId, accessLevel = 'full', children }
         balance: Number(row.total || 0) - Number(row.paid || 0),
       }))
 
-      setRequests(requestRows || [])
+      setRfqs(rfqRows || [])
       setOrders(ordersWithTotal)
       setReceipts(receiptRows || [])
       setBills(billsWithBalance)
@@ -126,7 +126,7 @@ export function ProcurementProvider({ branchId, accessLevel = 'full', children }
     <ProcurementContext.Provider
       value={{
         loading,
-        requests,
+        rfqs,
         orders,
         receipts,
         bills,

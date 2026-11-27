@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import supabase from '@/config/supabaseClient'
 import BundleCard from '@/components/subscriptions/bundle-card'
 import CapacityControls from '@/components/subscriptions/capacity-controls'
@@ -19,6 +20,7 @@ export default function PlansPage() {
   const [values, setValues] = useState({})
   const [billingInterval, setBillingInterval] = useState('monthly') // 'monthly' | 'annual'
   const [total, setTotal] = useState(0)
+  const [currency, setCurrency] = useState('USD')
   const [pricing, setPricing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -32,7 +34,9 @@ export default function PlansPage() {
         supabase.from('bundle_modules').select('bundle_id, module_key, modules(name)'),
         supabase
           .from('bundle_limits')
-          .select('bundle_id, default_value_numeric, limit_keys(id, key, name, unit, value_type, measurement)'),
+          // Only active limits are offered. Hiding a limit = limit_keys.is_active = false.
+          .select('bundle_id, default_value_numeric, limit_keys!inner(id, key, name, unit, value_type, measurement, is_active)')
+          .eq('limit_keys.is_active', true),
       ])
 
       const modulesByBundle = {}
@@ -104,6 +108,15 @@ export default function PlansPage() {
     () => Object.fromEntries(selectedLimitKeys.map((key) => [key, values[key]])),
     [selectedLimitKeys, values]
   )
+  const selectedLimitLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        selectedLimitKeys
+          .map((key) => [key, limits[key]?.name])
+          .filter(([, label]) => Boolean(label))
+      ),
+    [selectedLimitKeys, limits]
+  )
 
   const toggleBundle = (id) =>
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
@@ -138,8 +151,12 @@ export default function PlansPage() {
         p_billing_interval: billingInterval,
       })
 
-      if (!error && data && data.length > 0) {
+      if (error) {
+        console.error('Failed to price the subscription:', error)
+        toast.error(error.message || 'Could not work out the price.', { id: 'subscription-price-error' })
+      } else if (data && data.length > 0) {
         setTotal(Number(data[0].grand_total))
+        if (data[0].currency) setCurrency(String(data[0].currency))
       }
 
       setPricing(false)
@@ -150,30 +167,41 @@ export default function PlansPage() {
   }, [selectedIds, values, billingInterval]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleContinue = async () => {
+    if (selectedIds.length === 0) {
+      toast.error('Choose at least one module first.')
+      return
+    }
     setSubmitting(true)
     try {
-      // Recommend pointing this at the create-subscription-checkout Edge
-      // Function instead of a legacy /api route — see the security note
-      // above on why that route shouldn't be trusted as-is.
-      const res = await fetch('/functions/v1/create-subscription-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // The checkout is a Supabase Edge Function, not a Next.js route, so it is called through
+      // the Supabase client. That sends the signed-in user's token and uses the project URL.
+      const { data, error } = await supabase.functions.invoke('create-subscription-checkout', {
+        body: {
           company_id: companyId,
           bundle_ids: selectedIds,
           limit_selections: buildLimitSelections(),
           billing_interval: billingInterval,
-        }),
+          return_path: `/users/${u}/company/${companyId}/subscriptions`,
+        },
       })
-      const result = await res.json()
 
-      if (result.checkout_url) {
-        window.location.assign(result.checkout_url)
-      } else {
-        setSubmitting(false)
+      if (error) {
+        // A non-2xx reply carries the function's own message in the response body.
+        let message = error.message
+        try {
+          const body = await error.context?.json?.()
+          if (body?.error) message = body.error
+        } catch {
+          // keep the generic message
+        }
+        throw new Error(message)
       }
+      if (!data?.checkout_url) throw new Error('The payment page could not be opened. Please try again.')
+
+      window.location.assign(data.checkout_url)
     } catch (err) {
       console.error('Error creating subscription checkout:', err)
+      toast.error(err?.message || 'Could not start the checkout.')
       setSubmitting(false)
     }
   }
@@ -183,19 +211,19 @@ export default function PlansPage() {
   }
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Configure your subscription</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Choose modules and capacity for your company.</p>
+        <h1 className="text-sm tracking-tight font-bold text-foreground">Configure your subscription</h1>
+        <p className="text-[11px] tracking-tighter text-muted-foreground">Choose modules and capacity for your company.</p>
       </div>
 
-      <div className="inline-flex rounded-full border-2 border-border bg-muted p-1 gap-1">
+      <div className="inline-flex rounded-lg border border-border bg-muted p-0.5 gap-0.5">
         {['monthly', 'annual'].map((period) => (
           <button
             key={period}
             type="button"
             onClick={() => setBillingInterval(period)}
-            className={`px-5 py-1.5 rounded-full font-semibold text-sm transition-all ${
+            className={`px-3 py-1 rounded-md font-semibold text-xs transition-all ${
               billingInterval === period ? 'bg-core text-white shadow' : 'text-muted-foreground hover:text-core'
             }`}
           >
@@ -204,11 +232,11 @@ export default function PlansPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <main className="space-y-7 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <main className="space-y-4 lg:col-span-2">
           <section>
-            <h2 className="mb-3 text-xs font-semibold uppercase text-muted-foreground">Choose modules and capacity</h2>
-            <div className="space-y-3">
+            <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Choose modules and capacity</h2>
+            <div className="space-y-2">
               {bundles.map((bundle) => {
                 const bundleLimits = Object.fromEntries(
                   bundle.limitKeys.map((key) => [key, { name: limits[key]?.name, unit: limits[key]?.unit, value: values[key] }])
@@ -216,7 +244,7 @@ export default function PlansPage() {
                 return (
                   <BundleCard key={bundle.id} bundle={bundle} selected={selectedIds.includes(bundle.id)} onToggle={toggleBundle}>
                     {bundle.limitKeys.length > 0 && (
-                      <CapacityControls limits={bundleLimits} values={values} tiers={tiersByKey} onChange={updateValue} />
+                      <CapacityControls limits={bundleLimits} values={values} tiers={tiersByKey} onChange={updateValue} currency={currency} />
                     )}
                   </BundleCard>
                 )
@@ -225,9 +253,9 @@ export default function PlansPage() {
           </section>
         </main>
 
-        <div className="space-y-4">
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="mb-3 text-xs text-muted-foreground">Prefer to evaluate first?</p>
+        <div className="space-y-3">
+          <div className="rounded-lg border border-border bg-card p-3">
+            <p className="mb-2 text-xs text-muted-foreground">Prefer to evaluate first?</p>
             <StartFreeTrialDialog label="Start 7-day free trial" />
           </div>
 
@@ -235,6 +263,8 @@ export default function PlansPage() {
             bundles={selectedBundles}
             values={selectedValues}
             total={total}
+            currency={currency}
+            limitLabels={selectedLimitLabels}
             pricing={pricing}
             billingInterval={billingInterval}
             onConfirm={handleContinue}

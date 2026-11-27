@@ -489,7 +489,7 @@ function getCostPrice(variant) {
   return Number(variant?.cost_price ?? variant?.costPrice ?? 0)
 }
 
-function QuantityControl({ quantity, stock, onChange }) {
+export function QuantityControl({ quantity, stock, onChange }) {
   const exceedsStock = Number(quantity) > stock
 
   return (
@@ -535,7 +535,7 @@ function QuantityControl({ quantity, stock, onChange }) {
   )
 }
 
-function VariantPicker({ variantId, catalog, onSelect }) {
+export function VariantPicker({ variantId, catalog, onSelect }) {
   const [open, setOpen] = useState(false)
   const selected = catalog.find((variant) => variant.id === variantId)
 

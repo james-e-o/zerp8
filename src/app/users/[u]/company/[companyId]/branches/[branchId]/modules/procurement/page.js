@@ -11,7 +11,7 @@ import { useProcurementContext } from './procurement-context'
 // Procurement Overview
 //
 // BRANCH-SPECIFIC:
-//   - Purchase requests
+//   - RFQs
 //   - Purchase orders
 //   - Receipts
 //   - Supplier bills
@@ -35,7 +35,7 @@ function StatCard({ label, value, loading }) {
 }
 
 const ACTIVITY_TABS = [
-  { key: 'requests', label: 'Requests' },
+  { key: 'rfqs', label: 'RFQs' },
   { key: 'orders', label: 'Orders' },
   { key: 'receipts', label: 'Receipts' },
   { key: 'bills', label: 'Bills' },
@@ -44,9 +44,9 @@ const ACTIVITY_TABS = [
 export default function ProcurementOverviewPage() {
   const { u, companyId, branchId } = useParams()
   const { currentBranch } = useContext(BranchContext)
-  const { loading, requests, orders, receipts, bills } = useProcurementContext()
+  const { loading, rfqs, orders, receipts, bills } = useProcurementContext()
 
-  const [activeTab, setActiveTab] = useState('requests')
+  const [activeTab, setActiveTab] = useState('rfqs')
 
   const basePath = `/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement`
 
@@ -67,9 +67,7 @@ export default function ProcurementOverviewPage() {
       0
     )
 
-    const pendingRequests = requests.filter((row) =>
-      ['pending', 'pending_approval'].includes(row.status)
-    ).length
+    const openRfqs = rfqs.filter((row) => row.status === 'open').length
 
     const openOrders = orders.filter((row) =>
       ['sent', 'partially_received'].includes(row.status)
@@ -94,21 +92,22 @@ export default function ProcurementOverviewPage() {
       purchaseSpend,
       openOrders,
       outstandingBills,
-      pendingRequests,
+      openRfqs,
       awaitingReceipt,
       partialOrders,
       unpaidBills,
       overdueBills,
     }
-  }, [requests, orders, bills, startOfMonth])
+  }, [rfqs, orders, bills, startOfMonth])
 
   const activity = useMemo(
     () => ({
-      requests: requests.slice(0, 10).map((row) => ({
+      rfqs: rfqs.slice(0, 10).map((row) => ({
         id: row.id,
-        primary: `Request ${row.id}`,
+        primary: `RFQ ${row.rfq_number || row.name || ''}`.trim(),
         secondary: row.status || 'Unknown',
         timestamp: row.created_at,
+        href: `${basePath}/rfqs/${row.id}`,
       })),
 
       orders: orders.slice(0, 10).map((row) => ({
@@ -132,7 +131,7 @@ export default function ProcurementOverviewPage() {
         timestamp: row.created_at,
       })),
     }),
-    [requests, orders, receipts, bills]
+    [rfqs, orders, receipts, bills, basePath]
   )
 
   const currentActivity = activity[activeTab] || []
@@ -178,8 +177,8 @@ export default function ProcurementOverviewPage() {
               />
 
               <StatCard
-                label="Pending Requests"
-                value={stats.pendingRequests}
+                label="Open RFQs"
+                value={stats.openRfqs}
                 loading={loading}
               />
             </div>
@@ -220,7 +219,7 @@ export default function ProcurementOverviewPage() {
                 </h2>
 
                 <p className="text-[10px] text-muted-foreground">
-                  Recent purchase requests, orders, receipts and supplier bills.
+                  Recent RFQs, orders, receipts and supplier bills.
                 </p>
               </div>
 
@@ -262,7 +261,11 @@ export default function ProcurementOverviewPage() {
                     {currentActivity.map((event) => (
                       <tr key={event.id}>
                         <td className="px-4 py-2 text-foreground font-medium">
-                          {event.primary}
+                          {event.href ? (
+                            <Link href={event.href} className="text-core hover:underline">
+                              {event.primary}
+                            </Link>
+                          ) : event.primary}
                         </td>
 
                         <td className="px-4 py-2 text-muted-foreground">
@@ -327,10 +330,10 @@ export default function ProcurementOverviewPage() {
               </h2>
 
               <Link
-                href={`${basePath}/requests/new`}
+                href={`${basePath}/rfqs/new`}
                 className="block rounded-sm bg-core px-3 py-2 text-center text-white hover:bg-core/90"
               >
-                New purchase request
+                New RFQ
               </Link>
 
               <Link

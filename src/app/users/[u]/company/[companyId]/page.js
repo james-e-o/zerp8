@@ -29,16 +29,16 @@ import Link from "next/link"
 function RecordHeader({ info, branchCount, staffCount, planLabel }) {
   const initials = (info?.name || "?").slice(0, 2).toUpperCase()
   return (
-    <div className="bg-card border border-border rounded-xl px-6 py-5 mb-6">
-      <div className="flex items-center gap-4">
-        <div className="size-11 rounded-lg bg-core_light flex items-center justify-center shrink-0">
+    <div className="bg-card border border-border rounded-lg px-4 py-3 mb-3">
+      <div className="flex items-center gap-3">
+        <div className="size-9 rounded-md bg-core_light flex items-center justify-center shrink-0">
           <span className="text-core font-semibold text-sm">{initials}</span>
         </div>
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-foreground truncate">
+          <h1 className="text-lg font-semibold text-foreground truncate">
             {info?.name || "Company"}
           </h1>
-          <p className="text-xs font-mono text-muted-foreground tracking-wide mt-1">
+          <p className="text-[11px] font-mono text-muted-foreground tracking-wide mt-0.5">
             {planLabel?.toUpperCase() || "NO PLAN"}
             <span className="mx-2 text-muted-foreground">·</span>
             {branchCount} {branchCount === 1 ? "BRANCH" : "BRANCHES"}
@@ -56,12 +56,12 @@ function RecordHeader({ info, branchCount, staffCount, planLabel }) {
 // ─────────────────────────────────────────────────────────────
 function KpiStrip({ items }) {
   return (
-    <div className="bg-card border border-border rounded-xl mb-6 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border">
+    <div className="mb-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
       {items.map((item, i) => (
-        <div key={i} className="px-6 py-5">
+        <div key={i} className="bg-card border border-border rounded-lg px-4 py-3">
           <p className="text-xs text-muted-foreground font-medium">{item.label}</p>
-          <div className="flex items-baseline gap-2 mt-1.5">
-            <span className="text-2xl font-mono font-semibold text-foreground">
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-xl font-mono font-semibold text-foreground">
               {item.value}
             </span>
             {item.delta && (
@@ -90,8 +90,8 @@ function BranchTable({ branches }) {
     : [{ id: "placeholder", name: "No branches yet", isheadoffice: false }]
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Branches</h3>
         <Link
           href="#"
@@ -103,19 +103,19 @@ function BranchTable({ branches }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-muted-foreground border-b border-border">
-            <th className="px-6 py-2.5 font-medium">Name</th>
-            <th className="px-6 py-2.5 font-medium">Role</th>
-            <th className="px-6 py-2.5 font-medium text-right">Status</th>
+            <th className="px-4 py-2 font-medium">Name</th>
+            <th className="px-4 py-2 font-medium">Role</th>
+            <th className="px-4 py-2 font-medium text-right">Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
           {rows.map((b) => (
             <tr key={b.id} className="hover:bg-muted/60">
-              <td className="px-6 py-3 font-medium text-foreground">{b.name}</td>
-              <td className="px-6 py-3 text-muted-foreground">
+              <td className="px-4 py-2.5 font-medium text-foreground">{b.name}</td>
+              <td className="px-4 py-2.5 text-muted-foreground">
                 {b.isheadoffice ? "Head office" : "Branch"}
               </td>
-              <td className="px-6 py-3 text-right">
+              <td className="px-4 py-2.5 text-right">
                 <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
                   <CircleDot className="size-2.5 fill-emerald-500 text-emerald-500" />
                   Active
@@ -134,13 +134,13 @@ function BranchTable({ branches }) {
 // ─────────────────────────────────────────────────────────────
 function ActivityLedger({ entries }) {
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
-      <div className="px-6 py-4 border-b border-border">
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
         <h3 className="text-sm font-semibold text-foreground">Recent activity</h3>
       </div>
       <div className="divide-y divide-border">
         {entries.map((e, i) => (
-          <div key={i} className="px-6 py-3.5 flex items-start gap-3">
+          <div key={i} className="px-4 py-2.5 flex items-start gap-2.5">
             <span className="mt-0.5 shrink-0">{e.icon}</span>
             <div className="min-w-0 flex-1">
               <p className="text-sm text-foreground">{e.text}</p>
@@ -158,13 +158,13 @@ function ActivityLedger({ entries }) {
 // ─────────────────────────────────────────────────────────────
 function TaskLedger({ tasks }) {
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
-      <div className="px-6 py-4 border-b border-border">
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
         <h3 className="text-sm font-semibold text-foreground">Your tasks</h3>
       </div>
       <div className="divide-y divide-border">
         {tasks.map((t, i) => (
-          <div key={i} className="px-6 py-3.5 flex items-center gap-3">
+          <div key={i} className="px-4 py-2.5 flex items-center gap-2.5">
             <div className={`size-2 rounded-full shrink-0 ${t.dotColor}`} />
             <div className="min-w-0 flex-1">
               <p className="text-sm text-foreground font-medium">{t.title}</p>
@@ -187,12 +187,12 @@ function QuickActions({ actions }) {
         <Link
           key={i}
           href={a.href}
-          className="bg-card border border-border rounded-xl p-4 hover:border-core/40 hover:bg-core_light/20 transition-colors group"
+          className="bg-card border border-border rounded-lg p-3 hover:border-core/40 hover:bg-core_light/20 transition-colors group"
         >
-          <div className="size-9 rounded-lg bg-muted group-hover:bg-card flex items-center justify-center mb-3">
-            <a.icon className="size-4 text-muted-foreground group-hover:text-core transition-colors" />
+          <div className="size-8 rounded-md bg-muted group-hover:bg-card flex items-center justify-center mb-2">
+            <a.icon className="size-3.5 text-muted-foreground group-hover:text-core transition-colors" />
           </div>
-          <p className="text-sm font-medium text-foreground">{a.label}</p>
+          <p className="text-xs font-medium text-foreground">{a.label}</p>
         </Link>
       ))}
     </div>
@@ -262,9 +262,9 @@ export default function CompanyPage() {
 
   return (
     <ReusableCompanySidebar>
-      <div className="p-4 h-full flex flex-col overflow-y-auto">
+      <div className="p-2 md:p-4 h-full flex flex-col overflow-y-auto">
         {showWelcome && (
-          <div className="mb-6 bg-card border border-core/20 rounded-xl px-5 py-3.5 flex items-center justify-between">
+          <div className="mb-3 bg-card border border-core/20 rounded-lg px-4 py-2.5 flex items-center justify-between">
             <p className="text-sm text-foreground">
               You've been added to <span className="font-semibold">{info?.name}</span> — welcome aboard.
             </p>
@@ -286,7 +286,7 @@ export default function CompanyPage() {
 
         {/* ==================== OWNER VIEW ==================== */}
         {access.isOwner && (
-          <div className="space-y-6">
+          <div className="space-y-3">
             <KpiStrip
               items={[
                 { label: "Revenue (30d)", value: "$124,500", delta: "+12%", deltaPositive: true },
@@ -295,7 +295,7 @@ export default function CompanyPage() {
                 { label: "Branches", value: String(branchCount) },
               ]}
             />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               <div className="lg:col-span-2">
                 <BranchTable branches={branches} />
               </div>
@@ -320,7 +320,7 @@ export default function CompanyPage() {
 
         {/* ==================== COMPANY-LEVEL VIEW ==================== */}
         {!access.isOwner && access.isCompanyLevel && (
-          <div className="space-y-6">
+          <div className="space-y-3">
             <KpiStrip
               items={[
                 { label: "Your access", value: access.accessLevel || "—" },
@@ -329,7 +329,7 @@ export default function CompanyPage() {
                 { label: "Modules enabled", value: "8" },
               ]}
             />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               <div className="lg:col-span-2">
                 <BranchTable branches={branches} />
               </div>
@@ -348,7 +348,7 @@ export default function CompanyPage() {
 
         {/* ==================== BRANCH-LEVEL VIEW ==================== */}
         {!access.isOwner && access.isBranchLevel && (
-          <div className="space-y-6">
+          <div className="space-y-3">
             <KpiStrip
               items={[
                 { label: "Your access", value: access.accessLevel || "—" },

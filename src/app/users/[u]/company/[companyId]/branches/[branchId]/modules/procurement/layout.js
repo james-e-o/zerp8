@@ -30,7 +30,7 @@ export default async function ProcurementLayout({ params, children }) {
     { key: 'receipts', label: 'Receipts', icon: 'PackageCheck', path: '/receipts' },
     { key: 'bills', label: 'Bills', icon: 'Receipt', path: '/bills' },
     { key: 'returns', label: 'Returns', icon: 'Undo2', path: '/returns' },
-    { key: 'requests', label: 'Requests', icon: 'ClipboardList', path: '/requests' },
+    { key: 'rfqs', label: 'RFQs', icon: 'ClipboardList', path: '/rfqs' },
     { key: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
   ];
 

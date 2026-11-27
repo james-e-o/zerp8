@@ -28,7 +28,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 import supabase from '@/config/supabaseClient'
-import { useRequestCatalog } from '@/components/modules/procurement/request-catalog'
+import { usePurchaseCatalog } from '@/components/modules/procurement/purchase-catalog'
 import EmergencyReceiptSheet from '@/components/modules/inventory/emergency-receipt-sheet'
 import { formatDate, formatMoney, formatQty, useBranchCurrency, useStockNames } from '@/components/modules/inventory/inventory-shared'
 import { EmptyState, ErrorNote, Tone } from '@/components/modules/inventory/receipt-shared'
@@ -59,7 +59,7 @@ const ACTIVE = ['open', 'product_drafted', 'ready_to_receive']
 export default function EmergencyReceiptsPage() {
   const { branchId } = useParams()
   const currency = useBranchCurrency()
-  const { catalog } = useRequestCatalog(branchId)
+  const { catalog } = usePurchaseCatalog(branchId)
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)

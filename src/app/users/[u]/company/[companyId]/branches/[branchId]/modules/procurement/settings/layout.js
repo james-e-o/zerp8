@@ -3,7 +3,7 @@ import TabNav from '@/components/modules/sales/TabNav'
 
 // Replaces the per-folder layout.js approach from the last batch
 // entirely - matches the real pattern already used for Returns,
-// Orders and Requests: ONE layout.js at the settings/ root using
+// Orders and RFQ settings: ONE layout.js at the settings/ root using
 // PageHeader + the shared TabNav, not six duplicated back-link
 // layouts. Delete the layout.js files from the previous batch (and
 // the general/ folder isn't needed at all anymore - see the note on
@@ -25,7 +25,7 @@ import TabNav from '@/components/modules/sales/TabNav'
 const TABS = [
   { label: 'General', value: 'all' },
   { label: 'Purchase Orders', value: 'purchase-orders' },
-  { label: 'Requests & Approvals', value: 'requests-approvals' },
+  { label: 'RFQ', value: 'rfq' },
   { label: 'Supplier Bills', value: 'supplier-bills' },
   { label: 'Purchase Returns', value: 'purchase-returns' },
 ]
@@ -38,7 +38,7 @@ export default async function PurchasesSettingsLayout({ children, params }) {
     <div>
       <PageHeader
         title="Procurement Settings"
-        description="Configuration that governs purchase requests, orders, receiving, bills, and returns."
+        description="Configuration for RFQs, orders, receiving, bills, and returns."
         navigation={<TabNav tabs={TABS} basePath={basePath} />}
       />
       {children}

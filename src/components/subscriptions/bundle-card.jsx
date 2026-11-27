@@ -6,7 +6,7 @@ export default function BundleCard({ bundle, selected, onToggle, children }) {
 
   return (
     <div
-      className={`rounded-xl border p-4 transition-colors ${
+      className={`rounded-lg border p-3 transition-colors ${
         !isAvailable
           ? 'border-border bg-muted/40 opacity-60 cursor-not-allowed'
           : selected
@@ -25,19 +25,19 @@ export default function BundleCard({ bundle, selected, onToggle, children }) {
         />
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <p className="font-semibold text-foreground">{bundle.name}</p>
+            <p className="text-sm font-semibold text-foreground">{bundle.name}</p>
             {badgeLabel && (
               <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                 {badgeLabel}
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">{bundle.description}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{bundle.description}</p>
           {bundle.modules?.length > 0 && (
-            <p className="text-xs text-core mt-1">{bundle.modules.join(' • ')}</p>
+            <p className="text-[11px] text-core mt-1">{bundle.modules.join(' • ')}</p>
           )}
 
-          {isAvailable && selected && <div className="mt-4">{children}</div>}
+          {isAvailable && selected && <div className="mt-3">{children}</div>}
         </div>
       </div>
     </div>

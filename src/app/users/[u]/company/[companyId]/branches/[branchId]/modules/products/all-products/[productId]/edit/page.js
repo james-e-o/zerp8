@@ -51,7 +51,7 @@ import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[bra
 // Stock rules shown to the user (enforced again by the database)
 //   - Stocked goods cannot be turned off while any branch holds stock.
 //   - Batch tracking can only be changed while the variant has no stock.
-//   - Deactivating a variant stops it being added to NEW purchase requests
+//   - Deactivating a variant stops it being added to NEW RFQs
 //     and orders. Stock that is still held can still be sold.
 //   - Listed in shop only controls the e-shop listing, not stock.
 // ----------------------------------------------------------------------
@@ -867,7 +867,7 @@ export default function EditProductPage() {
 
           {inactiveCount > 0 && inactiveCount === variants.length ? (
             <Note tone="warn">
-              Every variant is inactive, so nothing on this product can be added to a new purchase request or order.
+              Every variant is inactive, so nothing on this product can be added to a new RFQ or order.
             </Note>
           ) : null}
 
@@ -1007,7 +1007,7 @@ export default function EditProductPage() {
                     onChange={(value) => patchVariant(variant.id, { isActive: value })}
                     title="Active"
                   >
-                    When off, this variant cannot be added to new purchase requests or orders. Stock already held can
+                    When off, this variant cannot be added to new RFQs or orders. Stock already held can
                     still be sold.
                   </SwitchRow>
                   <SwitchRow

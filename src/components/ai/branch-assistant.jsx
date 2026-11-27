@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 const SUGGESTIONS = [
   "Summarize this branch's activity this week",
   "Which products are below their reorder level?",
-  "What purchase requests are waiting for approval?",
+  "Which RFQs are still open?",
   "Show overdue supplier bills",
 ]
 

@@ -48,8 +48,7 @@ export default function PurchaseOrderDetailPage() {
 
   const [order, setOrder] = useState(null)
   const [items, setItems] = useState([])
-  const [sourceRequest, setSourceRequest] = useState(null)
-  const [mergedSources, setMergedSources] = useState([])
+  const [sourceRfq, setSourceRfq] = useState(null)
   const [quarantineTotal, setQuarantineTotal] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
@@ -91,7 +90,7 @@ export default function PurchaseOrderDetailPage() {
         const { data: orderRow, error: orderError } = await supabase
           .from('purchase_orders')
           .select(
-            'id, title, order_number, status, notes, expected_delivery_date, created_at, branch, supplier:suppliers(name, email), purchase_request'
+            'id, title, order_number, status, notes, expected_delivery_date, created_at, branch, supplier:suppliers(name, email), source_rfq'
           )
           .eq('id', orderId)
           .eq('branch', branchId)
@@ -151,28 +150,15 @@ export default function PurchaseOrderDetailPage() {
           }
         }
 
-        // A single-request conversion links purchase_request directly
-        // (the real column name on purchase_orders - confirmed against
-        // the live schema); a merged order instead has rows in
-        // purchase_order_source_requests. The two are mutually
-        // exclusive (see the New Purchase Order page), so only one of
-        // these ever comes back non-empty.
-        let sourceRequestRow = null
-        let mergedRows = []
-
-        if (orderRow.purchase_request) {
-          const { data } = await supabase
-            .from('purchase_requests')
-            .select('id, request_number')
-            .eq('id', orderRow.purchase_request)
+        let sourceRfqRow = null
+        if (orderRow.source_rfq) {
+          const { data, error: rfqError } = await supabase
+            .from('rfqs')
+            .select('id, rfq_number')
+            .eq('id', orderRow.source_rfq)
             .maybeSingle()
-          sourceRequestRow = data || null
-        } else {
-          const { data } = await supabase
-            .from('purchase_order_source_requests')
-            .select('purchase_request:purchase_requests(id, request_number)')
-            .eq('purchase_order', orderId)
-          mergedRows = (data || []).map((row) => row.purchase_request).filter(Boolean)
+          if (rfqError) throw rfqError
+          sourceRfqRow = data || null
         }
 
         if (cancelled) return
@@ -193,8 +179,7 @@ export default function PurchaseOrderDetailPage() {
           }
         }))
         setQuarantineTotal([...quarantineByLine.values()].reduce((sum, qty) => sum + qty, 0))
-        setSourceRequest(sourceRequestRow)
-        setMergedSources(mergedRows)
+        setSourceRfq(sourceRfqRow)
       } catch (loadError) {
         console.error('Failed to load purchase order:', loadError)
         if (!cancelled) {
@@ -645,34 +630,16 @@ export default function PurchaseOrderDetailPage() {
             <dt className="text-[10px] text-muted-foreground">Branch currency</dt>
             <dd className="mt-1 font-medium text-foreground">{currentBranch?.base_currency || '—'}</dd>
           </div>
-          {sourceRequest && (
+          {sourceRfq && (
             <div>
-              <dt className="text-[10px] text-muted-foreground">Converted from</dt>
+              <dt className="text-[10px] text-muted-foreground">Source</dt>
               <dd className="mt-1 font-medium text-foreground">
                 <Link
-                  href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests/${sourceRequest.id}`}
+                  href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/rfqs/${sourceRfq.id}`}
                   className="text-core hover:underline"
                 >
-                  {sourceRequest.title || sourceRequest.request_number}
+                  From RFQ {sourceRfq.rfq_number || '—'}
                 </Link>
-              </dd>
-            </div>
-          )}
-          {mergedSources.length > 0 && (
-            <div className="sm:col-span-2 lg:col-span-4">
-              <dt className="text-[10px] text-muted-foreground">Merged from</dt>
-              <dd className="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-medium text-foreground">
-                {mergedSources.map((request, index) => (
-                  <span key={request.id}>
-                    <Link
-                      href={`/users/${u}/company/${companyId}/branches/${branchId}/modules/procurement/requests/${request.id}`}
-                      className="text-core hover:underline"
-                    >
-                      {request.title || request.request_number}
-                    </Link>
-                    {index < mergedSources.length - 1 ? ',' : ''}
-                  </span>
-                ))}
               </dd>
             </div>
           )}

@@ -2,6 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,10 +15,10 @@ import {
 } from '@/components/ui/select'
 import supabase from '@/config/supabaseClient'
 import { formatCurrency } from '@/components/modules/procurement/dummy-data'
-import { useRequestCatalog } from '@/components/modules/procurement/request-catalog'
-import { useSuppliers } from '@/components/modules/procurement/purchase-catalog'
+import { usePurchaseCatalog, useSuppliers } from '@/components/modules/procurement/purchase-catalog'
 import { useBranchWarehouses } from '@/components/modules/procurement/use-branch-warehouses'
 import PurchaseOrderLineItemsTable from '@/components/modules/procurement/purchase-order-line-items-table'
+import { callRfqRpc } from '@/components/modules/procurement/rfq-utils'
 import { BranchContext } from '@/app/users/[u]/company/[companyId]/branches/[branchId]/branchContext'
 
 const generateOrderNumber = () => {
@@ -32,36 +33,14 @@ const generateOrderNumber = () => {
 // deliveryWarehouse '' = follow the order's delivery location.
 const blankLine = () => ({ variantId: '', qty: 1, standardCostPrice: 0, unitCost: 0, deliveryWarehouse: '' })
 
-// Converting an approved Purchase Request into a Purchase Order does
-// NOT create the order directly - it hands the request's items +
-// needed-by date over to this same "New Purchase Order" form via
-// ?fromRequest=<requestId>, so whoever is authorizing the order still
-// picks the supplier and writes their own notes. Deliberately NOT
-// carried over: notes (the request's notes are internal context for
-// colleagues; PO notes go out to the supplier and should be written
-// fresh by whoever is converting it) and supplier (never set on a
-// request in the first place).
-//
-// Title vs order number: 'title' is a person-entered name, distinct
-// from order_number (the auto-generated, immutable PO-xxxxxx-XXXX
-// identifier) - same split as on Purchase Requests. The draft row's
-// own 'title' column holds this real title; the generated number
-// travels inside the draft payload instead.
+// The RFQ conversion path pre-fills this form; the purchase order is still
+// created here so the existing order workflow remains unchanged.
 export default function NewPurchaseOrderPage() {
   const router = useRouter()
   const { u, companyId, branchId } = useParams()
   const searchParams = useSearchParams()
   const draftParam = searchParams.get('draft')
-  const initialFromRequestId = searchParams.get('fromRequest')
-  // A merge (2+ approved requests combined into one order) arrives via
-  // ?fromRequests=id1,id2,... instead - distinct from the single-request
-  // ?fromRequest=<id> conversion above. Parsed once on mount; after that
-  // the loaded sourceRequestIds state is what matters (same reasoning as
-  // initialFromRequestId not being re-read after mount).
-  const initialFromRequestIds = useMemo(() => {
-    const raw = searchParams.get('fromRequests')
-    return raw ? raw.split(',').map((id) => id.trim()).filter(Boolean) : []
-  }, [searchParams])
+  const initialFromRfqId = searchParams.get('fromRfq')
 
   const { currentBranch } = useContext(BranchContext) || {}
   const branchCurrencyCode = currentBranch?.base_currency || ''
@@ -85,19 +64,15 @@ export default function NewPurchaseOrderPage() {
   const { warehouses: branchWarehouses, defaultId: defaultWarehouseId } = useBranchWarehouses(branchId)
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState('')
-  const [sourceRequestId, setSourceRequestId] = useState(initialFromRequestId || '')
-  const [sourceRequestLoading, setSourceRequestLoading] = useState(
-    Boolean(initialFromRequestId || initialFromRequestIds.length > 0 || draftParam)
-  )
-  const [sourceRequestNumber, setSourceRequestNumber] = useState('')
-  // Merge source requests - mutually exclusive with sourceRequestId
-  // above. Only one of the two is ever populated: a single conversion
-  // uses sourceRequestId/source_request (and carries that request's own
-  // code), a merge uses these arrays + the join table instead (and gets
-  // its own freshly generated code).
-  const [sourceRequestIds, setSourceRequestIds] = useState(initialFromRequestIds)
-  const [sourceRequestNumbers, setSourceRequestNumbers] = useState([])
+  const [sourceRfqId, setSourceRfqId] = useState(initialFromRfqId || '')
+  const [sourceRfqLoading, setSourceRfqLoading] = useState(Boolean(initialFromRfqId || draftParam))
+  const [sourceRfqNumber, setSourceRfqNumber] = useState('')
   const [draftLoading, setDraftLoading] = useState(Boolean(draftParam))
+
+  const reportOrderError = (message) => {
+    setSubmitError(message)
+    if (sourceRfqId) toast.error(message)
+  }
 
   // The table always keeps one line. Whatever the table does to the list
   // (including removing the last remaining line), if the result would be
@@ -115,7 +90,7 @@ export default function NewPurchaseOrderPage() {
 
   const { suppliers, loading: suppliersLoading } = useSuppliers(companyId)
   const { catalog, currencies, loading: catalogLoading, error: catalogError } =
-    useRequestCatalog(branchId)
+    usePurchaseCatalog(branchId)
   const branchCurrencySymbol = currencies.find(
     (currency) => currency.code === branchCurrencyCode
   )?.symbol || ''
@@ -192,13 +167,10 @@ export default function NewPurchaseOrderPage() {
     return (Number(amount || 0) * rFrom) / rTo
   }
 
-  // Every new order - blank, converted from a single request, or
-  // merged from several - gets its OWN fresh generated code. Converting
-  // no longer carries over the source request's own reference code
-  // (that was the old design); traceability back to the request is
-  // kept instead by the "converted from PR-xxx" label shown next to
-  // the title, not by reusing its code. Skipped only when loading an
-  // existing draft, whose orderNumber was already generated once and
+  // Every new order gets its own generated code. This is skipped when
+  // loading an existing draft, whose number is already stored in its payload.
+  // Traceability to an RFQ is carried by source_rfq, not by reusing its code.
+  // Skipped when loading an existing draft, whose orderNumber was already generated once and
   // is stored in its payload - reopening a draft must never change it.
   useEffect(() => {
     if (!draftParam) setOrderNumber(generateOrderNumber())
@@ -301,7 +273,7 @@ export default function NewPurchaseOrderPage() {
       if (error || !data) {
         setSubmitError('Could not load this purchase order draft - it may have been deleted.')
         setDraftLoading(false)
-        setSourceRequestLoading(false)
+        setSourceRfqLoading(false)
         return
       }
 
@@ -321,15 +293,13 @@ export default function NewPurchaseOrderPage() {
         : [blankLine()])
       setDeliveryWarehouse(payload.deliveryWarehouse || '')
       setDeliveryTouched(Boolean(payload.deliveryWarehouse))
-      setSourceRequestId(payload.sourceRequestId || '')
-      setSourceRequestNumber(payload.sourceRequestNumber || '')
-      setSourceRequestIds(Array.isArray(payload.sourceRequestIds) ? payload.sourceRequestIds : [])
-      setSourceRequestNumbers(Array.isArray(payload.sourceRequestNumbers) ? payload.sourceRequestNumbers : [])
+      setSourceRfqId(payload.sourceRfqId || '')
+      setSourceRfqNumber(payload.sourceRfqNumber || '')
       setOrderCurrency(payload.orderCurrency || branchCurrencyCode)
       setManualRates(payload.manualRates && typeof payload.manualRates === 'object' ? payload.manualRates : {})
       setDraftId(data.id)
       setDraftLoading(false)
-      setSourceRequestLoading(false)
+      setSourceRfqLoading(false)
     }
 
     loadDraft()
@@ -338,148 +308,70 @@ export default function NewPurchaseOrderPage() {
     }
   }, [draftParam, branchId])
 
-  // Pull in the source request's items + needed-by date when converting
-  // from one. Only runs when ?fromRequest=<id> is present. The request
-  // must still be 'approved' - the same guard the convert button on the
-  // detail page relies on - otherwise this surfaces an error rather than
-  // silently falling back to a blank order.
+  // Pull in the RFQ's supplier, title, currency, due date, and quoted lines.
   useEffect(() => {
     let cancelled = false
 
-    async function loadSourceRequest() {
-      if (!sourceRequestId || draftParam) return
-      setSourceRequestLoading(true)
+    async function loadSourceRfq() {
+      if (!sourceRfqId || draftParam) return
+      setSourceRfqLoading(true)
 
       try {
-        const { data: requestRow, error: requestError } = await supabase
-          .from('purchase_requests')
-          .select('id, request_number, needed_by, status')
-          .eq('id', sourceRequestId)
+        await callRfqRpc('rfq_sweep', { p_branch: branchId })
+        const { data: rfqRow, error: rfqError } = await supabase
+          .from('rfqs')
+          .select('id, rfq_number, name, supplier, currency, needed_by, status')
+          .eq('id', sourceRfqId)
           .eq('branch', branchId)
           .maybeSingle()
 
-        if (requestError) throw requestError
-        if (!requestRow) throw new Error('That purchase request could not be found.')
-        if (requestRow.status !== 'approved') {
-          throw new Error('That purchase request is no longer approved - it may have already been converted.')
-        }
+        if (rfqError) throw rfqError
+        if (!rfqRow) throw new Error('That RFQ could not be found.')
+        if (rfqRow.status !== 'open') throw new Error('Only an Open RFQ can be converted to a purchase order.')
+        if (!rfqRow.supplier) throw new Error('The RFQ has no supplier.')
 
         const { data: lineRows, error: lineError } = await supabase
-          .from('purchase_request_line_items')
-          .select('variant, quantity_requested, estimated_unit_cost')
-          .eq('purchase_request', sourceRequestId)
+          .from('rfq_line_items')
+          .select('variant, quantity, quoted_unit_cost')
+          .eq('rfq', sourceRfqId)
 
         if (lineError) throw lineError
+        if (!lineRows?.length || lineRows.some((row) => row.quoted_unit_cost == null)) {
+          throw new Error('Every RFQ line must have a quoted price before conversion.')
+        }
         if (cancelled) return
 
-        setSourceRequestNumber(requestRow.request_number || '')
-        // Order number is NOT carried over from the request (see the
-        // mount effect above) - this order gets its own fresh code.
-        // Title isn't seeded from the request either: purchase_requests
-        // has no title column of its own (it's identified only by
-        // request_number), and the order's title already defaults to
-        // its own order number via the sync effect above.
-        setNeededBy(requestRow.needed_by || '')
-        if ((lineRows || []).length > 0) {
-          setItems(
-            lineRows.map((row) => ({
-              variantId: row.variant,
-              qty: row.quantity_requested,
-              standardCostPrice: 0,
-              unitCost: row.estimated_unit_cost || 0,
-              deliveryWarehouse: '',
-            }))
-          )
-        }
+        setSourceRfqNumber(rfqRow.rfq_number || '')
+        setTitle(rfqRow.name || '')
+        setTitleIsCustom(true)
+        setSupplierId(rfqRow.supplier)
+        setNeededBy(rfqRow.needed_by || '')
+        setOrderCurrency(rfqRow.currency || branchCurrencyCode)
+        setItems(lineRows.map((row) => ({
+          variantId: row.variant,
+          qty: row.quantity,
+          standardCostPrice: 0,
+          unitCost: Number(row.quoted_unit_cost),
+          costCurrency: rfqRow.currency || branchCurrencyCode,
+          deliveryWarehouse: '',
+        })))
       } catch (err) {
-        console.error('Failed to load source purchase request:', err)
-        if (!cancelled) setSubmitError(err.message || 'Could not load the source purchase request.')
+        console.error('Failed to load source RFQ:', err)
+        if (!cancelled) {
+          setSubmitError(err.message || 'Could not load the source RFQ.')
+          toast.error(err.message || 'Could not load the source RFQ.')
+        }
       } finally {
-        if (!cancelled) setSourceRequestLoading(false)
+        if (!cancelled) setSourceRfqLoading(false)
       }
     }
 
-    loadSourceRequest()
+    loadSourceRfq()
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceRequestId, branchId, draftParam])
-
-  // Merge path: pull in every selected request's items, keep the
-  // order's own freshly generated code (not carried from any one of
-  // them - see generateOrderNumber() above), and pick the EARLIEST
-  // needed-by date among them as a sensible default (the soonest
-  // deadline governs when the merged order should ship). Every request
-  // must still be 'approved' and in this same branch - the branch check
-  // is redundant with the .eq('branch', branchId) below and the
-  // database-level trigger on purchase_order_source_requests, but
-  // surfacing it here as a clear error is friendlier than a silent RLS
-  // failure on submit.
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadMergeSourceRequests() {
-      if (sourceRequestIds.length === 0 || draftParam) return
-      setSourceRequestLoading(true)
-
-      try {
-        const { data: requestRows, error: requestError } = await supabase
-          .from('purchase_requests')
-          .select('id, request_number, needed_by, status')
-          .in('id', sourceRequestIds)
-          .eq('branch', branchId)
-
-        if (requestError) throw requestError
-        if (!requestRows || requestRows.length !== sourceRequestIds.length) {
-          throw new Error('One or more selected purchase requests could not be found in this branch.')
-        }
-        const notApproved = requestRows.filter((row) => row.status !== 'approved')
-        if (notApproved.length > 0) {
-          throw new Error('Every selected purchase request must still be approved - one or more has since changed.')
-        }
-
-        const { data: lineRows, error: lineError } = await supabase
-          .from('purchase_request_line_items')
-          .select('variant, quantity_requested, estimated_unit_cost')
-          .in('purchase_request', sourceRequestIds)
-
-        if (lineError) throw lineError
-        if (cancelled) return
-
-        setSourceRequestNumbers(requestRows.map((row) => row.request_number).filter(Boolean))
-
-        const earliestNeededBy = requestRows
-          .map((row) => row.needed_by)
-          .filter(Boolean)
-          .sort()[0]
-        if (earliestNeededBy) setNeededBy(earliestNeededBy)
-
-        if ((lineRows || []).length > 0) {
-          setItems(
-            lineRows.map((row) => ({
-              variantId: row.variant,
-              qty: row.quantity_requested,
-              standardCostPrice: 0,
-              unitCost: row.estimated_unit_cost || 0,
-              deliveryWarehouse: '',
-            }))
-          )
-        }
-      } catch (err) {
-        console.error('Failed to load source purchase requests for merge:', err)
-        if (!cancelled) setSubmitError(err.message || 'Could not load the selected purchase requests.')
-      } finally {
-        if (!cancelled) setSourceRequestLoading(false)
-      }
-    }
-
-    loadMergeSourceRequests()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceRequestIds, branchId, draftParam])
+  }, [sourceRfqId, branchId, draftParam, branchCurrencyCode])
 
   const createdByLabel = creator?.email || ''
 
@@ -492,7 +384,7 @@ export default function NewPurchaseOrderPage() {
   const resolvedItems = useMemo(
     () => items.map((item) => {
       const variant = catalog.find((entry) => entry.id === item.variantId)
-      const fromCode = variant?.cost_currency || branchCurrencyCode
+      const fromCode = item.costCurrency || variant?.cost_currency || branchCurrencyCode
       const resolved = convertAmount(item.unitCost, fromCode, orderCurrency)
       return { ...item, fromCode, resolvedUnitCost: resolved }
     }),
@@ -526,11 +418,11 @@ export default function NewPurchaseOrderPage() {
   const handleSaveDraft = async () => {
     setSubmitError('')
     if (!creator?.id) {
-      setSubmitError(creatorError || 'Could not identify the purchase order creator - try reloading the page.')
+      reportOrderError(creatorError || 'Could not identify the purchase order creator - try reloading the page.')
       return
     }
     if (!title.trim()) {
-      setSubmitError('Give this order a title before saving.')
+      reportOrderError('Give this order a title before saving.')
       return
     }
 
@@ -542,10 +434,8 @@ export default function NewPurchaseOrderPage() {
         neededBy,
         notes,
         items,
-        sourceRequestId: sourceRequestId || null,
-        sourceRequestNumber: sourceRequestNumber || '',
-        sourceRequestIds,
-        sourceRequestNumbers,
+        sourceRfqId: sourceRfqId || null,
+        sourceRfqNumber: sourceRfqNumber || '',
         orderCurrency,
         manualRates,
         titleIsCustom,
@@ -583,9 +473,11 @@ export default function NewPurchaseOrderPage() {
         setDraftId(data.id)
       }
 
+      if (sourceRfqId) toast.success('Purchase order draft saved')
       router.push(`${base}/draft`)
     } catch (err) {
       console.error('Error saving purchase order draft:', err)
+      if (sourceRfqId) toast.error(err.message || 'Could not save this purchase order draft.')
       setSubmitError(err.message || 'Something went wrong saving this draft.')
     } finally {
       setSaving(false)
@@ -594,35 +486,34 @@ export default function NewPurchaseOrderPage() {
 
   // The real, final submit. After the checks below, everything that creates
   // the order happens inside ONE database function, create_purchase_order(),
-  // in a single transaction: the order, its line items, marking the source
-  // request(s) as converted, recording merged source requests, and removing
+  // in a single transaction: the order, its line items, linking the source
+  // RFQ, and removing
   // the draft this was started from. If any part fails, nothing is saved.
-  // The function also re-checks (and locks) the source request(s), so the
-  // "still approved?" checks that used to be done here are done there.
+  // The function also validates the source RFQ when one is supplied.
   const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitError('')
 
     if (!supplierId) {
-      setSubmitError('A supplier is required to create a Purchase Order.')
+      reportOrderError('A supplier is required to create a Purchase Order.')
       return
     }
     if (!creator?.id) {
-      setSubmitError(creatorError || 'Could not identify the purchase order creator - try reloading the page.')
+      reportOrderError(creatorError || 'Could not identify the purchase order creator - try reloading the page.')
       return
     }
     if (!title.trim()) {
-      setSubmitError('Give this order a title before submitting.')
+      reportOrderError('Give this order a title before submitting.')
       return
     }
 
     const validItems = resolvedItems.filter((item) => item.variantId)
     if (validItems.length === 0) {
-      setSubmitError('Add at least one product to the order.')
+      reportOrderError('Add at least one product to the order.')
       return
     }
     if (!deliveryWarehouse) {
-      setSubmitError('Choose where this order should be delivered.')
+      reportOrderError('Choose where this order should be delivered.')
       return
     }
 
@@ -633,11 +524,11 @@ export default function NewPurchaseOrderPage() {
     // only the error (and who to go to); someone with it sees the
     // manual-rate inputs rendered below the line items.
     if (unresolvedCurrencies.length > 0) {
-      setSubmitError(
+      reportOrderError(
         `Could not resolve an exchange rate for: ${unresolvedCurrencies.join(', ')}. ` +
-        (canOverrideCurrency
-          ? 'Enter a rate for it below before submitting.'
-          : 'Ask someone with currency-override permission to enter a rate before this can be submitted.')
+          (canOverrideCurrency
+            ? 'Enter a rate for it below before submitting.'
+            : 'Ask someone with currency-override permission to enter a rate before this can be submitted.')
       )
       return
     }
@@ -668,19 +559,20 @@ export default function NewPurchaseOrderPage() {
           // This line's own delivery location, or the order's.
           delivery_warehouse: item.deliveryWarehouse || deliveryWarehouse,
         })),
-        p_source_request: sourceRequestId || null,
-        p_source_requests: sourceRequestIds.length > 0 ? sourceRequestIds : null,
+        p_source_rfq: sourceRfqId || null,
         p_draft: draftId || null,
         p_delivery_warehouse: deliveryWarehouse || null,
       })
 
       if (error) throw error
 
+      if (sourceRfqId) toast.success('Purchase order created from RFQ')
       // Lands on the order's own detail page, same as every other
       // create-then-redirect flow in this module.
       router.push(`${base}/${orderId}`)
     } catch (err) {
       console.error('Error creating purchase order:', err)
+      if (sourceRfqId) toast.error(err.message || 'Could not create a purchase order from this RFQ.')
       setSubmitError(err.message || 'Something went wrong saving this order.')
     } finally {
       setSaving(false)
@@ -697,11 +589,8 @@ export default function NewPurchaseOrderPage() {
 
           <p className="text-xs text-gray-500">
             {orderNumber}
-            {sourceRequestNumber && (
-              <span className="ml-2 text-gray-400">· converted from {sourceRequestNumber}</span>
-            )}
-            {sourceRequestNumbers.length > 0 && (
-              <span className="ml-2 text-gray-400">· merged from {sourceRequestNumbers.join(', ')}</span>
+            {sourceRfqNumber && (
+              <span className="ml-2 text-gray-400">· From RFQ {sourceRfqNumber}</span>
             )}
           </p>
         </div>
@@ -720,7 +609,7 @@ export default function NewPurchaseOrderPage() {
             type="button"
             variant="outline"
             className="h-6 text-xs"
-            disabled={saving || sourceRequestLoading || draftLoading || isLoadingCreator || !creator?.id}
+            disabled={saving || sourceRfqLoading || draftLoading || isLoadingCreator || !creator?.id}
             onClick={handleSaveDraft}
           >
             {saving ? 'Saving...' : 'Save as Draft'}
@@ -730,7 +619,7 @@ export default function NewPurchaseOrderPage() {
             type="submit"
             form="purchase-order-form"
             className="h-6 bg-core text-xs text-white"
-            disabled={saving || sourceRequestLoading || draftLoading || isLoadingCreator || !creator?.id}
+            disabled={saving || sourceRfqLoading || draftLoading || isLoadingCreator || !creator?.id}
           >
             {saving ? 'Creating...' : 'Create Purchase Order'}
           </Button>
@@ -764,7 +653,7 @@ export default function NewPurchaseOrderPage() {
 
           <label className="text-xs font-medium text-gray-800">
             Supplier <span className="text-red-500">*</span>
-            <Select value={supplierId} onValueChange={setSupplierId}>
+            <Select value={supplierId} onValueChange={setSupplierId} disabled={Boolean(sourceRfqId)}>
               <SelectTrigger className="mt-1 h-6 w-full text-xs lg:text-sm">
                 <SelectValue placeholder={suppliersLoading ? 'Loading suppliers...' : 'Select supplier'} />
               </SelectTrigger>
@@ -853,14 +742,12 @@ export default function NewPurchaseOrderPage() {
           {catalogError && (
             <p className="mb-2 text-xs text-red-600">{catalogError}</p>
           )}
-          {catalogLoading || sourceRequestLoading || draftLoading ? (
+          {catalogLoading || sourceRfqLoading || draftLoading ? (
             <p className="text-xs text-gray-500">
               {draftLoading
                 ? 'Loading purchase order draft...'
-                : sourceRequestLoading
-                  ? sourceRequestIds.length > 0
-                    ? 'Loading merged request items...'
-                    : 'Loading request items...'
+                : sourceRfqLoading
+                  ? 'Loading RFQ items...'
                   : 'Loading products...'}
             </p>
           ) : (
@@ -921,8 +808,8 @@ export default function NewPurchaseOrderPage() {
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder={
-                sourceRequestNumber || sourceRequestNumbers.length > 0
-                  ? "Notes for the supplier - the request's own notes are internal and are not carried over..."
+                sourceRfqNumber
+                  ? 'Notes for the supplier...'
                   : 'Reason, delivery details, or approval notes...'
               }
               className="mt-1 min-h-20 bg-white text-xs"

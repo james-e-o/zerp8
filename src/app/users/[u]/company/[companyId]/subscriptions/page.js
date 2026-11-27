@@ -36,6 +36,16 @@ function getUsageIcon(key) {
   return USAGE_ICONS[key.split(".")[0]] || USAGE_ICONS[prefix] || Package
 }
 
+// Money is shown in the subscription's own currency (USD unless the subscription says otherwise).
+const formatMoney = (amount, currency) => {
+  const value = Number(amount || 0)
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(value)
+  } catch {
+    return `${currency || "USD"} ${value.toLocaleString()}`
+  }
+}
+
 const formatDate = (date) =>
   date
     ? new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
@@ -47,21 +57,21 @@ function UsageStatCard({ label, current, max, unit, limitKey }) {
   const isHigh = pct >= 80
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-5">
-      <div className="flex items-center justify-between mb-4">
-        <div className="w-9 h-9 rounded-lg bg-core/10 flex items-center justify-center">
-          <Icon className="w-4.5 h-4.5 text-core" />
+    <div className="rounded-lg border border-gray-100 bg-white p-3 font-sans">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex size-8 items-center justify-center rounded-md bg-core/10">
+          <Icon className="size-4 text-core" />
         </div>
         <span className={`text-xs font-semibold ${isHigh ? "text-yellow-600" : "text-gray-400"}`}>
           {pct}%
         </span>
       </div>
-      <p className="text-2xl font-bold text-slate-900 leading-none">
+      <p className="text-xl font-semibold leading-none text-slate-900">
         {current.toLocaleString()}
-        <span className="text-sm font-medium text-gray-400"> / {max.toLocaleString()}</span>
+        <span className="text-xs font-medium text-gray-400"> / {max.toLocaleString()}</span>
       </p>
-      <p className="text-xs text-gray-500 mt-1">{label}</p>
-      <div className="w-full h-1.5 rounded-full bg-gray-100 mt-3 overflow-hidden">
+      <p className="mt-1 text-[11px] text-gray-500">{label}</p>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
         <div
           className={`h-full rounded-full ${isHigh ? "bg-yellow-500" : "bg-core"}`}
           style={{ width: `${pct}%` }}
@@ -102,7 +112,7 @@ export default async function SubscriptionOverviewPage({ params }) {
 
     const { data: limitRows } = await supabase
       .from("subscription_limits")
-      .select("value_numeric, limit_keys(key, name, unit, value_type)")
+      .select("value_numeric, limit_keys(key, name, unit, value_type, is_active)")
       .eq("subscription_id", currentSubscription.id)
 
     const { data: usage } = await supabase
@@ -115,7 +125,7 @@ export default async function SubscriptionOverviewPage({ params }) {
     )
 
     usageRows = (limitRows || [])
-      .filter((row) => row.limit_keys?.value_type === "numeric")
+      .filter((row) => row.limit_keys?.value_type === "numeric" && row.limit_keys?.is_active !== false)
       .map((row) => ({
         key: row.limit_keys.key,
         label: row.limit_keys.name,
@@ -129,17 +139,17 @@ export default async function SubscriptionOverviewPage({ params }) {
 
   if (!currentSubscription) {
     return (
-      <div className="flex flex-col items-center justify-center text-center py-24 px-6 border border-dashed border-gray-200 rounded-2xl">
-        <div className="w-14 h-14 rounded-2xl bg-core/10 flex items-center justify-center mb-4">
-          <Package className="w-6 h-6 text-core" />
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 px-4 py-12 text-center font-sans">
+        <div className="mb-3 flex size-10 items-center justify-center rounded-md bg-core/10">
+          <Package className="size-5 text-core" />
         </div>
-        <h2 className="text-lg font-semibold text-slate-900">No active subscription</h2>
-        <p className="text-sm text-gray-500 mt-1 max-w-sm">
+        <h2 className="text-sm font-semibold text-slate-900">No active subscription</h2>
+        <p className="mt-1 max-w-sm text-xs text-gray-500">
           Your company data is safe. Choose a plan or start a free trial to unlock full access again.
         </p>
-        <div className="flex gap-3 mt-6">
+        <div className="mt-4 flex gap-2">
           <Link href={`${baseUrl}/plans`}>
-            <Button className="bg-core text-white hover:bg-core/90">View plans</Button>
+            <Button size="sm" className="bg-core text-white hover:bg-core/90">View plans</Button>
           </Link>
           <StartFreeTrialDialog label="Start free trial" />
         </div>
@@ -148,39 +158,39 @@ export default async function SubscriptionOverviewPage({ params }) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 font-sans">
       {/* Hero summary bar */}
-      <div className="rounded-2xl bg-core_light text-slate-900 p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col gap-3 rounded-lg bg-core_light p-4 text-slate-900 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-2">
+          <div className="mb-1.5 flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${STATUS_DOT[currentSubscription.status]}`} />
-            <span className="text-[13px] font-semibold uppercase tracking-wide text-core">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-core">
               {STATUS_LABEL[currentSubscription.status]}
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {modules.map((name) => (
-              <span key={name} className="text-xs tracking-tight font-medium bg-white/60 px-2.5 py-1 rounded-full">
+              <span key={name} className="rounded-full bg-white/60 px-2 py-0.5 text-[11px] font-medium tracking-tight">
                 {name}
               </span>
             ))}
           </div>
-          <p className="text-xs ml-1 text-gray-500 mt-3">
+          <p className="ml-1 mt-2 text-[11px] text-gray-500">
             {currentSubscription.status === "trialing"
               ? `Trial ends ${formatDate(currentSubscription.trial_end)}`
               : `Next billing ${formatDate(currentSubscription.next_billing_date)}`}
           </p>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           <div className="text-right">
-            <p className="text-3xl font-bold leading-none">
-              ₦{Number(currentSubscription.amount || 0).toLocaleString()}
+            <p className="text-2xl font-semibold leading-none">
+              {formatMoney(currentSubscription.amount, currentSubscription.currency)}
             </p>
             <p className="text-xs text-gray-500 mt-1">per month</p>
           </div>
           <Link href={`/users/${u}/company/${companyId}/modules-manager`}>
-            <Button className="bg-core text-white hover:bg-core/90">Manage</Button>
+            <Button size="sm" className="bg-core text-white hover:bg-core/90">Manage</Button>
           </Link>
         </div>
       </div>
@@ -188,16 +198,16 @@ export default async function SubscriptionOverviewPage({ params }) {
       {/* Usage stat grid */}
       {usageRows.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase">Usage</h2>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase text-gray-500">Usage</h2>
             <Link
               href={`${baseUrl}/usage`}
-              className="text-sm font-semibold text-core hover:underline flex items-center gap-1"
+              className="flex items-center gap-1 text-xs font-semibold text-core hover:underline"
             >
               View all <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {usageRows.map((row) => (
               <UsageStatCard
                 key={row.key}
@@ -212,7 +222,7 @@ export default async function SubscriptionOverviewPage({ params }) {
       )}
 
       {/* Quick links row */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-2">
         <Link href={`${baseUrl}/billing`}>
           <Button variant="outline" className="rounded-full border-gray-200">Billing details</Button>
         </Link>
@@ -223,36 +233,36 @@ export default async function SubscriptionOverviewPage({ params }) {
 
       {/* History table */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Subscription history</h2>
+        <h2 className="mb-2 text-xs font-semibold uppercase text-gray-500">Subscription history</h2>
         {previousSubscriptions && previousSubscriptions.length > 0 ? (
-          <div className="border border-gray-100 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="overflow-hidden rounded-lg border border-gray-100">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
-                  <th className="px-5 py-3 font-semibold">Status</th>
-                  <th className="px-5 py-3 font-semibold">Amount</th>
-                  <th className="px-5 py-3 font-semibold">Ended</th>
+                  <th className="px-4 py-2.5 font-semibold">Status</th>
+                  <th className="px-4 py-2.5 font-semibold">Amount</th>
+                  <th className="px-4 py-2.5 font-semibold">Ended</th>
                 </tr>
               </thead>
               <tbody>
                 {previousSubscriptions.map((sub) => (
                   <tr key={sub.id} className="border-t border-gray-100">
-                    <td className="px-5 py-3">
+                    <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
                         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[sub.status]}`} />
                         {STATUS_LABEL[sub.status]}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-slate-700">₦{Number(sub.amount || 0).toLocaleString()}</td>
-                    <td className="px-5 py-3 text-gray-500">{formatDate(sub.end_date)}</td>
+                    <td className="px-4 py-2.5 text-slate-700">{formatMoney(sub.amount, sub.currency)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{formatDate(sub.end_date)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="border border-dashed border-gray-200 rounded-2xl p-8 text-center">
-            <p className="text-gray-400 text-sm">No previous subscriptions</p>
+          <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center">
+            <p className="text-xs text-gray-400">No previous subscriptions</p>
           </div>
         )}
       </div>

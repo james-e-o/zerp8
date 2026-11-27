@@ -267,6 +267,22 @@ const liveTopics = [
       { heading: "Related", related: ["purchases/bills", "inventory/valuation-and-costing", "sales/pro-forma-invoices"] },
     ],
   },
+  {
+    module: "purchases",
+    slug: "rfqs",
+    title: "Request for Quotation",
+    summary: "Request prices from one supplier and compare the quoted prices before creating a purchase order.",
+    status: "live",
+    sections: [
+      { heading: "What it is", body: "An RFQ asks one supplier to quote prices and terms for a set of products. An Open RFQ with prices on every line can be converted into a purchase order." },
+      { heading: "Where to find it", body: "Purchases > RFQs." },
+      { heading: "Who can use it", body: "People with access to Purchases in the branch can view RFQs. Creating and managing RFQs requires the matching permissions." },
+      { heading: "How it works", steps: ["Create an RFQ for one supplier and add products and quantities.", "Set an optional reply-by date; otherwise the branch default is used.", "Enter the supplier's quoted prices and terms when they reply.", "Convert an Open RFQ with a price on every line into a purchase order."] },
+      { heading: "Rules and limits", items: ["One RFQ has one supplier.", "An Open RFQ becomes Lost when its reply-by date passes.", "Only Open RFQs can be converted to purchase orders.", "Converted and Cancelled RFQs are final; duplicate one to start a new draft."] },
+      { heading: "Statuses", items: ["Draft: being prepared.", "Open: sent for a supplier quotation and awaiting a response.", "Lost: the reply-by date passed; it can be reopened.", "Converted: used to create a purchase order.", "Cancelled: closed with a reason."] },
+      { heading: "Related", related: ["purchases/orders", "purchases/settings"] },
+    ],
+  },
 ]
 
 const plannedTopicRows = [
@@ -286,7 +302,6 @@ const plannedTopicRows = [
   ["products", "settings", "Product settings", "Review catalogue, pricing, and product defaults."],
   ["purchases", "overview", "Purchases overview", "A map of supplier purchasing and payment workflows.", "live"],
   ["purchases", "suppliers", "Suppliers", "Maintain supplier records for purchasing activity."],
-  ["purchases", "requests", "Requests and RFQs", "Prepare purchase requests and learn about the planned RFQ workflow.", "planned"],
   ["purchases", "orders", "Purchase orders", "Create, review, receive, cancel, and merge purchase orders."],
   ["purchases", "order-approval", "Purchase order approval", "Approval before a purchase order becomes open.", "planned"],
   ["purchases", "bills", "Supplier bills", "Create bills from orders and handle partial billing."],

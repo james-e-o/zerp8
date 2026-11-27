@@ -22,10 +22,8 @@ import { Switch } from '@/components/ui/switch'
 
 const defaultSettings = {
   branchOverrideEnabled: false,
-  requestNumberFormat: 'PR-{YY}{MM}{DD}-{RAND}',
   orderNumberFormat: 'PO-{YY}{MM}{DD}-{RAND}',
   receiptNumberFormat: 'RCT-{YY}{MM}{DD}-{RAND}',
-  purchaseRequestsEnabled: true,
   purchaseReturnsEnabled: true,
 }
 
@@ -54,8 +52,7 @@ export default function GeneralPurchasesSettingsPage() {
     <div className="max-w-2xl space-y-6 p-6">
       <div className="flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">
-          Default purchasing preferences, document numbering, and which purchasing workflows are
-          enabled.
+          Default purchasing preferences, document numbering, and purchasing workflows.
         </p>
         {!editing ? (
           <Button type="button" variant="outline" className="h-7 shrink-0 text-xs" onClick={startEdit}>
@@ -94,16 +91,6 @@ export default function GeneralPurchasesSettingsPage() {
         <h2 className="text-xs font-semibold text-gray-800">Document numbering</h2>
 
         <label className="block text-xs font-medium text-gray-700">
-          Purchase Request number format
-          <Input
-            value={view.requestNumberFormat}
-            disabled={!editing}
-            onChange={(e) => patch('requestNumberFormat', e.target.value)}
-            className="mt-1 h-auto text-sm disabled:opacity-100"
-          />
-        </label>
-
-        <label className="block text-xs font-medium text-gray-700">
           Purchase Order number format
           <Input
             value={view.orderNumberFormat}
@@ -124,23 +111,13 @@ export default function GeneralPurchasesSettingsPage() {
         </label>
 
         <p className="text-[11px] text-gray-400">
-          {'{YY}'} {'{MM}'} {'{DD}'} and {'{RAND}'} are placeholders, display-only for now -
-          Requests, Orders and Receipts still self-generate their numbers in code, not from this
-          setting.
+          {'{YY}'} {'{MM}'} {'{DD}'} and {'{RAND}'} are placeholders, display-only for now.
+          Orders and Receipts still self-generate their numbers in code, not from this setting.
         </p>
       </section>
 
       <section className="space-y-4 rounded-lg border border-gray-200 p-4">
         <h2 className="text-xs font-semibold text-gray-800">Workflows enabled</h2>
-
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-xs font-medium text-gray-800">Purchase Requests</p>
-          <Switch
-            checked={view.purchaseRequestsEnabled}
-            disabled={!editing}
-            onCheckedChange={(checked) => patch('purchaseRequestsEnabled', checked)}
-          />
-        </div>
 
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs font-medium text-gray-800">Purchase Returns</p>

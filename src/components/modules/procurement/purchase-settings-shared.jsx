@@ -24,10 +24,6 @@ import supabase from '@/config/supabaseClient'
 //     </SettingsPageShell>
 //   )
 //
-// Pass { withLimits: true } for the one tab (Requests & Approvals) that
-// also edits the approval-limit list; limits are then saved in the same
-// call as the settings, under the same single approval check.
-//
 // BRANCH OVERRIDE vs COMPANY DEFAULT - same rules as the General tab:
 //   - A branch with no override row shows the company defaults. Edit then
 //     saves to the COMPANY default, which goes through the approval
@@ -52,17 +48,13 @@ import supabase from '@/config/supabaseClient'
 // of truth - the application defaults live in the database table
 // purchase_settings_defaults.
 export const SETTINGS_DEFAULTS = {
-  request_number_format: 'PR-{YY}{MM}{DD}-{RAND}',
   order_number_format: 'PO-{YY}{MM}{DD}-{RAND}',
   receipt_number_format: 'RCT-{YY}{MM}{DD}-{RAND}',
-  purchase_requests_enabled: true,
   purchase_returns_enabled: true,
   require_approval_before_issuing: false,
   allow_estimated_cost_prices: true,
   allow_editing_issued_orders: true,
   allow_cancelling_issued_orders: true,
-  requests_require_approval: true,
-  convert_to_po_role: 'branch_manager',
   over_receipt_tolerance_percent: 0,
   excess_handling: 'require_approval',
   receiving_quarantine_required: true,

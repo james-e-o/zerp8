@@ -68,6 +68,17 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+@layer utilities {
+  :where(div, section, article, aside, a):is(
+    [class~="rounded-sm"],
+    [class~="rounded-md"],
+    [class~="rounded-lg"],
+    [class~="rounded-xl"],
+    [class~="rounded-2xl"]
+  ):not([role="dialog"]):not([role="alertdialog"]):not([data-slot*="dialog"]) {
+    border-radius: 0.5rem !important;
+  }
+}
 
 :root {
   --core:#433bde;

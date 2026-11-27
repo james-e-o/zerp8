@@ -4,6 +4,121 @@ import supabase from '@/config/supabaseClient'
 
 import { useEffect, useState, useCallback } from 'react'
 
+const flattenProducts = (products, variants, currencies, costEstimates) => {
+  const variantsByProduct = (variants || []).reduce((map, variant) => {
+    const productId = variant.product_id || variant.productId || variant.product
+    if (!productId) return map
+    map[productId] = [...(map[productId] || []), variant]
+    return map
+  }, {})
+
+  const costByVariant = (costEstimates || []).reduce((map, estimate) => {
+    map[estimate.variant_id] = estimate
+    return map
+  }, {})
+
+  return (products || []).flatMap((product) => {
+    const productVariants =
+      product.product_variants ||
+      product.variants ||
+      variantsByProduct[product.id] ||
+      []
+
+    return productVariants.map((variant) => {
+      const variantLabel = variant.variant_label || variant.variantLabel || 'Default'
+      const productTitle = product.title || product.name || 'Untitled product'
+      const costEstimate = costByVariant[variant.id]
+      const costCurrencyCode = costEstimate?.cost_currency
+      const currency = (currencies || []).find((entry) => entry.code === costCurrencyCode)
+
+      return {
+        ...variant,
+        productId: product.id,
+        productTitle,
+        variantLabel,
+        sku: variant.sku || '',
+        cost_price: costEstimate?.cost_price ?? 0,
+        cost_currency: costCurrencyCode || '',
+        costCurrencySymbol: currency?.symbol || '',
+        displayName: `${productTitle} - ${variantLabel}`,
+      }
+    })
+  })
+}
+
+export function usePurchaseCatalog(branchId) {
+  const [catalog, setCatalog] = useState([])
+  const [currencies, setCurrencies] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+
+    if (!branchId) {
+      setCatalog([])
+      setCurrencies([])
+      setLoading(false)
+      return undefined
+    }
+
+    const load = async () => {
+      setLoading(true)
+      setError('')
+
+      try {
+        const [
+          { data: products, error: productError },
+          { data: variants, error: variantError },
+          { data: currencyRows, error: currencyError },
+          { data: costEstimates, error: costError },
+        ] = await Promise.all([
+          supabase
+            .from('products')
+            .select('id, title')
+            .eq('status', 'active')
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('product_variants')
+            .select('*')
+            .eq('is_active', true),
+          supabase
+            .from('currencies')
+            .select('code, symbol'),
+          supabase
+            .from('product_cost_estimates')
+            .select('variant_id, cost_price, cost_currency'),
+        ])
+
+        if (productError) throw productError
+        if (variantError) throw variantError
+        if (currencyError) throw currencyError
+        if (costError) throw costError
+        if (!mounted) return
+
+        setCurrencies(currencyRows || [])
+        setCatalog(flattenProducts(products, variants, currencyRows, costEstimates))
+      } catch (loadError) {
+        console.error('Failed to load purchase product catalog:', loadError)
+        if (mounted) {
+          setCatalog([])
+          setCurrencies([])
+          setError('Products could not be loaded for this branch.')
+        }
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [branchId])
+
+  return { catalog, currencies, loading, error }
+}
+
 /**
  * Suppliers for a company (suppliers are company-level, not branch-level,
  * matching the customers-are-branch-level / suppliers-are-company-level split
@@ -43,51 +158,6 @@ export function useSuppliers(companyId) {
   }, [companyId])
 
   return { suppliers, loading, error }
-}
-
-/**
- * Approved Purchase Requests for a branch that have not yet been converted
- * into a Purchase Order. Used by the "convert from request" picker on the
- * New Purchase Order form. Purchase Requests are optional input to a PO,
- * never required.
- */
-export function useConvertibleRequests(branchId) {
-  const [requests, setRequests] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      if (!branchId) return
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('purchase_requests')
-        .select(
-          'id, request_number, requested_by, needed_by, notes, purchase_request_line_items(id, variant, quantity_requested)'
-        )
-        .eq('branch', branchId)
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false })
-
-      if (cancelled) return
-
-      if (error) {
-        setError(error.message)
-      } else {
-        setRequests(data || [])
-      }
-      setLoading(false)
-    }
-
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [branchId])
-
-  return { requests, loading, error }
 }
 
 /**
@@ -203,7 +273,7 @@ export function useBillableReceipts(branchId) {
  * them has to show a raw variant id or a bare variant label again.
  *
  * product_variants.product -> products.id, and the name lives in
- * products.title (same lookup the purchase request page uses).
+ * products.title (same lookup used by procurement line-item pages).
  *
  * Returns { names, loading } where names is
  *   { [variantId]: { title, variantLabel, sku, display } }

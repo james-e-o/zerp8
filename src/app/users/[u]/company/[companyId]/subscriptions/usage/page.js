@@ -30,7 +30,7 @@ export default async function UsagePage({ params }) {
 
   if (!subscription) {
     return (
-      <div className="space-y-4 rounded-lg border border-dashed border-border p-8 text-center">
+      <div className="space-y-3 rounded-lg border border-dashed border-border p-4 text-center">
         <div>
           <h1 className="text-lg font-semibold text-foreground">
             No active subscription
@@ -57,7 +57,7 @@ export default async function UsagePage({ params }) {
     supabase
       .from("subscription_limits")
       .select(
-        "limit_key_id, value_numeric, value_boolean, limit_keys(key, name, unit, value_type, measurement)",
+        "limit_key_id, value_numeric, value_boolean, limit_keys(key, name, unit, value_type, measurement, is_active)",
       )
       .eq("subscription_id", subscription.id),
     supabase
@@ -85,7 +85,9 @@ export default async function UsagePage({ params }) {
     ]),
   );
 
-  const numericLimits = (limitResult.data || [])
+  const visibleLimits = (limitResult.data || []).filter((row) => row.limit_keys?.is_active !== false);
+
+  const numericLimits = visibleLimits
     .filter((row) => row.limit_keys?.value_type === "numeric")
     .map((row) => ({
       key: row.limit_keys.key,
@@ -95,23 +97,23 @@ export default async function UsagePage({ params }) {
       unit: `${row.limit_keys.unit || ""}${row.limit_keys.measurement === "periodic" ? "/mo" : ""}`,
     }));
 
-  const booleanLimits = (limitResult.data || []).filter(
+  const booleanLimits = visibleLimits.filter(
     (row) => row.limit_keys?.value_type === "boolean",
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="text-sm tracking-tight font-bold text-foreground">
           Usage &amp; limits
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-[11px] tracking-tighter text-muted-foreground">
           Modules and capacity granted to your company&apos;s current
           subscription.
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs text-muted-foreground">Subscription status</p>
           <p className="text-sm font-semibold text-foreground">
@@ -125,7 +127,7 @@ export default async function UsagePage({ params }) {
         </Button>
       </div>
 
-      <section className="space-y-3" aria-labelledby="included-modules-heading">
+      <section className="space-y-2" aria-labelledby="included-modules-heading">
         <div>
           <h2
             id="included-modules-heading"
@@ -133,16 +135,16 @@ export default async function UsagePage({ params }) {
           >
             Included modules
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             Modules granted by the current subscription.
           </p>
         </div>
         {modules.length > 0 ? (
-          <ul className="flex flex-wrap gap-2">
+          <ul className="flex flex-wrap gap-1.5">
             {modules.map((moduleName) => (
               <li
                 key={moduleName}
-                className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground"
+                className="rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground"
               >
                 {moduleName}
               </li>
@@ -157,7 +159,7 @@ export default async function UsagePage({ params }) {
 
       {booleanLimits.length > 0 && (
         <section
-          className="space-y-3"
+          className="space-y-2"
           aria-labelledby="included-features-heading"
         >
           <div>
@@ -168,11 +170,11 @@ export default async function UsagePage({ params }) {
               Included features
             </h2>
           </div>
-          <ul className="divide-y divide-border rounded-lg border border-border bg-card px-4">
+          <ul className="divide-y divide-border rounded-lg border border-border bg-card px-3">
             {booleanLimits.map((row) => (
               <li
                 key={row.limit_key_id}
-                className="flex items-center justify-between gap-4 py-3 text-sm"
+                className="flex items-center justify-between gap-4 py-2.5 text-xs"
               >
                 <span className="text-foreground">{row.limit_keys.name}</span>
                 <span className="text-muted-foreground">
@@ -184,7 +186,7 @@ export default async function UsagePage({ params }) {
         </section>
       )}
 
-      <section className="space-y-3" aria-labelledby="capacity-usage-heading">
+      <section className="space-y-2" aria-labelledby="capacity-usage-heading">
         <div>
           <h2
             id="capacity-usage-heading"
@@ -194,7 +196,7 @@ export default async function UsagePage({ params }) {
           </h2>
         </div>
         {numericLimits.length > 0 ? (
-          <div className="rounded-lg border border-border bg-card px-4">
+          <div className="rounded-lg border border-border bg-card px-3">
             {numericLimits.map((limit) => (
               <UsageBar
                 key={limit.key}
